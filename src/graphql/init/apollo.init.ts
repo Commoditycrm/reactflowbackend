@@ -1,50 +1,62 @@
 import { ApolloServer } from "@apollo/server";
 import { startStandaloneServer } from "@apollo/server/standalone";
-import { ApolloServerPluginLandingPageLocalDefault } from "apollo-server-core";
+import { ApolloServerPluginLandingPageLocalDefault } from "@apollo/server/plugin/landingPage/default";
 import { Neo4JConnection } from "../../database/connection";
 import { isProduction } from "../../env/detector";
-import typeDefs from "../schema/schema.gql";
-import { OGMConnection } from "./ogm.init";
 import { NeoConnection } from "./neo.init";
+import { OGMConnection } from "./ogm.init";
 import errorHandling from "../error/error.formatter";
+import logger from "../../logger";
+import typeDefs from "../schema/schema";
 
 export const initializeApolloServer = async () => {
-  // Get Neo4j Driver
-  const neo4jInstance = await Neo4JConnection.getInstance();
+  try {
+    const PORT = Number(process.env.PORT || 4000);
 
-  // Initialize Neo4jGraphQL schema
-  const neoInstance = new NeoConnection(
-    typeDefs,
-    neo4jInstance.driver,
-    NeoConnection.getFeatures(),
-    NeoConnection.getResolvers()
-  );
+    const neo4jInstance = await Neo4JConnection.getInstance();
 
-  const schema = await neoInstance.init();
+    const neoInstance = new NeoConnection(
+      typeDefs,
+      neo4jInstance.driver,
+      NeoConnection.getFeatures(),
+      NeoConnection.getResolvers()
+    );
+    const schema = await neoInstance.init();
 
-  // OGM setup
-  await OGMConnection.init(
-    typeDefs,
-    neo4jInstance.driver,
-    NeoConnection.getFeatures()
-  );
+    await OGMConnection.init(
+      typeDefs,
+      neo4jInstance.driver,
+      NeoConnection.getFeatures()
+    );
 
-  // Initialize Apollo Server
-  const server = new ApolloServer({
-    schema,
-    introspection: !isProduction(),
-    persistedQueries: false,
-    formatError: (error) => errorHandling(error),
-    plugins: isProduction()
-      ? []
-      : [ApolloServerPluginLandingPageLocalDefault({ embed: true })],
-  });
+    const server = new ApolloServer({
+      schema,
+      introspection: !isProduction(),
+      persistedQueries: false,
+      formatError: (formattedError, error) => {
+        logger?.error(`[GraphQL Error]: ${formattedError.message}`);
+        return errorHandling(formattedError, error);
+      },
+      plugins: isProduction()
+        ? []
+        : [ApolloServerPluginLandingPageLocalDefault({ embed: true })],
+    });
 
-  // Start server
-  const { url } = await startStandaloneServer(server, {
-    listen: { port: 4000 },
-    context: async ({ req }) => NeoConnection.authorizeUserOnContext(req),
-  });
-
-  console.log(`🚀 Apollo Server running at ${url}`);
+    // Start server with CORS
+    const { url } = await startStandaloneServer(server, {
+      listen: { port: PORT },
+      context: async ({ req }) => {
+        return await NeoConnection.authorizeUserOnContext(req as any);
+      },
+      // Use built-in CORS (no need for express middleware)
+      // cors: {
+      //   origin: '*', // Or restrict to specific domains
+      //   credentials: true,
+      // },
+    });
+    logger?.info(`🚀 Apollo Server ready at ${url}`);
+  } catch (err) {
+    logger?.error("❌ Failed to initialize Apollo Server:", err);
+    process.exit(1);
+  }
 };

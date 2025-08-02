@@ -26,6 +26,7 @@ import {
   defaultNameSetter,
 } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
+import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 // import { readOperationQueries } from "./../resolvers/read.resolvers";
 // import { updateOperationMutations } from "./../resolvers/update.resolver";
 
@@ -41,16 +42,19 @@ export class NeoConnection {
   constructor(
     typeDefs: DocumentNode,
     driver: Driver,
-    features: Neo4jFeaturesSetting | undefined,
+    features: Neo4jFeaturesSettings | undefined,
     resolvers: IResolvers
   ) {
-    this.neo = new Neo4jGraphQL({
+    const options: any = {
       typeDefs,
       driver,
-      features,
       resolvers,
       // debug: !isProduction(),
-    });
+    };
+    if (features) {
+      options.features = features;
+    }
+    this.neo = new Neo4jGraphQL(options);
   }
   async init(): Promise<GraphQLSchema> {
     const neoSchema = await this.neo.getSchema();
@@ -83,7 +87,7 @@ export class NeoConnection {
     } catch (e) {
       try {
         const decoded = JSON.parse(
-          Buffer.from(token.split(".")[1], "base64").toString()
+          Buffer.from(token.split(".")[1] ?? "", "base64").toString()
         );
 
         const now = Math.floor(Date.now() / 1000);
@@ -104,10 +108,10 @@ export class NeoConnection {
     return {
       Mutation: {
         ...createOperationMutations,
-        ...updateOperationMutations,
-        ...deleteOperationMutations,
+        // ...updateOperationMutations,
+        // ...deleteOperationMutations,
       },
-      Query: { ...readOperationQueries },
+      // Query: { ...readOperationQueries },
     };
   }
 
@@ -137,4 +141,3 @@ export class NeoConnection {
     };
   }
 }
-  }

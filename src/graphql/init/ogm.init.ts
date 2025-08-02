@@ -3,8 +3,8 @@ import { DocumentNode } from "graphql";
 import { Driver } from "neo4j-driver";
 import { Neo4JConnection } from "../../database/connection";
 import { isDevelopment, isProduction } from "../../env/detector";
-import * as typeDefs from "../schema/schema.gql";
 import { NeoConnection } from "./neo.init";
+import typeDefs from "../schema/schema";
 
 export class OGMConnection {
   private static ogm: OGM;

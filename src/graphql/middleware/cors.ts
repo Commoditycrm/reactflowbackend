@@ -1,7 +1,7 @@
 import cors from "cors";
 import { Request, Response } from "express";
 const allowOrigins = [
-  process.env.NEXT_PUBLIC_API_URL,
+  process.env.API_URL,
   process.env.ADMIN_PANEL_API,
 ].filter(Boolean);
 export const applyCorsMiddleware = (req: Request, res: Response) => {
