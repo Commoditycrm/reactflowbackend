@@ -20,6 +20,7 @@
     "graphql": "^16.9.0",
     "graphql-ws": "^5.12.1",
     "neo4j-driver": "^5.23.0",
+    "openai": "^4.77.0",
     "routing-controllers": "^0.11.2",
     "winston": "^3.17.0",
     "ws": "^8.13.0"

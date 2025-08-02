@@ -44,7 +44,7 @@ export const initializeApolloServer = async () => {
 
     // Start server with CORS
     const { url } = await startStandaloneServer(server, {
-      listen: { port: PORT },
+      listen: { port: PORT, path: "/api/graphql" },
       context: async ({ req }) => {
         return await NeoConnection.authorizeUserOnContext(req as any);
       },

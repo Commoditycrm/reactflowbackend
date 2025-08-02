@@ -1,6 +1,5 @@
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Neo4jGraphQL } from "@neo4j/graphql";
-// import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { Request } from "express";
 import { DocumentNode, GraphQLError, GraphQLSchema } from "graphql";
 import { Driver } from "neo4j-driver";
@@ -8,7 +7,7 @@ import { isProduction } from "../../env/detector";
 import logger from "../../logger";
 import { getTokenFromHeader } from "../../util/tokenExtractor";
 import { getFirebaseAdminAuth } from "../firebase/admin";
-// import { deleteOperationMutations } from "../resolvers/delete.resolvers";
+import { deleteOperationMutations } from "../resolvers/delete.resolvers";
 import {
   counterStarter,
   emailExtractor,
@@ -27,8 +26,8 @@ import {
 } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
-// import { readOperationQueries } from "./../resolvers/read.resolvers";
-// import { updateOperationMutations } from "./../resolvers/update.resolver";
+import { readOperationQueries } from "./../resolvers/read.resolvers";
+import { updateOperationMutations } from "./../resolvers/update.resolvers";
 
 export type IResolvers =
   | {
@@ -108,10 +107,10 @@ export class NeoConnection {
     return {
       Mutation: {
         ...createOperationMutations,
-        // ...updateOperationMutations,
-        // ...deleteOperationMutations,
+        ...updateOperationMutations,
+        ...deleteOperationMutations,
       },
-      // Query: { ...readOperationQueries },
+      Query: { ...readOperationQueries },
     };
   }
 
