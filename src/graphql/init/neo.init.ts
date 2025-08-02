@@ -1,0 +1,140 @@
+import { ApolloServerErrorCode } from "@apollo/server/errors";
+import { Neo4jGraphQL } from "@neo4j/graphql";
+// import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
+import { Request } from "express";
+import { DocumentNode, GraphQLError, GraphQLSchema } from "graphql";
+import { Driver } from "neo4j-driver";
+import { isProduction } from "../../env/detector";
+import logger from "../../logger";
+import { getTokenFromHeader } from "../../util/tokenExtractor";
+import { getFirebaseAdminAuth } from "../firebase/admin";
+// import { deleteOperationMutations } from "../resolvers/delete.resolvers";
+import {
+  counterStarter,
+  emailExtractor,
+  externalIdExtractor,
+  userRoleSetter,
+  topLevelParentItem,
+  setinvitedUserEmails,
+  userNameExtractor,
+  uniqueSprint,
+  uniqueInviteExtractor,
+  uniqueProjectExtractor,
+  updateOrgLastModified,
+  defaultKeySetter,
+  uniqueKeySetter,
+  defaultNameSetter,
+} from "./../callbacks/populatedByCallbacks";
+import { createOperationMutations } from "./../resolvers/create.resolvers";
+// import { readOperationQueries } from "./../resolvers/read.resolvers";
+// import { updateOperationMutations } from "./../resolvers/update.resolver";
+
+export type IResolvers =
+  | {
+      Mutation?: Record<string, any>;
+      Query?: Record<string, any>;
+    }
+  | undefined;
+
+export class NeoConnection {
+  private neo: Neo4jGraphQL;
+  constructor(
+    typeDefs: DocumentNode,
+    driver: Driver,
+    features: Neo4jFeaturesSetting | undefined,
+    resolvers: IResolvers
+  ) {
+    this.neo = new Neo4jGraphQL({
+      typeDefs,
+      driver,
+      features,
+      resolvers,
+      // debug: !isProduction(),
+    });
+  }
+  async init(): Promise<GraphQLSchema> {
+    const neoSchema = await this.neo.getSchema();
+    if (!isProduction()) {
+      await this.neo.checkNeo4jCompat();
+      await this.neo.assertIndexesAndConstraints({ options: { create: true } });
+    }
+    return neoSchema;
+  }
+
+  static async authorizeUserOnContext(
+    req: Request
+  ): Promise<{ token: string } | { jwt: Record<string, any> }> {
+    const token: string | null = getTokenFromHeader(req.headers.authorization);
+    let decodedToken = null;
+    if (!token) {
+      throw new GraphQLError("Authentication token is required", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+    try {
+      // Try Firebase first
+      decodedToken = await getFirebaseAdminAuth().auth().verifyIdToken(token!);
+
+      if (!decodedToken?.email_verified) {
+        throw new GraphQLError("Please verify your email first.");
+      }
+
+      return { jwt: decodedToken };
+    } catch (e) {
+      try {
+        const decoded = JSON.parse(
+          Buffer.from(token.split(".")[1], "base64").toString()
+        );
+
+        const now = Math.floor(Date.now() / 1000);
+        if (decoded.exp < now || decoded.role !== "invitee") {
+          throw new Error("Token expired or Unknown user");
+        }
+        return { token: token as string };
+      } catch (err) {
+        logger?.warn("Invite token error", err);
+        throw new GraphQLError("Token expired or Unknown user", {
+          extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+        });
+      }
+    }
+  }
+
+  static getResolvers(): IResolvers | undefined {
+    return {
+      Mutation: {
+        ...createOperationMutations,
+        ...updateOperationMutations,
+        ...deleteOperationMutations,
+      },
+      Query: { ...readOperationQueries },
+    };
+  }
+
+  static getFeatures(): Neo4jFeaturesSettings {
+    return {
+      populatedBy: {
+        callbacks: {
+          externalIdExtractor,
+          userNameExtractor,
+          emailExtractor,
+          counterStarter,
+          userRoleSetter,
+          topLevelParentItem,
+          setinvitedUserEmails,
+          uniqueSprint,
+          uniqueInviteExtractor,
+          uniqueProjectExtractor,
+          updateOrgLastModified,
+          defaultKeySetter,
+          uniqueKeySetter,
+          defaultNameSetter,
+        },
+      },
+      authorization: {
+        key: process.env.INVITE_JWT_SECRET as string,
+      },
+    };
+  }
+}
+  }
