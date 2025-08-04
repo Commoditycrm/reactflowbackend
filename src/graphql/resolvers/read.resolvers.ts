@@ -356,8 +356,8 @@ const generateTask = async (
         return match
           ? {
               id: uuidv4(),
-              content: match[1].trim(),
-              description: match[2].trim(),
+              content: match?.[1]?.trim() ?? "",
+              description: match?.[2]?.trim() ?? "",
             }
           : null;
       })

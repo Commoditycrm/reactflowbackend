@@ -44,7 +44,13 @@ export class NeoConnection {
     features: Neo4jFeaturesSettings | undefined,
     resolvers: IResolvers
   ) {
-    const options: any = {
+    const options: {
+      typeDefs: DocumentNode;
+      driver: Driver;
+      resolvers: IResolvers;
+      features?: Neo4jFeaturesSettings;
+      // debug?: boolean;
+    } = {
       typeDefs,
       driver,
       resolvers,
@@ -134,6 +140,7 @@ export class NeoConnection {
           defaultNameSetter,
         },
       },
+      subscriptions: true,
       authorization: {
         key: process.env.INVITE_JWT_SECRET as string,
       },

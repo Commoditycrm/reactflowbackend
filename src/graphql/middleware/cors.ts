@@ -1,10 +1,13 @@
 import cors from "cors";
 import { Request, Response } from "express";
-const allowOrigins = [
-  process.env.API_URL,
-  process.env.ADMIN_PANEL_API,
-].filter(Boolean);
+
 export const applyCorsMiddleware = (req: Request, res: Response) => {
+  const allowOrigins = [
+    process.env.API_URL,
+    process.env.ADMIN_PANEL_API,
+  ].filter(Boolean);
+
+
   const corsOptions = {
     origin: (origin: string | undefined, callback: Function) => {
       try {
