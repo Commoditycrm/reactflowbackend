@@ -31,9 +31,9 @@ import { updateOperationMutations } from "./../resolvers/update.resolvers";
 
 export type IResolvers =
   | {
-      Mutation?: Record<string, any>;
-      Query?: Record<string, any>;
-    }
+    Mutation?: Record<string, any>;
+    Query?: Record<string, any>;
+  }
   | undefined;
 
 export class NeoConnection {
@@ -63,10 +63,12 @@ export class NeoConnection {
   }
   async init(): Promise<GraphQLSchema> {
     const neoSchema = await this.neo.getSchema();
-    if (!isProduction()) {
+    if (!isProduction() && process.env.INIT_SCHEMA === 'true') {
       await this.neo.checkNeo4jCompat();
+      await this.neo.assertIndexesAndConstraints();
       await this.neo.assertIndexesAndConstraints({ options: { create: true } });
     }
+
     return neoSchema;
   }
 
@@ -140,7 +142,7 @@ export class NeoConnection {
           defaultNameSetter,
         },
       },
-      subscriptions: true,
+      // subscriptions: true,
       authorization: {
         key: process.env.INVITE_JWT_SECRET as string,
       },

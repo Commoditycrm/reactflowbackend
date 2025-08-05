@@ -11,7 +11,7 @@ export class Neo4JConnection {
 
   neo4jPassword = process.env.NEO4J_PASSWORD;
 
-  private constructor() {}
+  private constructor() { }
 
   public static async getInstance(): Promise<Neo4JConnection> {
     if (!Neo4JConnection.instance) {
@@ -22,7 +22,12 @@ export class Neo4JConnection {
         neo4j.auth.basic(
           Neo4JConnection.instance.neo4jUser as string,
           Neo4JConnection.instance.neo4jPassword as string
-        )
+        ),
+        {
+          maxConnectionLifetime: 30 * 60 * 1000,
+          maxConnectionPoolSize: 100,
+          connectionAcquisitionTimeout: 60 * 1000,
+        }
       );
 
       Neo4JConnection.instance.driver.verifyAuthentication();

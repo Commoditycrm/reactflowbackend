@@ -1,4 +1,4 @@
-import { ApolloServer } from "@apollo/server";
+import { ApolloServer, BaseContext, GraphQLRequestListener } from "@apollo/server";
 import { ApolloServerPluginLandingPageLocalDefault } from "@apollo/server/plugin/landingPage/default";
 import { Neo4JConnection } from "../../database/connection";
 import { isProduction } from "../../env/detector";
@@ -12,15 +12,14 @@ import { useServer } from "graphql-ws/lib/use/ws";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
 import { expressMiddleware } from "@apollo/server/express4";
 import cors from "cors";
-import { Router, json } from 'express'
+import { Router } from 'express'
 import { ApolloServerPluginLandingPageDisabled } from "@apollo/server/plugin/disabled";
+import bodyParser from 'body-parser'
 
-
-const router = Router()
 
 export const initializeApolloServer = async (httpServer: ReturnType<typeof import("http").createServer>) => {
-  const PORT = Number(process.env.PORT || 4000);
 
+  const router = Router();
   const neo4jInstance = await Neo4JConnection.getInstance();
 
   const neoInstance = new NeoConnection(
@@ -29,45 +28,28 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
     NeoConnection.getFeatures(),
     NeoConnection.getResolvers()
   );
+
   const schema = await neoInstance.init();
+  await OGMConnection.init(typeDefs, neo4jInstance.driver, NeoConnection.getFeatures());
 
-  await OGMConnection.init(
-    typeDefs,
-    neo4jInstance.driver,
-    NeoConnection.getFeatures()
-  );
-
-
-  const wsSerever = new WebSocketServer({
+  const wsServer = new WebSocketServer({
     server: httpServer,
     path: "/api/graphql",
   });
 
-  //todo:cors allow origin middleware
-
-  //ws server
-  const serverCleanUp = useServer(
+  const serverCleanup = useServer(
     {
       schema,
       context: async (ctx) => {
-        const authorization =
-          ctx.connectionParams?.authorization ||
-          ctx.connectionParams?.Authorization ||
-          "";
-        const mockReq = {
-          headers: {
-            authorization: authorization as string,
-          },
-        } as any;
+        const authorization = ctx.connectionParams?.authorization || ctx.connectionParams?.Authorization || "";
+        const mockReq = { headers: { authorization: authorization as string } } as any;
         return await NeoConnection.authorizeUserOnContext(mockReq);
       },
       onError(ctx, message, errors) {
-        logger?.error(
-          `[GraphQL Subscription Error]: ${message}, Errors: ${errors}`
-        );
+        logger?.error(`[GraphQL Subscription Error]: ${message}, Errors: ${errors}`);
       },
     },
-    wsSerever
+    wsServer
   );
 
   //apollo server
@@ -76,16 +58,14 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
     introspection: !isProduction(),
     persistedQueries: false,
     plugins: [
-      ApolloServerPluginDrainHttpServer({
-        httpServer,
-      }),
+      ApolloServerPluginDrainHttpServer({ httpServer }),
       {
         async serverWillStart() {
-          return Promise.resolve({
+          return {
             async drainServer() {
-              await serverCleanUp.dispose();
+              await serverCleanup.dispose();
             },
-          });
+          };
         },
       },
       isProduction()
@@ -103,12 +83,10 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
   router.use(
     "/graphql",
     cors(),
-    json(),
+    bodyParser.json(),
     expressMiddleware(server, {
-      context: async ({ req }) => {
-        return await NeoConnection.authorizeUserOnContext(req as any);
-      },
+      context: async ({ req }) => await NeoConnection.authorizeUserOnContext(req as any),
     })
   );
-  return router
+  return router;
 };

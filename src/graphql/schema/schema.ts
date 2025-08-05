@@ -1889,7 +1889,7 @@ const typeDefs = gql`
     @fulltext(
       indexes: [{ indexName: "fullTextOnBacklogItemLabel", fields: ["label"] }]
     )
-    @subscription
+    # @subscription
     @mutation(operations: [UPDATE])
     @query(read: true, aggregate: false) {
     id: ID! @id

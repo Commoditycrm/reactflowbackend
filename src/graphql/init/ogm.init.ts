@@ -8,7 +8,7 @@ import typeDefs from "../schema/schema";
 
 export class OGMConnection {
   private static ogm: OGM;
-  private constructor() {}
+  private constructor() { }
 
   static async getInstance(): Promise<OGM> {
     if (this.ogm) return this.ogm;
@@ -31,10 +31,6 @@ export class OGMConnection {
     });
 
     await this.ogm.init();
-    if (!isProduction()) {
-      await this.ogm.assertIndexesAndConstraints();
-      await this.ogm.assertIndexesAndConstraints({ options: { create: true } });
-    }
 
     if (isDevelopment() && process.env.GENERATE_OGM_TYPES) {
       await generate({
