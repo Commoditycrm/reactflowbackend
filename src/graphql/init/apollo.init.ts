@@ -26,7 +26,7 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
     typeDefs,
     neo4jInstance.driver,
     NeoConnection.getFeatures(),
-    NeoConnection.getResolvers()
+    NeoConnection.getResolvers(),
   );
 
   const schema = await neoInstance.init();

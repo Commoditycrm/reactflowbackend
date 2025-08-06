@@ -4,10 +4,10 @@ import { Request } from "express";
 import { DocumentNode, GraphQLError, GraphQLSchema } from "graphql";
 import { Driver } from "neo4j-driver";
 import { isProduction } from "../../env/detector";
-import logger from "../../logger";
 import { getTokenFromHeader } from "../../util/tokenExtractor";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { deleteOperationMutations } from "../resolvers/delete.resolvers";
+
 import {
   counterStarter,
   emailExtractor,
@@ -49,12 +49,12 @@ export class NeoConnection {
       driver: Driver;
       resolvers: IResolvers;
       features?: Neo4jFeaturesSettings;
-      // debug?: boolean;
+      debug?: boolean;
     } = {
       typeDefs,
       driver,
       resolvers,
-      // debug: !isProduction(),
+      debug: !isProduction(),
     };
     if (features) {
       options.features = features;
@@ -103,7 +103,6 @@ export class NeoConnection {
         }
         return { token: token as string };
       } catch (err) {
-        logger?.warn("Invite token error", err);
         throw new GraphQLError("Token expired or Unknown user", {
           extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
         });
@@ -142,7 +141,7 @@ export class NeoConnection {
           defaultNameSetter,
         },
       },
-      // subscriptions: true,
+      subscriptions: true,
       authorization: {
         key: process.env.INVITE_JWT_SECRET as string,
       },

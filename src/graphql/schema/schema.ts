@@ -1544,6 +1544,7 @@ const typeDefs = gql`
   }
 
   type FlowNode implements TimestampedCreatable & Timestamped & SoftDeletable
+    @subscription(events:[CREATED,UPDATED])
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }

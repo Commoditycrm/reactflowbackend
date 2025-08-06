@@ -20,7 +20,7 @@ const httpServer = createServer(app);
       logger?.info(`🚀 GraphQL running at http://localhost:${PORT}/api/graphql`);
     })
   } catch (err) {
-    logger?.error("❌ Server failed to start:", err);
+    logger?.error(`Server failed to start:${err}`);
     process.exit(1);
   }
 })();
