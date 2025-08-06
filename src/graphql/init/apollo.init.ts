@@ -11,10 +11,8 @@ import { WebSocketServer } from "ws";
 import { useServer } from "graphql-ws/lib/use/ws";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
 import { expressMiddleware } from "@apollo/server/express4";
-import cors from "cors";
 import { Router } from 'express'
 import { ApolloServerPluginLandingPageDisabled } from "@apollo/server/plugin/disabled";
-import bodyParser from 'body-parser'
 
 
 export const initializeApolloServer = async (httpServer: ReturnType<typeof import("http").createServer>) => {
@@ -82,8 +80,6 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
 
   router.use(
     "/graphql",
-    cors(),
-    bodyParser.json(),
     expressMiddleware(server, {
       context: async ({ req }) => await NeoConnection.authorizeUserOnContext(req as any),
     })

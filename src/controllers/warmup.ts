@@ -13,7 +13,11 @@ const warmupcontroller = async (req: Request, res: Response) => {
             body: JSON.stringify({ query: "{ __typename }" }),
         });
 
-        const data = await response.json();
+        if (!response?.ok) {
+            return res.status(response.status).json({ message: response.statusText })
+        }
+
+        const { data } = await response.json();
 
         logger?.info("🔥 Warm-up complete");
         return res.status(200).json({ status: "ok", data });

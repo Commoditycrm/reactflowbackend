@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 
 export const applyCorsMiddleware = (req: Request, res: Response) => {
   const allowOrigins = [
-    process.env.API_URL,
+    process.env.CLIENT_URL,
     process.env.ADMIN_PANEL_API,
   ].filter(Boolean);
 
