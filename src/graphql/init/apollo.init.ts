@@ -1,4 +1,4 @@
-import { ApolloServer, BaseContext, GraphQLRequestListener } from "@apollo/server";
+import { ApolloServer } from "@apollo/server";
 import { ApolloServerPluginLandingPageLocalDefault } from "@apollo/server/plugin/landingPage/default";
 import { Neo4JConnection } from "../../database/connection";
 import { isProduction } from "../../env/detector";

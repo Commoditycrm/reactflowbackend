@@ -3,6 +3,7 @@ import express from "express";
 import logger from "./logger";
 import { createServer } from "http";
 import { apiRouter } from "./routers";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ const httpServer = createServer(app);
 (async () => {
   try {
     const router = await apiRouter(httpServer);
+    app.use(cookieParser())
     app.use("/api", router);
 
     httpServer.listen(PORT, () => {
