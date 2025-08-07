@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import logger from "../logger";
+import logger from "../../logger";
 
 const warmupcontroller = async (req: Request, res: Response) => {
     const PORT = process.env.PORT;

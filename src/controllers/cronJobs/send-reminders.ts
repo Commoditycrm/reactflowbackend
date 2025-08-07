@@ -1,14 +1,15 @@
 import { Request, Response } from "express";
-import { Neo4JConnection } from "../database/connection";
-import logger from "../logger";
-import { User } from "../@types/ogm.types";
+import { Neo4JConnection } from "../../database/connection";
+import logger from "../../logger";
+import { User } from "../../@types/ogm.types";
 import { Integer } from "neo4j-driver";
 import pLimit from "p-limit";
 
-const REMINDER_URL = process.env.REMINDER_URL || "https://react-auth-flow.vercel.app/api/users/reminders";
+
 const CONCURRENCY_LIMIT = 10;
 
 const sendReminder = async (user: User, taskCount: Integer) => {
+    const REMINDER_URL = process.env.REMINDER_URL || "https://react-auth-flow.vercel.app/api/users/reminders";
     try {
         const res = await fetch(REMINDER_URL, {
             method: "POST",

@@ -1,8 +1,8 @@
 import express from "express";
 import { createServer } from "http";
 import { initializeApolloServer } from "../graphql/init/apollo.init";
-import warmupcontroller from "../controllers/warmup";
-import sendReminders from "../controllers/send-reminders";
+import warmupcontroller from "../controllers/cronJobs/warmup";
+import sendReminders from "../controllers/cronJobs/send-reminders";
 
 export const apiRouter = async (
     httpServer: ReturnType<typeof createServer>
