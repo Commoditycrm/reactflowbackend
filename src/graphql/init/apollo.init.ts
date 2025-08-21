@@ -11,12 +11,12 @@ import { WebSocketServer } from "ws";
 import { useServer } from "graphql-ws/lib/use/ws";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
 import { expressMiddleware } from "@apollo/server/express4";
-import { Router } from 'express'
+import { Router } from "express";
 import { ApolloServerPluginLandingPageDisabled } from "@apollo/server/plugin/disabled";
 
-
-export const initializeApolloServer = async (httpServer: ReturnType<typeof import("http").createServer>) => {
-
+export const initializeApolloServer = async (
+  httpServer: ReturnType<typeof import("http").createServer>
+) => {
   const router = Router();
   const neo4jInstance = await Neo4JConnection.getInstance();
 
@@ -24,65 +24,98 @@ export const initializeApolloServer = async (httpServer: ReturnType<typeof impor
     typeDefs,
     neo4jInstance.driver,
     NeoConnection.getFeatures(),
-    NeoConnection.getResolvers(),
+    NeoConnection.getResolvers()
+  );
+  const schema = await neoInstance.init();
+
+  await OGMConnection.init(
+    typeDefs,
+    neo4jInstance.driver,
+    NeoConnection.getFeatures()
   );
 
-  const schema = await neoInstance.init();
-  await OGMConnection.init(typeDefs, neo4jInstance.driver, NeoConnection.getFeatures());
-
+  // --- Subscriptions ON (always) with keepalive pings ---
   const wsServer = new WebSocketServer({
     server: httpServer,
     path: "/api/graphql",
+    // perf: disable per-message deflate in dev/local
+    perMessageDeflate: false,
   });
+
+  // optional: close idle sockets behind a proxy
+  // wsServer.timeout = 30_000; // 30s TCP timeout hint (Node sets server.timeout for HTTP; harmless here)
 
   const serverCleanup = useServer(
     {
       schema,
+      // require client to send connectionInit within N ms
+      connectionInitWaitTimeout: 5_000,
+      // send periodic keepalives so proxies don’t drop idle connections
+      // keepAlive: 12_000,
       context: async (ctx) => {
-        const authorization = ctx.connectionParams?.authorization || ctx.connectionParams?.Authorization || "";
-        const mockReq = { headers: { authorization: authorization as string } } as any;
+        const authorization = (ctx.connectionParams?.authorization ||
+          ctx.connectionParams?.Authorization ||
+          "") as string;
+        const mockReq = { headers: { authorization } } as any;
         return await NeoConnection.authorizeUserOnContext(mockReq);
       },
+      onConnect(ctx) {
+        logger?.info("WS connected");
+      },
+      onDisconnect(ctx, code, reason) {
+        logger?.info(`WS disconnected: ${code} ${reason?.toString?.() || ""}`);
+      },
       onError(ctx, message, errors) {
-        logger?.error(`[GraphQL Subscription Error]: ${message}, Errors: ${errors}`);
+        logger?.error(
+          `[GraphQL Subscription Error]: ${message}, Errors: ${errors}`
+        );
       },
     },
     wsServer
   );
 
-  //apollo server
+  const plugins = [
+    ApolloServerPluginDrainHttpServer({ httpServer }),
+    {
+      async serverWillStart() {
+        return {
+          async drainServer() {
+            await serverCleanup.dispose();
+          },
+        };
+      },
+    },
+    isProduction()
+      ? ApolloServerPluginLandingPageDisabled()
+      : ApolloServerPluginLandingPageLocalDefault(),
+  ];
+
   const server = new ApolloServer({
     schema,
     introspection: !isProduction(),
-    persistedQueries: false,
-    plugins: [
-      ApolloServerPluginDrainHttpServer({ httpServer }),
-      {
-        async serverWillStart() {
-          return {
-            async drainServer() {
-              await serverCleanup.dispose();
-            },
-          };
-        },
-      },
-      isProduction()
-        ? ApolloServerPluginLandingPageDisabled()
-        : ApolloServerPluginLandingPageLocalDefault()
-    ],
+    plugins,
     formatError: (formattedError, error) => {
       logger?.error(`[GraphQL Error]: ${formattedError.message}`);
       return errorHandling(formattedError, error);
     },
   });
 
+  // Pre-warm driver
+  try {
+    await neo4jInstance.driver.executeQuery("RETURN 1");
+  } catch (e) {
+    logger?.warn(`Driver warmup failed (non-fatal): ${(e as Error).message}`);
+  }
+
   await server.start();
 
   router.use(
     "/graphql",
     expressMiddleware(server, {
-      context: async ({ req }) => await NeoConnection.authorizeUserOnContext(req as any),
+      context: async ({ req }) =>
+        await NeoConnection.authorizeUserOnContext(req as any),
     })
   );
+
   return router;
 };

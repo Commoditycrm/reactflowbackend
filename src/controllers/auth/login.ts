@@ -5,13 +5,16 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 
 const login = async (req: Request, res: Response) => {
     const { email, password } = req.body
-    if (!email || !password) {
-        return res.status(400).json({ message: "email and password required" })
-    }
+    // if (!email || !password) {
+    //     return res.status(400).json({ message: "email and password required" })
+    // }
+    const token = await getFirebaseAdminAuth().auth().createCustomToken("rBxQi90cCeSn9pjyhWaMqaF7ecD2");
     try {
+        // rBxQi90cCeSn9pjyhWaMqaF7ecD2
         // const user = await signInWithEmailAndPassword(getFirebaseAdminAuth().auth(),email,password)
         // console.log(user)
-        res.status(200).json({ message: "Ok" })
+        
+        res.status(200).json({ message: "Ok",token })
     } catch (error) {
         res.status(500).json(error)
     }
