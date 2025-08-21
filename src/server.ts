@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import express, { Response, Request, ErrorRequestHandler } from "express";
+import express from "express";
 import logger from "./logger";
 import { createServer } from "http";
 import { apiRouter } from "./routers";
@@ -17,23 +17,24 @@ const httpServer = createServer(app);
 app.use(cookieParser());
 app.use(express.json());
 app.use(
-  cors({
-    credentials: true,
-    origin(requestOrigin, callback) {
-      const allowOrigins = [
-        process.env.CLIENT_URL,
-        process.env.ADMIN_PANEL_API,
-        process.env.API_URL,
-      ].filter(Boolean);
-      if (!requestOrigin || allowOrigins.includes(requestOrigin)) {
-        return callback(null, requestOrigin || true);
-      }
-      logger?.warn(`Blocked by CORS: ${requestOrigin}`);
-      return callback(new Error("Not allowed by CORS"), false);
-    },
-    methods: ["POST", "GET", "OPTIONS"],
-    optionsSuccessStatus: 200,
-  })
+  // cors({
+  //   credentials: true,
+  //   origin(requestOrigin, callback) {
+  //     const allowOrigins = [
+  //       process.env.CLIENT_URL,
+  //       process.env.ADMIN_PANEL_API,
+  //       process.env.API_URL,
+  //     ].filter(Boolean);
+  //     if (!requestOrigin || allowOrigins.includes(requestOrigin)) {
+  //       return callback(null, requestOrigin || true);
+  //     }
+  //     logger?.warn(`Blocked by CORS: ${requestOrigin}`);
+  //     return callback(new Error("Not allowed by CORS"), false);
+  //   },
+  //   methods: ["POST", "GET", "OPTIONS"],
+  //   optionsSuccessStatus: 200,
+  // })
+  cors()
 );
 
 (async () => {
