@@ -39,5 +39,9 @@
   "resolutions": {
     "@types/express": "^4.17.21",
     "@types/express-serve-static-core": "^4.17.31"
-  }
+  },
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "author": "floNautics <commodityccrm@gmail.com>",
+  "license": "MIT"
 }
