@@ -3064,7 +3064,7 @@ const typeDefs = gql`
         WHERE mention = '' OR toLower(comments.message) CONTAINS toLower(mention)
 
         RETURN comments
-        ORDER BY comments.createdAt
+        ORDER BY comments.createdAt DESC
         SKIP $offset
         LIMIT $limit
         """
