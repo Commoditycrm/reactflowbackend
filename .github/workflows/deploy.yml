@@ -1,0 +1,34 @@
+name: Deploy Backend to Lightsail
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}
+
+      - name: Deploy Backend
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
+            cd ~/project/backend
+            git fetch --all
+            git reset --hard origin/main
+
+            yarn install --frozen-lockfile
+            yarn build
+
+            pm2 restart backend --update-env || \
+            pm2 start dist/server.js --name backend
+
+            pm2 save
+          EOF
