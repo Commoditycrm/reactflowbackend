@@ -342,6 +342,11 @@ const typeDefs = gql`
             }
           }
         }
+        {
+          operations: [READ]
+          when: [BEFORE]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        }
       ]
     ) {
     id: ID! @id
@@ -909,6 +914,22 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
+  enum BacklogTable {
+    WORK_ITEMS
+    MY_ITEMS
+    EXPENSE
+  }
+
+  input BacklogItemFilterInput {
+    typeIds: [ID!]
+    assignedUserIds: [ID!]
+    statusIds: [ID!]
+    sprintIds: [ID!]
+    riskLevelIds: [ID!]
+    titleContains: [String!]
+    tableType: BacklogTable
+  }
+
   type Project implements SoftDeletable
     @authorization(
       filter: [
@@ -1051,6 +1072,7 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
+    isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
     uniqueProject: String!
       @unique
@@ -1073,6 +1095,48 @@ const typeDefs = gql`
         """
         columnName: "endDate"
       )
+    progress: Float
+      @cypher(
+        statement: """
+        WITH this
+        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+
+        OPTIONAL MATCH path=(this)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+          AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+
+        WITH this, coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS allFiles
+
+        WITH this,
+          CASE WHEN size(allFiles) > 0
+            THEN allFiles
+            ELSE [null]
+          END AS filesToProcess
+
+        UNWIND filesToProcess AS file
+        WITH DISTINCT this, file
+
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE file IS NOT NULL AND n.deletedAt IS NULL
+        WITH DISTINCT this, n
+
+        OPTIONAL MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+
+        WITH this,
+          count(DISTINCT bi) AS totalItems,
+          count(DISTINCT CASE WHEN toLower(s.defaultName) IN ['completed','done','closed'] THEN bi END) AS completedItems
+
+        RETURN CASE
+          WHEN totalItems > 0
+            THEN toFloat(round(100.0 * completedItems / totalItems))
+            ELSE 0.0
+          END AS progress
+        """
+        columnName: "progress"
+      )
     assignedUsers: [User!]!
       @relationship(
         type: "HAS_ASSIGNED_USER"
@@ -1094,13 +1158,136 @@ const typeDefs = gql`
         aggregate: true
         nestedOperations: []
       )
-    backlogItem: [BacklogItem!]!
-      @relationship(
-        type: "ITEM_IN_PROJECT"
-        direction: IN
-        nestedOperations: []
-        aggregate: true
+    backlogItems(
+      filters: BacklogItemFilterInput
+      limit: Int! = 10
+      offset: Int! = 0
+    ): [BacklogItem!]!
+      @cypher(
+        statement: """
+        WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
+        WITH this, f, me, coalesce(f.table, f.tableType) AS tab
+
+        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+        OPTIONAL MATCH p=(this)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+          AND ALL(n IN nodes(p) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+
+        WITH this, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files, tab, me, f
+        UNWIND [x IN files WHERE x IS NOT NULL] AS file
+        WITH DISTINCT this, file, tab, me, f
+
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+        WITH DISTINCT this, n, tab, me, f
+
+        OPTIONAL MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(this)
+        WHERE bi.deletedAt IS NULL
+          AND (
+            coalesce(f.assignedUserIds,[])=[]
+            OR
+            (
+              EXISTS {
+                MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+                WHERE u.id IN [x IN f.assignedUserIds WHERE x <> "UNASSIGNED"]
+              }
+            OR
+            (
+              "UNASSIGNED" IN f.assignedUserIds AND NOT EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User) })
+            )
+          )
+          AND (coalesce(f.typeIds,[])=[] OR
+            EXISTS { MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType) WHERE t.id IN f.typeIds })
+          AND (coalesce(f.statusIds,[])=[] OR
+            EXISTS { MATCH (bi)-[:HAS_STATUS]->(st:Status) WHERE st.id IN f.statusIds })
+          AND (coalesce(f.sprintIds,[])=[] OR
+            EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sp:Sprint) WHERE sp.id IN f.sprintIds })
+          AND (coalesce(f.riskLevelIds,[])=[] OR
+            EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+          AND (coalesce(f.titleContains,[])=[] OR
+            any(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q)))
+
+        WITH bi, tab, me,
+          (EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) }) AS isMine,
+          EXISTS {
+            MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
+            WHERE toLower(et.defaultName) = 'expense'
+          } AS isExpense
+
+        WHERE tab IS NULL
+          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
+          OR (tab = 'EXPENSE'    AND isExpense)
+
+        RETURN DISTINCT bi AS backlogItems
+        ORDER BY bi.uid DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "backlogItems"
       )
+    backlogItemsCount(filters: BacklogItemFilterInput): Int!
+      @cypher(
+        statement: """
+        WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
+        WITH this, f, me, coalesce(f.table, f.tableType) AS tab
+
+        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+
+        OPTIONAL MATCH p=(this)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+          AND ALL(n IN nodes(p) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+
+        WITH this, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files, tab, me, f
+        UNWIND [x IN files WHERE x IS NOT NULL] AS file
+        WITH DISTINCT this, file, tab, me, f
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+        WITH DISTINCT this, n, tab, me, f
+
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(this)
+        WHERE bi.deletedAt IS NULL
+          AND (
+            coalesce(f.assignedUserIds,[])=[]
+            OR
+            (
+              EXISTS {
+                MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+                WHERE u.id IN [x IN f.assignedUserIds WHERE x <> "UNASSIGNED"]
+              }
+            OR
+            (
+              "UNASSIGNED" IN f.assignedUserIds AND NOT EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User) })
+            )
+          )
+          AND (coalesce(f.typeIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType) WHERE t.id IN f.typeIds })
+          AND (coalesce(f.statusIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_STATUS]->(st:Status) WHERE st.id IN f.statusIds })
+          AND (coalesce(f.sprintIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sp:Sprint) WHERE sp.id IN f.sprintIds })
+          AND (coalesce(f.riskLevelIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+          AND (coalesce(f.titleContains,[])=[] OR any(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q)))
+        WITH DISTINCT bi , me ,tab
+        WITH  bi, tab, me,
+          (EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } OR
+          EXISTS { MATCH (:User {externalId: me})-[:CREATED_ITEM]->(bi) }) AS isMine,
+          EXISTS {
+            MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
+            WHERE toLower(et.defaultName) = 'expense'
+          } AS isExpense
+
+        WHERE tab IS NULL
+          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
+          OR (tab = 'EXPENSE'    AND isExpense)
+
+        RETURN count(bi) AS backlogItemsCount
+        """
+        columnName: "backlogItemsCount"
+      )
+
     organization: Organization!
       @relationship(
         type: "HAS_PROJECTS"
@@ -1544,7 +1731,6 @@ const typeDefs = gql`
   }
 
   type FlowNode implements TimestampedCreatable & Timestamped & SoftDeletable
-    @subscription(events:[CREATED,UPDATED])
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
@@ -1890,7 +2076,6 @@ const typeDefs = gql`
     @fulltext(
       indexes: [{ indexName: "fullTextOnBacklogItemLabel", fields: ["label"] }]
     )
-    # @subscription
     @mutation(operations: [UPDATE])
     @query(read: true, aggregate: false) {
     id: ID! @id
@@ -1990,7 +2175,7 @@ const typeDefs = gql`
         type: "ITEM_IN_PROJECT"
         direction: OUT
         nestedOperations: [CONNECT]
-        aggregate: true
+        aggregate: false
       )
     predecessors: [BacklogItem!]!
       @relationship(
@@ -2020,6 +2205,31 @@ const typeDefs = gql`
       @settable(onCreate: false, onUpdate: true)
   }
 
+  type BacklogItemHistory
+    @limit(default: 10)
+    @mutation(operations: [CREATE, DELETE])
+    @query(read: true, aggregate: false) {
+    id: ID! @id
+    newValue: String!
+    oldValue: String!
+    field: String!
+    modifiedAt: DateTime! @timestamp(operations: [CREATE])
+    backlogItem: BacklogItem!
+      @relationship(
+        type: "HAS_HISTORY"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    modifiedBy: User!
+      @relationship(
+        type: "MODIFIED_BY"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+  }
+
   union CommentParent =
       FlowNode
     | BacklogItem
@@ -2030,120 +2240,6 @@ const typeDefs = gql`
 
   type Comment implements TimestampedCreatable & Timestamped
     @authorization(
-      filter: [
-        {
-          operations: [READ, AGGREGATE]
-          where: {
-            node: {
-              OR: [
-                {
-                  commentParentConnection: {
-                    BacklogItem: {
-                      node: {
-                        deletedAt: null
-                        parentConnection: {
-                          FlowNode: { node: { file: { deletedAt: null } } }
-                        }
-                      }
-                    }
-                  }
-                }
-                # {
-                #   commentParentConnection: {
-                #     BacklogItem: {
-                #       node: {
-                #         deletedAt: null
-                #         parent: {
-                #           FlowNode: {
-                #             deletedAt: null
-                #             file: {
-                #               deletedAt: null
-                #               parent: { Folder: { deletedAt: null } }
-                #             }
-                #           }
-                #           BacklogItem: {
-                #             deletedAt: null
-                #             parent: {
-                #               FlowNode: {
-                #                 deletedAt: null
-                #                 file: {
-                #                   deletedAt: null
-                #                   parent: { Folder: { deletedAt: null } }
-                #                 }
-                #               }
-                #             }
-                #           }
-                #         }
-                #       }
-                #     }
-                #   }
-                # }
-                {
-                  commentParentConnection: {
-                    FlowNode: { node: { deletedAt: null } }
-                  }
-                }
-                {
-                  commentParentConnection: {
-                    Human: {
-                      node: {
-                        organization: {
-                          OR: [
-                            { createdBy: { externalId: "$jwt.sub" } }
-                            { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-                {
-                  commentParentConnection: {
-                    Contact: {
-                      node: {
-                        organization: {
-                          OR: [
-                            { createdBy: { externalId: "$jwt.sub" } }
-                            { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-                {
-                  commentParentConnection: {
-                    Asset: {
-                      node: {
-                        organization: {
-                          OR: [
-                            { createdBy: { externalId: "$jwt.sub" } }
-                            { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-                {
-                  commentParentConnection: {
-                    Account: {
-                      node: {
-                        organization: {
-                          OR: [
-                            { createdBy: { externalId: "$jwt.sub" } }
-                            { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-      ]
       validate: [
         {
           operations: [DELETE, UPDATE]
@@ -2356,6 +2452,7 @@ const typeDefs = gql`
     color: String!
     count: Int!
     status: String!
+    id: ID!
   }
 
   type RiskLevelItemCount
@@ -2363,6 +2460,7 @@ const typeDefs = gql`
     @mutation(operations: []) {
     riskLevel: String!
     count: Int!
+    id: ID!
   }
 
   type ItemCountResult
@@ -2375,6 +2473,7 @@ const typeDefs = gql`
   type ItemCountGroupedRiskLevel
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
+    id: ID!
     riskLevel: String!
     counts: [Int!]!
     color: String!
@@ -2416,6 +2515,17 @@ const typeDefs = gql`
     defaulStatusCount: Int!
     defaultBacklogTypeCount: Int!
     defaultRiskLevelCount: Int!
+  }
+
+  input CommentsFilter {
+    assignedUserIds: [ID!]
+    riskLevelIds: [ID!]
+    myMention: String
+  }
+
+  input DueTaskFilter {
+    assignedUserIds: [ID!]
+    riskLevelIds: [ID!]
   }
 
   type Mutation {
@@ -2626,13 +2736,10 @@ const typeDefs = gql`
         CALL db.index.fulltext.queryNodes('fullTextOnBacklogItemLabel', '*' + $query + '*')
         YIELD node AS result, score
 
-        // Only include undeleted BacklogItems
         WHERE result:BacklogItem AND result.deletedAt IS NULL
 
-        // Get current user
         MATCH (user:User {externalId: $jwt.sub})
 
-        // Get project and org linked to the item
         OPTIONAL MATCH (result)-[:ITEM_IN_PROJECT]->(project:Project)
         OPTIONAL MATCH (project)<-[:HAS_PROJECTS]-(org:Organization)
 
@@ -2644,7 +2751,7 @@ const typeDefs = gql`
 
         WITH DISTINCT result, score, project, org, user
 
-        WHERE project IS NOT NULL AND (
+        WHERE project IS NOT NULL AND project.deletedAt IS NULL AND (
           (org)<-[:OWNS]-(user) OR
           (project)<-[:CREATED_PROJECT]-(user) OR
           (user)<-[:HAS_ASSIGNED_USER]-(project)
@@ -2666,81 +2773,347 @@ const typeDefs = gql`
       @cypher(
         statement: """
         MATCH (p:Project {id: $projectId})<-[:HAS_PROJECTS]-(org:Organization)
-        MATCH (org)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-        WITH p, collect(DISTINCT riskLevel.name) AS levels,riskLevel.color AS color
+        MATCH (org)-[:HAS_RISK_LEVEL]->(r:RiskLevel)
+        WITH p, collect(DISTINCT {name: r.name, color: r.color,id:r.id}) AS levels,
+          datetime($start) AS ds, datetime($end) AS de
 
-        // --- COMPLETED ITEMS ---
-        OPTIONAL MATCH (p)<-[:ITEM_IN_PROJECT]-(b1:BacklogItem)-[:HAS_STATUS]->(s1:Status)
-        WHERE toLower(s1.defaultName) CONTAINS "completed"
-          AND b1.updatedAt IS NOT NULL
-          AND b1.deletedAt IS NULL
-          AND b1.updatedAt >= datetime($start)
-          AND b1.updatedAt <= datetime($end)
-        OPTIONAL MATCH (b1)-[:HAS_RISK_LEVEL]->(rl1:RiskLevel)
-        WITH p, levels,color,
-          rl1.name AS completedRiskLevel,
-          date(b1.updatedAt).month AS monthCompleted,
-          COUNT(b1) AS completedCount
-        ORDER BY completedRiskLevel, monthCompleted
-        WITH p, levels,color,
-          collect({riskLevel: completedRiskLevel, month: monthCompleted, count: completedCount}) AS completedData
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+          AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
 
-        // --- PENDING ITEMS ---
-        OPTIONAL MATCH (p)<-[:ITEM_IN_PROJECT]-(b2:BacklogItem)-[:HAS_STATUS]->(s2:Status)
-        WHERE NOT toLower(s2.defaultName) CONTAINS "completed"
-          AND b2.deletedAt IS NULL
-          AND b2.startDate IS NOT NULL
-          AND b2.startDate >= datetime($start)
-          AND b2.startDate <= datetime($end)
-        OPTIONAL MATCH (b2)-[:HAS_RISK_LEVEL]->(rl2:RiskLevel)
-        WITH levels, completedData,color,
-          rl2.name AS pendingRiskLevel,
-          date(b2.startDate).month AS monthPending,
-          COUNT(b2) AS pendingCount
-        ORDER BY pendingRiskLevel, monthPending
-        WITH levels, completedData,color,
-          collect({riskLevel: pendingRiskLevel, month: monthPending, count: pendingCount}) AS pendingData
+        WITH p, levels, ds, de, collect(DISTINCT rf)+collect(DISTINCT sf) AS files
+        UNWIND files AS file
+        WITH DISTINCT file, p, levels, ds, de
 
-        // --- COMBINED RESULT FOR COMPLETED AND PENDING-{RiskLevel} ---
-        WITH levels, completedData, pendingData,color
-        UNWIND levels AS level
-        WITH level, completedData, pendingData,color,
-          [m IN range(1, 12) |
-            CASE
-              WHEN size([r IN completedData WHERE r.riskLevel = level AND r.month = m]) > 0
-              THEN [r IN completedData WHERE r.riskLevel = level AND r.month = m][0].count
-              ELSE 0
-            END
-          ] AS completedCounts,
-          [m IN range(1, 12) |
-            CASE
-              WHEN size([r IN pendingData WHERE r.riskLevel = level AND r.month = m]) > 0
-              THEN [r IN pendingData WHERE r.riskLevel = level AND r.month = m][0].count
-              ELSE 0
-            END
-          ] AS pendingCounts
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+        WITH p, levels, ds, de, collect(DISTINCT n) AS nodes
+
+        UNWIND nodes AS n
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+        OPTIONAL MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
+
+        WITH levels, ds, de, bi,
+          (toLower(s.defaultName) CONTAINS 'completed') AS isCompleted,
+          rl.name AS rlName,
+          CASE WHEN bi.updatedAt IS NOT NULL AND bi.updatedAt >= ds AND bi.updatedAt <= de
+            THEN date(bi.updatedAt).month END AS cm,
+          CASE WHEN bi.startDate IS NOT NULL AND bi.startDate >= ds AND bi.startDate <= de
+            THEN date(bi.startDate).month END AS pm
+
+        WITH levels,
+          [x IN collect({risk: rlName, m: cm, c: isCompleted})
+            WHERE x.c AND x.risk IS NOT NULL AND x.m IS NOT NULL |
+            {risk: x.risk, m: x.m}] AS cList,
+          [x IN collect({risk: rlName, m: pm, c: isCompleted})
+            WHERE NOT x.c AND x.risk IS NOT NULL AND x.m IS NOT NULL |
+            {risk: x.risk, m: x.m}] AS pList
+
+        UNWIND levels AS lv
+        WITH lv, cList, pList,
+          [m IN range(1,12) | size([x IN cList WHERE x.risk = lv.name AND x.m = m])] AS completedCounts,
+          [m IN range(1,12) | size([x IN pList WHERE x.risk = lv.name AND x.m = m])]  AS pendingCounts
 
         WITH
-          collect({riskLevel: level, counts: completedCounts,color:color}) +
-          collect({riskLevel: "pending-" + level, counts: pendingCounts,color:color}) AS allResults
-        UNWIND allResults AS finalResult
+          [{riskLevel: lv.name, counts: completedCounts, color: lv.color,id:lv.id},
+          {riskLevel: 'pending-' + lv.name, counts: pendingCounts, color: lv.color,id:lv.id}] AS pair
+        UNWIND pair AS finalResult
         RETURN finalResult
         """
         columnName: "finalResult"
       )
 
-    countBacklogItemsGroupedByStatus(projectId: ID!): [statusCountResult!]!
+    countBacklogItemsGroupedByStatus(projectId: ID): [statusCountResult!]!
       @cypher(
         statement: """
-        MATCH (p:Project {id:$projectId})<-[:HAS_PROJECTS]-(org:Organization)
-        MATCH (org)-[:HAS_STATUS]->(s:Status)
-        OPTIONAL MATCH (p)<-[:ITEM_IN_PROJECT]-(b:BacklogItem)-[:HAS_STATUS]->(s)
-        WHERE b.deletedAt IS NULL
-        WITH s.name AS status, s.color AS color, COUNT(b) AS count
-        RETURN {status: status, color: color, count: count} AS result
+        WITH $projectId AS projectId, $jwt.sub AS userId
+        OPTIONAL MATCH (p:Project)
+        WHERE
+          (projectId IS NOT NULL AND p.id = projectId) OR
+          (
+            projectId IS NULL AND
+            (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId})
+          )
+        WITH DISTINCT p
+        WHERE p.deletedAt IS NULL
+
+        MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)-[:HAS_STATUS]->(s:Status)
+
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(fn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        WHERE file.deletedAt IS NULL
+          AND fn.deletedAt IS NULL
+          AND bi.deletedAt IS NULL
+          AND (bi)-[:ITEM_IN_PROJECT]->(p)
+
+        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(folder:Folder)-[:HAS_CHILD_FILE]->(nestedFile:File)-[:HAS_FLOW_NODE]->(nestedFn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(nestedBi:BacklogItem)
+        WHERE ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+          AND nestedFile.deletedAt IS NULL
+          AND nestedFn.deletedAt IS NULL
+          AND nestedBi.deletedAt IS NULL
+          AND (nestedBi)-[:ITEM_IN_PROJECT]->(p)
+
+        WITH s, collect(DISTINCT bi) + collect(DISTINCT nestedBi) AS allBacklogItems
+
+        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,
+             size([item IN allBacklogItems WHERE item IS NOT NULL AND (item)-[:HAS_STATUS]->(s)]) AS count
+
+        RETURN {status: status, color: statusColor, count: count, id: statusId} AS result
+        ORDER BY status
         """
         columnName: "result"
       )
+
+    getDueTask(
+      projectId: ID
+      limit: Int! = 5
+      offset: Int! = 0
+      filters: DueTaskFilter
+    ): [BacklogItem!]!
+      @cypher(
+        statement: """
+        CALL() {
+          WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+          WHERE projectId IS NOT NULL
+
+          MATCH (p:Project {id: projectId})
+          WHERE p.deletedAt IS NULL
+
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+          WHERE rf.deletedAt IS NULL
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+          WHERE sf.deletedAt IS NULL
+
+          WITH p, f,
+            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+            collect(DISTINCT path) AS paths
+          WHERE size(files) > 0
+            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+
+          UNWIND files AS file
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.endDate <= datetime()
+            AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+            AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+          WITH DISTINCT bi AS backlogItems
+          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(s.defaultName) <> 'completed'
+          RETURN backlogItems
+
+          UNION
+
+          WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+          WHERE projectId IS NULL
+
+          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(:User {externalId: userId})
+          WHERE p.deletedAt IS NULL
+
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+          WHERE rf.deletedAt IS NULL
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+          WHERE sf.deletedAt IS NULL
+
+          WITH p, f,
+            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+            collect(DISTINCT path) AS paths
+          WHERE size(files) > 0
+            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+
+          UNWIND files AS file
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.endDate <= datetime()
+            AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+            AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+          WITH DISTINCT bi AS backlogItems
+          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(s.defaultName) <> 'completed'
+          RETURN backlogItems
+        }
+
+        WITH DISTINCT backlogItems
+        RETURN backlogItems
+        ORDER BY backlogItems.endDate ASC, backlogItems.uid ASC
+        SKIP $offset
+        LIMIT $limit
+        """
+        columnName: "backlogItems"
+      )
+    dueTaskCount(projectId: ID, filters: DueTaskFilter): Int!
+      @cypher(
+        statement: """
+          CALL () {
+          WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+          WHERE projectId IS NOT NULL
+
+          MATCH (p:Project {id: projectId})
+          WHERE p.deletedAt IS NULL
+
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+          WHERE rf.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+          WHERE sf.deletedAt IS NULL
+          WITH p, f,
+            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+            collect(DISTINCT path) AS paths
+          WHERE size(files) > 0
+            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+
+          UNWIND files AS file
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.endDate <= datetime()
+            AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+            AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+          WITH DISTINCT bi AS backlogItems
+          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(s.defaultName) <> 'completed'
+          RETURN backlogItems
+
+          UNION
+
+          WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+          WHERE projectId IS NULL
+
+          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(:User {externalId: userId})
+          WHERE p.deletedAt IS NULL
+
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+          WHERE rf.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+          WHERE sf.deletedAt IS NULL
+          WITH p, f,
+            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+            collect(DISTINCT path) AS paths
+          WHERE size(files) > 0
+            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+
+          UNWIND files AS file
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.endDate <= datetime()
+            AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+            AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+          WITH DISTINCT bi AS backlogItems
+          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(s.defaultName) <> 'completed'
+          RETURN backlogItems
+        }
+
+        RETURN count(DISTINCT backlogItems) AS backlogItemsCount
+        """
+        columnName: "backlogItemsCount"
+      )
+
+    getComments(
+      limit: Int! = 5
+      offset: Int! = 0
+      projectId: ID
+      filters: CommentsFilter
+    ): [Comment!]!
+      @cypher(
+        statement: """
+        WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+        OPTIONAL MATCH (p:Project)
+        WHERE (projectId IS NOT NULL AND p.id = projectId)
+          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
+        WITH DISTINCT p, f
+        WHERE p.deletedAt IS NULL
+
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+
+        OPTIONAL MATCH path = (p)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+
+        WITH p,
+             coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+             f, collect(DISTINCT path) AS paths
+        WHERE size(files) > 0
+          AND (
+            size(paths) = 0
+            OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL))
+          )
+
+        UNWIND files AS file
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+          AND (coalesce(f.riskLevelIds,[]) = [] OR
+            EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+          AND (coalesce(f.assignedUserIds,[]) = [] OR
+            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+        WITH DISTINCT bi AS items, trim(coalesce(f.myMention, '')) AS mention
+        MATCH (items)-[:HAS_COMMENT]->(comments:Comment)
+        WHERE mention = '' OR toLower(comments.message) CONTAINS toLower(mention)
+
+        RETURN comments
+        ORDER BY comments.createdAt
+        SKIP $offset
+        LIMIT $limit
+        """
+        columnName: "comments"
+      )
+
+    commentsCount(projectId: ID, filters: CommentsFilter): Int!
+      @cypher(
+        statement: """
+        WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
+        OPTIONAL MATCH (p:Project)
+        WHERE (projectId IS NOT NULL AND p.id = projectId)
+          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
+        WITH DISTINCT p, f
+        WHERE p.deletedAt IS NULL
+
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
+        WHERE rf.deletedAt IS NULL
+
+        OPTIONAL MATCH path = (p)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL
+
+        WITH p,
+          coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
+          f, collect(DISTINCT path) AS paths
+        WHERE size(files) > 0
+          AND (
+            size(paths) = 0
+            OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL))
+          )
+
+        UNWIND files AS file
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+          AND (coalesce(f.riskLevelIds,[]) = [] OR
+            EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
+          AND (coalesce(f.assignedUserIds,[]) = [] OR
+            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
+
+        WITH DISTINCT bi AS items, trim(coalesce(f.myMention, '')) AS mention
+        MATCH (items)-[:HAS_COMMENT]->(comments:Comment)
+        WHERE mention = '' OR toLower(comments.message) CONTAINS toLower(mention)
+
+        RETURN COUNT(DISTINCT comments) AS commentsCount
+        """
+        columnName: "commentsCount"
+      )
+
     backlogItemCountByRiskLevel(
       projectId: ID!
       statusIds: [ID!]!
@@ -2748,14 +3121,21 @@ const typeDefs = gql`
       @cypher(
         statement: """
         MATCH (p:Project {id:$projectId})<-[:HAS_PROJECTS]-(org:Organization)
-        MATCH (org)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-        MATCH (org)-[:HAS_STATUS]->(s:Status)
-        WHERE s IS NOT NULL AND s.id IN $statusIds
-        OPTIONAL MATCH (p)<-[:ITEM_IN_PROJECT]-(b:BacklogItem)-[:HAS_RISK_LEVEL]->(riskLevel)
-        MATCH(b)-[:HAS_STATUS]->(s)
-        WHERE b.deletedAt IS NULL
-        WITH riskLevel.name AS riskLevelName, COUNT(DISTINCT b) AS count
-        RETURN { riskLevel: riskLevelName, count: count } AS riskLevelCounts
+        MATCH (org)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File) WHERE rf.deletedAt IS NULL
+        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
+        WHERE sf.deletedAt IS NULL AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+        WITH p, org, rl, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files
+        UNWIND [x IN files WHERE x IS NOT NULL] AS file WITH DISTINCT file, p, org, rl
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode) WHERE n.deletedAt IS NULL
+        WITH DISTINCT n, p, org, rl
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem) MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+        AND ( $statusIds IS NULL OR size($statusIds)=0 OR
+        EXISTS { MATCH (bi)-[:HAS_STATUS]->(s:Status)<-[:HAS_STATUS]-(org) WHERE s.id IN $statusIds } )
+        MATCH (bi)-[:HAS_RISK_LEVEL]->(rl)
+        WITH rl.name AS riskLevelName,rl.id AS riskId, COUNT(DISTINCT bi) AS count
+        RETURN { id: riskId, riskLevel: riskLevelName, count: count} AS riskLevelCounts
         """
         columnName: "riskLevelCounts"
       )
