@@ -13,6 +13,10 @@ const app = express();
 
 const httpServer = createServer(app);
 
+httpServer.keepAliveTimeout = 65_000;
+httpServer.headersTimeout = 66_000;
+
+
 // Middleware
 app.use(cookieParser());
 app.use(express.json());

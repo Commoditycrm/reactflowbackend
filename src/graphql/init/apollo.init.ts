@@ -34,24 +34,16 @@ export const initializeApolloServer = async (
     NeoConnection.getFeatures()
   );
 
-  // --- Subscriptions ON (always) with keepalive pings ---
   const wsServer = new WebSocketServer({
     server: httpServer,
     path: "/api/graphql",
-    // perf: disable per-message deflate in dev/local
     perMessageDeflate: false,
   });
-
-  // optional: close idle sockets behind a proxy
-  // wsServer.timeout = 30_000; // 30s TCP timeout hint (Node sets server.timeout for HTTP; harmless here)
 
   const serverCleanup = useServer(
     {
       schema,
-      // require client to send connectionInit within N ms
       connectionInitWaitTimeout: 5_000,
-      // send periodic keepalives so proxies don’t drop idle connections
-      // keepAlive: 12_000,
       context: async (ctx) => {
         const authorization = (ctx.connectionParams?.authorization ||
           ctx.connectionParams?.Authorization ||
