@@ -1315,6 +1315,13 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT, DISCONNECT]
       )
+    whatsappNotifications: WhatsappNotification!
+      @relationship(
+        type: "HAS_WS_NOTIFICATION"
+        direction: OUT
+        nestedOperations: [CREATE]
+        aggregate: false
+      )
     triggerLastModified: Boolean
       @populatedBy(
         callback: "updateOrgLastModified"
@@ -1345,6 +1352,34 @@ const typeDefs = gql`
     #     }
     #   ]
     # )
+  }
+
+  extend type Project {
+    whatsappNotifications: WhatsappNotification!
+      @relationship(
+        type: "HAS_WS_NOTIFICATION"
+        direction: OUT
+        nestedOperations: [CREATE]
+        aggregate: false
+      )
+  }
+
+  type WhatsappNotification {
+    enabled: Boolean! @default(value: false)
+    priorities: [RiskLevel!]!
+      @relationship(
+        type: "HAS_RISKLEVEL"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    project: Project!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
   }
 
   union FolderParent = Project | Folder
@@ -3120,19 +3155,28 @@ const typeDefs = gql`
     ): [RiskLevelItemCount!]!
       @cypher(
         statement: """
-        MATCH (p:Project {id:$projectId})<-[:HAS_PROJECTS]-(org:Organization)
+          WITH $projectId AS projectId,$statusIds AS statusIds
+        MATCH (p:Project {id: projectId})<-[:HAS_PROJECTS]-(org:Organization)
         MATCH (org)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
         OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File) WHERE rf.deletedAt IS NULL
         OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
         WHERE sf.deletedAt IS NULL AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
-        WITH p, org, rl, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files
-        UNWIND [x IN files WHERE x IS NOT NULL] AS file WITH DISTINCT file, p, org, rl
+        WITH p, org, rl, coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,statusIds
+        UNWIND [x IN files WHERE x IS NOT NULL] AS file
+        WITH DISTINCT file, p, org, rl,statusIds
         MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode) WHERE n.deletedAt IS NULL
-        WITH DISTINCT n, p, org, rl
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem) MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WITH DISTINCT n, p, org, rl,statusIds
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
-        AND ( $statusIds IS NULL OR size($statusIds)=0 OR
-        EXISTS { MATCH (bi)-[:HAS_STATUS]->(s:Status)<-[:HAS_STATUS]-(org) WHERE s.id IN $statusIds } )
+          AND (
+            statusIds IS NULL OR size(statusIds) = 0 OR
+            EXISTS {
+              MATCH (bi)-[:HAS_STATUS]->(s:Status)<-[:HAS_STATUS]-(org)
+              USING INDEX s:Status(id)
+              WHERE s.id IN statusIds
+            }
+          )
         MATCH (bi)-[:HAS_RISK_LEVEL]->(rl)
         WITH rl.name AS riskLevelName,rl.id AS riskId, COUNT(DISTINCT bi) AS count
         RETURN { id: riskId, riskLevel: riskLevelName, count: count} AS riskLevelCounts
