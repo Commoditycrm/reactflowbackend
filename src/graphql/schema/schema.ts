@@ -1168,49 +1168,57 @@ const typeDefs = gql`
         WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
         WITH this, f, me, coalesce(f.table, f.tableType) AS tab
 
-        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
-        OPTIONAL MATCH p=(this)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
-          AND ALL(n IN nodes(p) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+        CALL {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        WITH this, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files, tab, me, f
-        UNWIND [x IN files WHERE x IS NOT NULL] AS file
-        WITH DISTINCT this, file, tab, me, f
+          UNION
 
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE n.deletedAt IS NULL
-        WITH DISTINCT this, n, tab, me, f
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..6]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
+        WITH DISTINCT n, this, f, me, tab
 
-        OPTIONAL MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        MATCH (bi)-[:ITEM_IN_PROJECT]->(this)
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
+
           AND (
-            coalesce(f.assignedUserIds,[])=[]
-            OR
-            (
-              EXISTS {
-                MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
-                WHERE u.id IN [x IN f.assignedUserIds WHERE x <> "UNASSIGNED"]
-              }
-            OR
-            (
-              "UNASSIGNED" IN f.assignedUserIds AND NOT EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User) })
+            size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+              OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
             )
           )
-          AND (coalesce(f.typeIds,[])=[] OR
-            EXISTS { MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType) WHERE t.id IN f.typeIds })
-          AND (coalesce(f.statusIds,[])=[] OR
-            EXISTS { MATCH (bi)-[:HAS_STATUS]->(st:Status) WHERE st.id IN f.statusIds })
-          AND (coalesce(f.sprintIds,[])=[] OR
-            EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sp:Sprint) WHERE sp.id IN f.sprintIds })
-          AND (coalesce(f.riskLevelIds,[])=[] OR
-            EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
-          AND (coalesce(f.titleContains,[])=[] OR
-            any(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q)))
+          AND (
+            size(coalesce(f.typeIds,[]))=0
+            OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+          )
+          AND (
+            size(coalesce(f.statusIds,[]))=0
+            OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+          )
+          AND (
+            size(coalesce(f.sprintIds,[]))=0
+            OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+          )
+          AND (
+            size(coalesce(f.riskLevelIds,[]))=0
+            OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+          )
+          AND (
+            size(coalesce(f.titleContains,[]))=0
+            OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
 
-        WITH bi, tab, me,
-          (EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) }) AS isMine,
+        WITH DISTINCT bi, tab, me,
+          (
+            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
+          ) AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1221,7 +1229,7 @@ const typeDefs = gql`
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
 
-        RETURN DISTINCT bi AS backlogItems
+        RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
         SKIP $offset LIMIT $limit
         """
@@ -1233,46 +1241,56 @@ const typeDefs = gql`
         WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
         WITH this, f, me, coalesce(f.table, f.tableType) AS tab
 
-        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
+        CALL(this) {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        OPTIONAL MATCH p=(this)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
-          AND ALL(n IN nodes(p) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+          UNION
 
-        WITH this, coalesce(collect(DISTINCT rf),[])+coalesce(collect(DISTINCT sf),[]) AS files, tab, me, f
-        UNWIND [x IN files WHERE x IS NOT NULL] AS file
-        WITH DISTINCT this, file, tab, me, f
-
-        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE n.deletedAt IS NULL
-        WITH DISTINCT this, n, tab, me, f
-
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        MATCH (bi)-[:ITEM_IN_PROJECT]->(this)
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+           AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
+        WITH DISTINCT n, this, f, me, tab
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
+
           AND (
-            coalesce(f.assignedUserIds,[])=[]
-            OR
-            (
-              EXISTS {
-                MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
-                WHERE u.id IN [x IN f.assignedUserIds WHERE x <> "UNASSIGNED"]
-              }
-            OR
-            (
-              "UNASSIGNED" IN f.assignedUserIds AND NOT EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User) })
+            size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+              OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
             )
           )
-          AND (coalesce(f.typeIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType) WHERE t.id IN f.typeIds })
-          AND (coalesce(f.statusIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_STATUS]->(st:Status) WHERE st.id IN f.statusIds })
-          AND (coalesce(f.sprintIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sp:Sprint) WHERE sp.id IN f.sprintIds })
-          AND (coalesce(f.riskLevelIds,[])=[] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
-          AND (coalesce(f.titleContains,[])=[] OR any(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q)))
-        WITH DISTINCT bi , me ,tab
-        WITH  bi, tab, me,
-          (EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } OR
-          EXISTS { MATCH (:User {externalId: me})-[:CREATED_ITEM]->(bi) }) AS isMine,
+          AND (
+            size(coalesce(f.typeIds,[]))=0
+            OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+          )
+          AND (
+            size(coalesce(f.statusIds,[]))=0
+            OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+          )
+          AND (
+            size(coalesce(f.sprintIds,[]))=0
+            OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+          )
+          AND (
+            size(coalesce(f.riskLevelIds,[]))=0
+            OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+          )
+          AND (
+            size(coalesce(f.titleContains,[]))=0
+            OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
+
+        WITH DISTINCT bi, tab, me,
+          (
+            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
+          ) AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1283,7 +1301,7 @@ const typeDefs = gql`
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
 
-        RETURN count(bi) AS backlogItemsCount
+        RETURN count(DISTINCT bi) AS backlogItemsCount
         """
         columnName: "backlogItemsCount"
       )
@@ -3155,7 +3173,7 @@ const typeDefs = gql`
     ): [RiskLevelItemCount!]!
       @cypher(
         statement: """
-          WITH $projectId AS projectId,$statusIds AS statusIds
+        WITH $projectId AS projectId,$statusIds AS statusIds
         MATCH (p:Project {id: projectId})<-[:HAS_PROJECTS]-(org:Organization)
         MATCH (org)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
         OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File) WHERE rf.deletedAt IS NULL
