@@ -3086,26 +3086,24 @@ const typeDefs = gql`
         WHERE (projectId IS NOT NULL AND p.id = projectId)
           OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
         WITH DISTINCT p, f
-        WHERE p.deletedAt IS NULL
+        WHERE p.deletedAt IS NULL AND p IS NOT NULL
 
-        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
+        CALL(p) {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        OPTIONAL MATCH path = (p)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
+          UNION
 
-        WITH p,
-             coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-             f, collect(DISTINCT path) AS paths
-        WHERE size(files) > 0
-          AND (
-            size(paths) = 0
-            OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL))
-          )
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
 
-        UNWIND files AS file
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+        WITH DISTINCT n,p,f
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
           AND (coalesce(f.riskLevelIds,[]) = [] OR
             EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
@@ -3132,26 +3130,23 @@ const typeDefs = gql`
         WHERE (projectId IS NOT NULL AND p.id = projectId)
           OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
         WITH DISTINCT p, f
-        WHERE p.deletedAt IS NULL
+        WHERE p.deletedAt IS NULL AND p IS NOT NULL
 
-        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
+        CALL(p) {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        OPTIONAL MATCH path = (p)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
+          UNION
 
-        WITH p,
-          coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-          f, collect(DISTINCT path) AS paths
-        WHERE size(files) > 0
-          AND (
-            size(paths) = 0
-            OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL))
-          )
-
-        UNWIND files AS file
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
+        WITH DISTINCT n,p,f
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
           AND (coalesce(f.riskLevelIds,[]) = [] OR
             EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
