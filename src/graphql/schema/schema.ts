@@ -1168,7 +1168,7 @@ const typeDefs = gql`
         WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
         WITH this, f, me, coalesce(f.table, f.tableType) AS tab
 
-        CALL {
+        CALL(this) {
           WITH this
           MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
@@ -1176,7 +1176,7 @@ const typeDefs = gql`
 
           UNION
 
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..6]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
           RETURN DISTINCT n
@@ -1249,7 +1249,7 @@ const typeDefs = gql`
 
           UNION
 
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
           RETURN DISTINCT n
@@ -2896,25 +2896,25 @@ const typeDefs = gql`
         WHERE p.deletedAt IS NULL
 
         MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)-[:HAS_STATUS]->(s:Status)
+        CALL(p) {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(fn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        WHERE file.deletedAt IS NULL
-          AND fn.deletedAt IS NULL
-          AND bi.deletedAt IS NULL
-          AND (bi)-[:ITEM_IN_PROJECT]->(p)
+          UNION
 
-        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(folder:Folder)-[:HAS_CHILD_FILE]->(nestedFile:File)-[:HAS_FLOW_NODE]->(nestedFn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(nestedBi:BacklogItem)
-        WHERE ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
-          AND nestedFile.deletedAt IS NULL
-          AND nestedFn.deletedAt IS NULL
-          AND nestedBi.deletedAt IS NULL
-          AND (nestedBi)-[:ITEM_IN_PROJECT]->(p)
-
-        WITH s, collect(DISTINCT bi) + collect(DISTINCT nestedBi) AS allBacklogItems
-
-        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,
-             size([item IN allBacklogItems WHERE item IS NOT NULL AND (item)-[:HAS_STATUS]->(s)]) AS count
-
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
+        WITH DISTINCT n, p,s
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+        AND (bi)-[:HAS_STATUS]->(s)
+        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,COUNT(bi) AS count
+          
         RETURN {status: status, color: statusColor, count: count, id: statusId} AS result
         ORDER BY status
         """
