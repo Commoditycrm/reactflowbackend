@@ -3214,7 +3214,22 @@ const typeDefs = gql`
     ): [ItemCountResult!]!
       @cypher(
         statement: """
-        MATCH (p:Project {id: $projectId})<-[:ITEM_IN_PROJECT]-(b:BacklogItem)
+        MATCH (p:Project {id: $projectId})
+        CALL(p) {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n AS nodes
+
+          UNION
+
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n AS nodes
+        }
+        WITH DISTINCT nodes , p 
+        MATCH(nodes)-[:HAS_CHILD_ITEM*1..2]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE b.endDate IS NOT NULL AND b.updatedAt IS NOT NULL
           AND b.deletedAt IS NULL
           AND b.endDate >= datetime($start)
