@@ -67,6 +67,7 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
       @populatedBy(callback: "userNameExtractor", operations: [CREATE])
+    phoneNumber: String
     externalId: String!
       @unique
       @populatedBy(callback: "externalIdExtractor", operations: [CREATE])
@@ -1333,13 +1334,6 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT, DISCONNECT]
       )
-    whatsappNotifications: WhatsappNotification!
-      @relationship(
-        type: "HAS_WS_NOTIFICATION"
-        direction: OUT
-        nestedOperations: [CREATE]
-        aggregate: false
-      )
     triggerLastModified: Boolean
       @populatedBy(
         callback: "updateOrgLastModified"
@@ -1393,8 +1387,8 @@ const typeDefs = gql`
       )
     project: Project!
       @relationship(
-        type: "HAS_RESOURCE"
-        direction: OUT
+        type: "HAS_WS_NOTIFICATION"
+        direction: IN
         nestedOperations: [CONNECT]
         aggregate: false
       )
@@ -2013,48 +2007,7 @@ const typeDefs = gql`
   type BacklogItem implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
-        {
-          operations: [READ, AGGREGATE]
-          where: {
-            node: {
-              AND: [
-                { deletedAt: null }
-                { project: { deletedAt: null } }
-                {
-                  OR: [
-                    {
-                      parent: {
-                        FlowNode: {
-                          deletedAt: null
-                          file: {
-                            deletedAt: null
-                            # parent: { Folder: { deletedAt: null } }
-                          }
-                        }
-                      }
-                    }
-                    {
-                      parent: {
-                        BacklogItem: {
-                          deletedAt: null
-                          parent: {
-                            FlowNode: {
-                              deletedAt: null
-                              file: {
-                                deletedAt: null
-                                # parent: { Folder: { deletedAt: null } }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-        }
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
 
       validate: [
@@ -2583,6 +2536,8 @@ const typeDefs = gql`
 
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
+    updateUserDetail(name: String!, phoneNumber: String!): [User!]!
+    updatePhoneNumber(phoneNumber: String!): Boolean!
     assignUserToProject(userId: ID!, projectId: ID!): Boolean!
     assignUserToBacklogItem(userId: ID!, backlogItemId: ID!): Boolean!
     createBacklogItemWithUID(
@@ -2757,23 +2712,42 @@ const typeDefs = gql`
     ): [BacklogItem!]!
       @cypher(
         statement: """
-        MATCH (user:User)
-        WHERE user.externalId = $jwt.sub
-        MATCH (result:BacklogItem)
-        WHERE result.uid = toInteger($query) AND result.deletedAt IS NULL
-        MATCH (result)-[:ITEM_IN_PROJECT]->(project:Project)
-        OPTIONAL MATCH (project)<-[:HAS_PROJECTS]-(org:Organization)
-        OPTIONAL MATCH (org)<-[:OWNS]-(user)
-        OPTIONAL MATCH (project)<-[:CREATED_PROJECT]-(user)
-        OPTIONAL MATCH (project)-[:HAS_ASSIGNED_USER]->(user)
-        WITH DISTINCT result, project, org, user
-        WHERE project IS NOT NULL AND (
-          (org)<-[:OWNS]-(user) OR
-          (project)<-[:CREATED_PROJECT]-(user) OR
-          (project)-[:HAS_ASSIGNED_USER]->(user)
-        )
+        MATCH (user:User { externalId: $jwt.sub })
+        WITH user, toInteger($query) AS q
+        CALL {
+          WITH user
+          MATCH (project:Project)
+          WHERE project.deletedAt IS NULL
+            AND (
+              EXISTS { MATCH (project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(user) } OR
+              EXISTS { MATCH (project)<-[:CREATED_PROJECT]-(user) } OR
+              EXISTS { MATCH (project)-[:HAS_ASSIGNED_USER]->(user) }
+            )
+          RETURN DISTINCT project
+        }
 
-        RETURN result
+        CALL (project) {
+          WITH project
+          MATCH (project)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
+
+          UNION
+
+          MATCH path=(project)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
+
+        WITH DISTINCT project, n, q
+
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+        AND EXISTS { MATCH (bi)-[:ITEM_IN_PROJECT]->(project) }
+        AND (q IS NOT NULL AND bi.uid = q)
+
+        RETURN DISTINCT bi AS result
         SKIP $offset
         LIMIT $limit
         """
@@ -2786,34 +2760,48 @@ const typeDefs = gql`
     ): [BacklogItem!]!
       @cypher(
         statement: """
-        CALL db.index.fulltext.queryNodes('fullTextOnBacklogItemLabel', '*' + $query + '*')
-        YIELD node AS result, score
+        MATCH (user:User { externalId: $jwt.sub })
+        CALL {
+          WITH user
+          MATCH (p:Project)
+          WHERE p.deletedAt IS NULL
+            AND (
+              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(user) } OR
+              EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) } OR
+              EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+            )
+          RETURN collect(p) AS projects
+        }
+        CALL {
+          WITH $query AS q
+          CALL db.index.fulltext.queryNodes('fullTextOnBacklogItemLabel', '*' + q + '*')
+          YIELD node, score
+          WHERE node:BacklogItem AND node.deletedAt IS NULL
+          RETURN node AS bi, score
+        }
 
-        WHERE result:BacklogItem AND result.deletedAt IS NULL
+        WITH projects, bi, score
+        WHERE EXISTS {
+          MATCH (bi)-[:ITEM_IN_PROJECT]->(p:Project)
+          WHERE p IN projects
 
-        MATCH (user:User {externalId: $jwt.sub})
-
-        OPTIONAL MATCH (result)-[:ITEM_IN_PROJECT]->(project:Project)
-        OPTIONAL MATCH (project)<-[:HAS_PROJECTS]-(org:Organization)
-
-        OPTIONAL MATCH (org)<-[:OWNS]-(user)
-
-        OPTIONAL MATCH (project)<-[:CREATED_PROJECT]-(user)
-
-        OPTIONAL MATCH (user)<-[:HAS_ASSIGNED_USER]-(project)
-
-        WITH DISTINCT result, score, project, org, user
-
-        WHERE project IS NOT NULL AND project.deletedAt IS NULL AND (
-          (org)<-[:OWNS]-(user) OR
-          (project)<-[:CREATED_PROJECT]-(user) OR
-          (user)<-[:HAS_ASSIGNED_USER]-(project)
-        )
-
-        RETURN result
-        ORDER BY score DESC
+          AND (
+            EXISTS {
+              MATCH (p)-[:HAS_CHILD_FILE]->(:File)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi)
+            }
+            OR EXISTS {
+              MATCH (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)
+                -[:HAS_CHILD_FILE]->(:File)
+                -[:HAS_FLOW_NODE]->(:FlowNode)
+                -[:HAS_CHILD_ITEM*1..2]->(bi)
+            }
+          )
+        }
+        WITH bi, max(score) AS bestScore
+        ORDER BY bestScore DESC
         SKIP $offset
         LIMIT $limit
+        RETURN bi AS result
         """
         columnName: "result"
       )
@@ -2896,25 +2884,25 @@ const typeDefs = gql`
         WHERE p.deletedAt IS NULL
 
         MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)-[:HAS_STATUS]->(s:Status)
-        CALL(p) {
-          WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
 
-          UNION
+        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(fn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        WHERE file.deletedAt IS NULL
+          AND fn.deletedAt IS NULL
+          AND bi.deletedAt IS NULL
+          AND (bi)-[:ITEM_IN_PROJECT]->(p)
 
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
-        }
-        WITH DISTINCT n, p,s
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE bi.deletedAt IS NULL
-        AND (bi)-[:HAS_STATUS]->(s)
-        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,COUNT(bi) AS count
-          
+        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(folder:Folder)-[:HAS_CHILD_FILE]->(nestedFile:File)-[:HAS_FLOW_NODE]->(nestedFn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(nestedBi:BacklogItem)
+        WHERE ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+          AND nestedFile.deletedAt IS NULL
+          AND nestedFn.deletedAt IS NULL
+          AND nestedBi.deletedAt IS NULL
+          AND (nestedBi)-[:ITEM_IN_PROJECT]->(p)
+
+        WITH s, collect(DISTINCT bi) + collect(DISTINCT nestedBi) AS allBacklogItems
+
+        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,
+          size([item IN allBacklogItems WHERE item IS NOT NULL AND (item)-[:HAS_STATUS]->(s)]) AS count
+
         RETURN {status: status, color: statusColor, count: count, id: statusId} AS result
         ORDER BY status
         """
@@ -3228,7 +3216,7 @@ const typeDefs = gql`
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
           RETURN DISTINCT n AS nodes
         }
-        WITH DISTINCT nodes , p 
+        WITH DISTINCT nodes , p
         MATCH(nodes)-[:HAS_CHILD_ITEM*1..2]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE b.endDate IS NOT NULL AND b.updatedAt IS NOT NULL
           AND b.deletedAt IS NULL

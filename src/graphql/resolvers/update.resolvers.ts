@@ -6,7 +6,9 @@ import {
 } from "../../database/constants";
 import logger from "../../logger";
 import { OGMConnection } from "../init/ogm.init";
-import { UserRole } from "../../@types/ogm.types";
+import { User, UserRole } from "../../@types/ogm.types";
+import { ApolloServerErrorCode } from "@apollo/server/errors";
+import { getFirebaseAdminAuth } from "../firebase/admin";
 
 const updateUserRole = async (
   _source: Record<string, any>,
@@ -176,8 +178,99 @@ const assignUserToBacklogItem = async (
   }
 };
 
+
+const updateUserDetail = async (
+  _source: Record<string, any>,
+  { name, phoneNumber }: Record<string, any>,
+  _context: Record<string, any>
+): Promise<User[]> => {
+  const User = (await OGMConnection.getInstance()).model("User");
+  const externalId = _context?.jwt?.sub;
+
+  try {
+    await getFirebaseAdminAuth().auth().updateUser(externalId, {
+      displayName: name,
+      phoneNumber,
+    });
+    const result = await User.update<{ users: User[] }>({
+      where: {
+        externalId,
+      },
+      update: {
+        name,
+        phoneNumber,
+      },
+      context: _context,
+    });
+
+    const updated = result?.users;
+    if (!updated[0]) {
+      throw new GraphQLError("User not found.", {
+        extensions: { code: "FORBIDDEN" },
+      });
+    }
+
+    logger?.info(
+      `user detail updated for uid=${externalId}, user=${updated[0]?.email}`
+    );
+    return updated ?? [];
+  } catch (error) {
+    logger?.error(`Failed to update user detail for uid=${externalId}: ${error}`);
+    if (error instanceof GraphQLError) throw error;
+    throw new GraphQLError("Failed to update user detail.", {
+      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+    });
+  }
+};
+
+const updatePhoneNumber = async (
+  _source: Record<string, any>,
+  { phoneNumber }: Record<string, any>,
+  _context: Record<string, any>
+): Promise<Boolean> => {
+  const User = (await OGMConnection.getInstance()).model("User");
+  const externalId = _context?.jwt?.sub;
+
+  try {
+    await getFirebaseAdminAuth().auth().updateUser(externalId, {
+      phoneNumber,
+    });
+    const result = await User.update<{ users: User[] }>({
+      where: {
+        externalId,
+      },
+      update: {
+        phoneNumber,
+      },
+      context: _context,
+    });
+
+    const updated = result?.users;
+    if (!updated[0]) {
+      throw new GraphQLError("User not found.", {
+        extensions: { code: "FORBIDDEN" },
+      });
+    }
+
+    logger?.info(
+      `phoneNumber updated for uid=${externalId}, user=${updated[0]?.email}`
+    );
+    return true;
+  } catch (error) {
+    logger?.error(
+      `Failed to update phoneNumber for uid=${externalId}: ${error}`
+    );
+    if (error instanceof GraphQLError) throw error;
+    throw new GraphQLError("Failed to update phoneNumber.", {
+      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+    });
+  }
+};
+
 export const updateOperationMutations = {
   updateUserRole,
   assignUserToProject,
   assignUserToBacklogItem,
+  updateUserDetail,
+  updatePhoneNumber
 };
