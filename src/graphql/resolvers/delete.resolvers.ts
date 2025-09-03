@@ -21,51 +21,131 @@ const deleteUser = async (
 ) => {
   const currentUserId = _context?.jwt?.sub;
 
-  // Initialize OGM and Neo4j connections
+  if (!currentUserId) {
+    throw new GraphQLError("Authentication required.", {
+      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+    });
+  }
+
+  // Initialize OGM connection once
   const User: Model = (await OGMConnection.getInstance()).model("User");
 
   try {
-    const [currentUser] = await User.find<User[]>({
-      where: { externalId: currentUserId },
-    });
+    // Single query to get both users with proper error handling
+    const [currentUserResult, targetUserResult] = await Promise.allSettled([
+      User.find<User[]>({
+        where: { externalId: currentUserId },
+        options: { limit: 1 },
+      }),
+      User.find<User[]>({ where: { id: userId }, options: { limit: 1 } }),
+    ]);
 
-    // Authorization check
-    if (
-      !currentUser ||
-      !["SYSTEM_ADMIN", "COMPANY_ADMIN"].includes(currentUser.role)
-    ) {
-      logger?.error("Unauthorized access attempt by user", { currentUserId });
+    // Handle current user query failure
+    if (currentUserResult.status === "rejected") {
+      logger?.error("Failed to fetch current user", {
+        currentUserId,
+        error: currentUserResult.reason,
+      });
+      throw new GraphQLError("Authentication failed.", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+
+    if (targetUserResult.status === "rejected") {
+      logger?.error("Failed to fetch target user", {
+        userId,
+        error: targetUserResult.reason,
+      });
+      throw new GraphQLError("Unable to process user deletion request.", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+
+    const [currentUser] = currentUserResult.value;
+    const [targetUser] = targetUserResult.value;
+
+    if (!currentUser) {
+      logger?.error("Current user not found in database", { currentUserId });
+      throw new GraphQLError("Authentication failed.", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+
+    if (!["SYSTEM_ADMIN", "COMPANY_ADMIN"].includes(currentUser.role)) {
+      logger?.error("Unauthorized deletion attempt", {
+        currentUserId,
+        currentUserRole: currentUser.role,
+        targetUserId: userId,
+      });
       throw new GraphQLError("Unauthorized access. Insufficient permissions.", {
         extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
       });
     }
-    const [getUser] = await User.find<User[]>({
-      where: {
-        id: userId,
-      },
-    });
 
-    if (!getUser) {
+    if (!targetUser) {
       throw new GraphQLError("User not found.", {
-        extensions: {
-          code: ApolloServerErrorCode.BAD_REQUEST,
-        },
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
       });
     }
-    const result = await User.update({
-      where: { externalId: userId },
-      update: { name: "Deleted Account" },
+
+    if (currentUser.id === targetUser.id) {
+      throw new GraphQLError("Cannot delete your own account.", {
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+      });
+    }
+
+    const [updateResult, _firebaseResult] = await Promise.allSettled([
+      User.update({
+        where: { id: userId },
+        update: {
+          name: "Deleted Account",
+          email: `Deleted Account_${targetUser?.email}`,
+        },
+      }),
+      getFirebaseAdminAuth().auth().deleteUser(targetUser.externalId),
+    ]);
+
+    if (updateResult.status === "rejected") {
+      logger?.error("Failed to update user in database", {
+        userId,
+        error: updateResult.reason,
+      });
+      throw new GraphQLError("Failed to delete user account.", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+
+    if (_firebaseResult.status === "rejected") {
+      logger?.warn("Failed to delete user from Firebase (user may not exist)", {
+        userId,
+        externalId: targetUser.externalId,
+        error: _firebaseResult.reason,
+      });
+    }
+
+    logger?.info("User successfully deleted", {
+      deletedUserId: userId,
+      deletedBy: currentUserId,
     });
-    await getFirebaseAdminAuth().auth().deleteUser(userId);
-    const users = result?.users ?? [];
-    return users;
+
+    return updateResult.value?.users ?? [];
   } catch (error) {
-    logger?.error(error);
+    // Enhanced error logging
+    logger?.error("Error in deleteUser operation", {
+      userId,
+      currentUserId,
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    // Re-throw GraphQLErrors as-is
     if (error instanceof GraphQLError) {
       throw error;
     }
+
+    // Generic fallback error
     throw new GraphQLError(
-      "Unable to delete user account or account not found.",
+      "Unable to delete user account. Please try again later.",
       { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } }
     );
   }
