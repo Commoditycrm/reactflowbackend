@@ -178,7 +178,6 @@ const assignUserToBacklogItem = async (
   }
 };
 
-
 const updateUserDetail = async (
   _source: Record<string, any>,
   { name, phoneNumber }: Record<string, any>,
@@ -188,17 +187,33 @@ const updateUserDetail = async (
   const externalId = _context?.jwt?.sub;
 
   try {
-    await getFirebaseAdminAuth().auth().updateUser(externalId, {
-      displayName: name,
-      phoneNumber,
-    });
+    const currentUser = await getFirebaseAdminAuth().auth().getUser(externalId);
+
+    const payload: any = { displayName: name };
+
+    if (phoneNumber && currentUser.phoneNumber !== phoneNumber) {
+      payload.phoneNumber = phoneNumber;
+    }
+
+    try {
+      await getFirebaseAdminAuth().auth().updateUser(externalId, payload);
+    } catch (error: any) {
+      if (error.code === "auth/phone-number-already-exists") {
+        await getFirebaseAdminAuth().auth().updateUser(externalId, {
+          displayName: name,
+        });
+      } else {
+        throw error;
+      }
+    }
+
     const result = await User.update<{ users: User[] }>({
-      where: {
-        externalId,
-      },
+      where: { externalId },
       update: {
         name,
-        phoneNumber,
+        ...(phoneNumber && currentUser.phoneNumber !== phoneNumber
+          ? { phoneNumber }
+          : {}),
       },
       context: _context,
     });
@@ -214,11 +229,29 @@ const updateUserDetail = async (
       `user detail updated for uid=${externalId}, user=${updated[0]?.email}`
     );
     return updated ?? [];
-  } catch (error) {
-    logger?.error(`Failed to update user detail for uid=${externalId}: ${error}`);
-    if (error instanceof GraphQLError) throw error;
-    throw new GraphQLError("Failed to update user detail.", {
-      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+  } catch (err: unknown) {
+    const logMsg =
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    logger?.error(
+      `Failed to update user detail for uid=${externalId}: ${logMsg}`
+    );
+    if (err instanceof GraphQLError) throw err;
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === "string"
+        ? err
+        : "Unexpected server error.";
+
+    throw new GraphQLError(message, {
+      originalError: err instanceof Error ? err : undefined,
+      extensions: {
+        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+        ...(typeof (err as any)?.code === "string" && {
+          firebaseCode: (err as any).code,
+        }),
+        detail: logMsg,
+      },
     });
   }
 };
@@ -272,5 +305,5 @@ export const updateOperationMutations = {
   assignUserToProject,
   assignUserToBacklogItem,
   updateUserDetail,
-  updatePhoneNumber
+  updatePhoneNumber,
 };
