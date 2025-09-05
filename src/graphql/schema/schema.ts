@@ -68,6 +68,9 @@ const typeDefs = gql`
     name: String!
       @populatedBy(callback: "userNameExtractor", operations: [CREATE])
     phoneNumber: String
+      @unique
+      @populatedBy(callback: "phoneNumberExtractor", operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
     externalId: String!
       @unique
       @populatedBy(callback: "externalIdExtractor", operations: [CREATE])
@@ -2558,6 +2561,7 @@ const typeDefs = gql`
       email: String!
       name: String!
       externalId: String!
+      phoneNumber: String
     ): [User!]!
       @cypher(
         statement: """
@@ -2566,7 +2570,13 @@ const typeDefs = gql`
         OPTIONAL MATCH (invite)-[:INVITE_TO_PROJECT]->(project:Project)
 
         MERGE (user:User {email: $email})
-          ON CREATE SET user.name = $name, user.createdAt = datetime(),user.externalId = $externalId,user.role='SUPER_USER',user.id=randomUUID(),user.showHelpText = true
+          ON CREATE SET user.name = $name,
+            user.createdAt = datetime(),
+            user.externalId = $externalId,
+            user.role='SUPER_USER',
+            user.id=randomUUID(),
+            user.showHelpText = true,
+            user.phoneNumber = $phoneNumber
 
         MERGE (user)-[:MEMBER_OF]->(org)
         FOREACH (p IN CASE WHEN project IS NULL THEN [] ELSE [project] END |

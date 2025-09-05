@@ -23,6 +23,7 @@ import {
   defaultKeySetter,
   uniqueKeySetter,
   defaultNameSetter,
+  phoneNumberExtractor,
 } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
@@ -31,9 +32,9 @@ import { updateOperationMutations } from "./../resolvers/update.resolvers";
 
 export type IResolvers =
   | {
-    Mutation?: Record<string, any>;
-    Query?: Record<string, any>;
-  }
+      Mutation?: Record<string, any>;
+      Query?: Record<string, any>;
+    }
   | undefined;
 
 export class NeoConnection {
@@ -63,7 +64,7 @@ export class NeoConnection {
   }
   async init(): Promise<GraphQLSchema> {
     const neoSchema = await this.neo.getSchema();
-    if (!isProduction() && process.env.INIT_SCHEMA === 'true') {
+    if (!isProduction() && process.env.INIT_SCHEMA === "true") {
       await this.neo.checkNeo4jCompat();
       await this.neo.assertIndexesAndConstraints();
       await this.neo.assertIndexesAndConstraints({ options: { create: true } });
@@ -138,6 +139,7 @@ export class NeoConnection {
           externalIdExtractor,
           userNameExtractor,
           emailExtractor,
+          phoneNumberExtractor,
           counterStarter,
           userRoleSetter,
           topLevelParentItem,

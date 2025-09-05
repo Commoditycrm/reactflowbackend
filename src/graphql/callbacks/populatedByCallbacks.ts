@@ -19,6 +19,14 @@ export const userNameExtractor = (
   return _context?.authorization?.jwt?.name;
 };
 
+export const phoneNumberExtractor = (
+  _parent: Record<string, any>,
+  _args: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  return _context?.authorization?.jwt?.phone_number;
+};
+
 export const emailExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
