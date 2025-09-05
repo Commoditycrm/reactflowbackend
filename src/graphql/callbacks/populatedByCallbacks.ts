@@ -161,3 +161,11 @@ export const uniqueKeySetter = (
     .toLowerCase();
   return `${orgId}-${name}`;
 };
+
+export const messageCounterSetter = (
+  _parent: Record<string, any>,
+  _args: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  return 0;
+};

@@ -24,6 +24,7 @@ import {
   uniqueKeySetter,
   defaultNameSetter,
   phoneNumberExtractor,
+  messageCounterSetter,
 } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
@@ -151,6 +152,7 @@ export class NeoConnection {
           defaultKeySetter,
           uniqueKeySetter,
           defaultNameSetter,
+          messageCounterSetter
         },
       },
       subscriptions: true,

@@ -448,6 +448,8 @@ const typeDefs = gql`
         nestedOperations: [CREATE]
       )
       @settable(onCreate: true, onUpdate: false)
+    messageCounter: Int!
+      @populatedBy(callback: "messageCounterSetter", operations: [CREATE])
     status: [Status!]!
       @relationship(
         type: "HAS_STATUS"
@@ -1385,7 +1387,7 @@ const typeDefs = gql`
       @relationship(
         type: "HAS_RISKLEVEL"
         direction: OUT
-        nestedOperations: [CONNECT]
+        nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
       )
     project: Project!
