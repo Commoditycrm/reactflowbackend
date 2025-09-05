@@ -400,8 +400,19 @@ const typeDefs = gql`
       ]
       validate: [
         {
-          operations: [UPDATE, CREATE]
+          operations: [CREATE]
           where: { node: { createdBy: { externalId: "$jwt.sub" } } }
+        }
+        {
+          operations: [UPDATE]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                { memberUsers_SINGLE: { externalId: "$jwt.sub" } }
+              ]
+            }
+          }
         }
         {
           operations: [READ]
@@ -438,8 +449,25 @@ const typeDefs = gql`
         """
         columnName: "estimatedBytes"
       )
-    name: String! @unique
-    description: String #TODO: server side data validation ?
+    name: String!
+      @unique
+      @authorization(
+        validate: [
+          {
+            operations: [UPDATE]
+            where: { node: { createdBy: { externalId: "$jwt.sub" } } }
+          }
+        ]
+      )
+    description: String
+      @authorization(
+        validate: [
+          {
+            operations: [UPDATE]
+            where: { node: { createdBy: { externalId: "$jwt.sub" } } }
+          }
+        ]
+      )
     counter: Counter!
       @relationship(
         type: "HAS_COUNTER"
@@ -450,6 +478,7 @@ const typeDefs = gql`
       @settable(onCreate: true, onUpdate: false)
     messageCounter: Int!
       @populatedBy(callback: "messageCounterSetter", operations: [CREATE])
+
     status: [Status!]!
       @relationship(
         type: "HAS_STATUS"
