@@ -1428,6 +1428,11 @@ const typeDefs = gql`
       )
   }
 
+  type AutoHideCompletedTasks {
+    enabled: Boolean! @default(value: false)
+    days: Int!
+  }
+
   union FolderParent = Project | Folder
 
   type Folder implements TimestampedCreatable & Timestamped & SoftDeletable
@@ -2128,6 +2133,7 @@ const typeDefs = gql`
     occuredOn: DateTime
     paidOn: DateTime
     projectedExpense: Float
+    isRecurringTask: Boolean!
     actualExpense: Float
     isTopLevelParentItem: Boolean!
       @populatedBy(callback: "topLevelParentItem", operations: [CREATE])
@@ -2230,6 +2236,12 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
+      )
+    resources: [Resource!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
       )
     triggerLastModified: Boolean
       @populatedBy(
