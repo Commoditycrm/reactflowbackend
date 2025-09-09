@@ -1,15 +1,46 @@
-name: Deploy Backend to Lightsail
+name: CI / Deploy Backend to Lightsail
 
 on:
   push:
-    branches: ["main"]
+    branches: ["**"]          # build on all branches
+  # pull_request:
+  #   branches: ["**"]        # ← uncomment later to build PRs
   workflow_dispatch: {}
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  deploy-backend:
+  build:
+    name: Build backend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          # Optional cache (enable later if you want)
+          # cache: yarn
+          # cache-dependency-path: yarn.lock
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+  deploy-backend:
+    name: Deploy to Lightsail (main only)
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup SSH
@@ -18,17 +49,19 @@ jobs:
           ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}
 
       - name: Deploy Backend
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
-            cd ~/project/backend
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" << 'EOF'
+            set -euo pipefail
+            cd ~/project/backend   # keep this if your server code lives here
             git fetch --all
             git reset --hard origin/main
 
             yarn install --frozen-lockfile
             yarn build
 
-            pm2 restart backend --update-env || \
-            pm2 start dist/server.js --name backend
-
+            pm2 restart backend --update-env || pm2 start dist/server.js --name backend
             pm2 save
           EOF
