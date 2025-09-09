@@ -2,10 +2,10 @@ name: CI / Deploy Backend to Lightsail
 
 on:
   push:
-    branches: ["**"] # build on all branches
-  pull_request:
-    branches: ["**"] # build on all PRs
-  workflow_dispatch: {} # manual run if needed
+    branches: ["**"]          # build on all branches
+  # pull_request:
+  #   branches: ["**"]        # ← uncomment later to build PRs
+  workflow_dispatch: {}
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,9 +15,6 @@ jobs:
   build:
     name: Build backend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,17 +23,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: "yarn"
-          cache-dependency-path: backend/yarn.lock
+          # Optional cache (enable later if you want)
+          # cache: yarn
+          # cache-dependency-path: yarn.lock
 
       - name: Install deps
         run: yarn install --frozen-lockfile
 
       - name: Build
         run: yarn build
-
-      # - name: Test
-      #   run: yarn test --ci
 
   deploy-backend:
     name: Deploy to Lightsail (main only)
@@ -45,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout (for SSH known_hosts usage if needed)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup SSH
@@ -60,7 +55,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no "$USER@$HOST" << 'EOF'
             set -euo pipefail
-            cd ~/project/backend
+            cd ~/project/backend   # keep this if your server code lives here
             git fetch --all
             git reset --hard origin/main
 
