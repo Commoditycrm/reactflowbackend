@@ -133,10 +133,16 @@ CALL apoc.periodic.iterate(
     newRoot.description = $description,
     newRoot.id = randomUUID(),
     newRoot.isTemplate = false,
-    newRoot.uniqueProject = uniqueKey
+    newRoot.uniqueProject = uniqueKey,
+    newRoot.isDescriptionEditable = false
 
   MERGE (user)-[:CREATED_PROJECT]->(newRoot)
   MERGE (newRoot)<-[:HAS_PROJECTS]-(org)
+  MERGE (newRoot)-[:HAS_WS_NOTIFICATION]->(wn:WhatsappNotification)
+    ON CREATE SET wn.enabled = false
+  MERGE (newRoot)-[:HAS_AUTO_HIDE_CONFIG]->(at:AutoHideCompletedTasks)
+    ON CREATE SET at.enabled = false,
+                at.days = 2;
   ",
   {
     batchSize: 1,
@@ -624,5 +630,160 @@ CALL apoc.periodic.iterate(
      REMOVE n.refId
     ",
     {batchSize: 30, parallel: true,retries:3}
+);
+`;
+
+export const CREATE_RECURRING_PARENT_TASK = `
+CALL apoc.periodic.iterate(
+"
+  MATCH (p:Project)<-[:ITEM_IN_PROJECT]-(bi:BacklogItem {isRecurringTask:true})
+  WHERE bi.deletedAt IS NULL
+  WITH DISTINCT p
+
+  CALL(p) {
+    WITH p
+    MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+    WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+    RETURN n
+    UNION
+    MATCH fpath=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+    WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+      AND ALL(x IN nodes(fpath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+    RETURN n
+  }
+
+  MATCH (n)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+  WHERE bi.deletedAt IS NULL AND bi.isRecurringTask = true
+
+  WITH p, n AS parent, bi
+  MATCH (org)-[:HAS_PROJECTS]->(p)
+  MATCH (user:User)-[:CREATED_ITEM]->(bi)
+  MATCH (bi)-[:HAS_STATUS]->(oldStatus:Status)
+  MATCH (org)-[:HAS_STATUS]->(status:Status)
+  MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(type:BacklogItemType)
+  MATCH (bi)-[:HAS_RISK_LEVEL]->(level:RiskLevel)
+  MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
+
+  WHERE toLower(status.defaultName) CONTAINS 'not started'
+    AND toLower(oldStatus.defaultName) CONTAINS 'completed'
+
+  RETURN bi, p, parent, level, status, type, org, user, orgCounter
+",
+"
+  WITH bi, p, parent, level, status, type, org, user, orgCounter,
+       datetime() AS now,
+       duration.between(bi.startDate, bi.endDate) AS oldDuration
+
+  CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue
+
+  CREATE (newItem:BacklogItem)
+  SET newItem.id = randomUUID(),
+      newItem.label = coalesce(bi.label, ''),
+      newItem.description = bi.description,
+      newItem.createdAt = now,
+      newItem.isTopLevelParentItem = coalesce(bi.isTopLevelParentItem, false),
+      newItem.actualExpense = bi.actualExpense,
+      newItem.uid = newValue,
+      newItem.uniqueUid = toString(toInteger(newValue)) + '-' + org.id,
+      newItem.isRecurringTask = false,
+      newItem.startDate = now,
+      newItem.refId = bi.id,
+      newItem.endDate = CASE
+                          WHEN bi.startDate IS NOT NULL AND bi.endDate IS NOT NULL
+                            THEN now + oldDuration
+                          ELSE NULL
+                        END
+
+  SET bi.endDate = now
+
+  MERGE (newItem)<-[:CREATED_ITEM]-(user)
+  MERGE (newItem)-[:HAS_BACKLOGITEM_TYPE]->(type)
+  MERGE (newItem)-[:HAS_RISK_LEVEL]->(level)
+  MERGE (newItem)-[:HAS_STATUS]->(status)
+  MERGE (newItem)-[:ITEM_IN_PROJECT]->(p)
+  MERGE (parent)-[:HAS_CHILD_ITEM {createdAt: now}]->(newItem)
+",
+{ batchSize: 200, parallel: false, retries: 1 }
+);
+`;
+
+export const CREATE_RECURRING_SUB_TASK = `
+CALL apoc.periodic.iterate(
+"
+  MATCH (p:Project)<-[:ITEM_IN_PROJECT]-(bi:BacklogItem {isRecurringTask:true})
+  MATCH (parentBI:BacklogItem)-[:HAS_CHILD_ITEM]->(bi)
+  WHERE bi.deletedAt IS NULL
+    AND parentBI <> bi
+  WITH DISTINCT p
+
+  CALL(p) {
+    WITH p
+    MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+    WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+    RETURN n
+    UNION
+    MATCH fpath=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+    WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+      AND ALL(x IN nodes(fpath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+    RETURN n
+  }
+
+  MATCH (n)-[:HAS_CHILD_ITEM]->(parentBI:BacklogItem)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)
+  MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
+  WHERE bi.deletedAt IS NULL
+    AND bi.isRecurringTask = true
+    AND parentBI <> bi
+
+  WITH p, parentBI AS parent, bi
+  MATCH (org)-[:HAS_PROJECTS]->(p)
+  MATCH (user:User)-[:CREATED_ITEM]->(bi)
+  MATCH (bi)-[:HAS_STATUS]->(oldStatus:Status)
+  MATCH (org)-[:HAS_STATUS]->(status:Status)
+  MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(type:BacklogItemType)
+  MATCH (bi)-[:HAS_RISK_LEVEL]->(level:RiskLevel)
+  MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
+
+  WHERE toLower(status.defaultName) CONTAINS 'not started'
+    AND toLower(oldStatus.defaultName) CONTAINS 'completed'
+
+  RETURN bi, p, parent, level, status, type, org, user, orgCounter
+",
+"
+  WITH bi, p, parent, level, status, type, org, user, orgCounter,
+       datetime() AS now,
+       duration.between(bi.startDate, bi.endDate) AS oldDuration
+
+  CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD oldValue, newValue
+
+  CREATE (newItem:BacklogItem)
+  SET newItem.id                   = randomUUID(),
+      newItem.label                = coalesce(bi.label, ''),
+      newItem.description          = bi.description,
+      newItem.createdAt            = now,
+      newItem.isTopLevelParentItem = coalesce(bi.isTopLevelParentItem, false),
+      newItem.actualExpense        = bi.actualExpense,
+      newItem.uid                  = newValue,
+      newItem.uniqueUid            = toString(toInteger(newValue)) + '-' + org.id,
+      newItem.isRecurringTask      = false,
+      newItem.startDate            = now,
+      newItem.refId = bi.id,
+      newItem.endDate              = CASE
+                                       WHEN bi.startDate IS NOT NULL AND bi.endDate IS NOT NULL
+                                         THEN now + oldDuration
+                                       ELSE NULL
+                                     END
+
+  SET bi.endDate = now
+
+  FOREACH (_ IN CASE WHEN user IS NULL THEN [] ELSE [1] END |
+    MERGE (newItem)<-[:CREATED_ITEM]-(user)
+  )
+  MERGE (newItem)-[:HAS_BACKLOGITEM_TYPE]->(type)
+  MERGE (newItem)-[:HAS_RISK_LEVEL]->(level)
+  MERGE (newItem)-[:HAS_STATUS]->(status)
+  MERGE (newItem)-[:ITEM_IN_PROJECT]->(p)
+  MERGE (parent)-[:HAS_CHILD_ITEM {createdAt: now}]->(newItem)
+",
+{ batchSize: 200, parallel: false, retries: 1 }
 );
 `;

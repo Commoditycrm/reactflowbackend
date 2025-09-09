@@ -1408,6 +1408,13 @@ const typeDefs = gql`
         nestedOperations: [CREATE]
         aggregate: false
       )
+    autoHideCompletedTask: AutoHideCompletedTasks!
+      @relationship(
+        type: "HAS_AUTO_HIDE_CONFIG"
+        direction: OUT
+        nestedOperations: [CREATE]
+        aggregate: false
+      )
   }
 
   type WhatsappNotification {
@@ -1424,6 +1431,18 @@ const typeDefs = gql`
         type: "HAS_WS_NOTIFICATION"
         direction: IN
         nestedOperations: [CONNECT]
+        aggregate: false
+      )
+  }
+
+  type AutoHideCompletedTasks {
+    enabled: Boolean! @default(value: false)
+    days: Int!
+    project: Project!
+      @relationship(
+        type: "HAS_AUTO_HIDE_CONFIG"
+        direction: IN
+        nestedOperations: []
         aggregate: false
       )
   }
@@ -2128,6 +2147,7 @@ const typeDefs = gql`
     occuredOn: DateTime
     paidOn: DateTime
     projectedExpense: Float
+    isRecurringTask: Boolean! @default(value: false)
     actualExpense: Float
     isTopLevelParentItem: Boolean!
       @populatedBy(callback: "topLevelParentItem", operations: [CREATE])
@@ -2230,6 +2250,12 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
+      )
+    resources: [Resource!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
       )
     triggerLastModified: Boolean
       @populatedBy(
