@@ -133,10 +133,16 @@ CALL apoc.periodic.iterate(
     newRoot.description = $description,
     newRoot.id = randomUUID(),
     newRoot.isTemplate = false,
-    newRoot.uniqueProject = uniqueKey
+    newRoot.uniqueProject = uniqueKey,
+    newRoot.isDescriptionEditable = false
 
   MERGE (user)-[:CREATED_PROJECT]->(newRoot)
   MERGE (newRoot)<-[:HAS_PROJECTS]-(org)
+  MERGE (newRoot)-[:HAS_WS_NOTIFICATION]->(wn:WhatsappNotification)
+    ON CREATE SET wn.enabled = false
+  MERGE (newRoot)-[:HAS_AUTO_HIDE_CONFIG]->(at:AutoHideCompletedTasks)
+    ON CREATE SET at.enabled = false,
+                at.days = 2;
   ",
   {
     batchSize: 1,
