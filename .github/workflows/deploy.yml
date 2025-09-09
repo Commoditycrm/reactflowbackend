@@ -1,15 +1,51 @@
-name: Deploy Backend to Lightsail
+name: CI / Deploy Backend to Lightsail
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch: {}
+    branches: ["**"] # build on all branches
+  pull_request:
+    branches: ["**"] # build on all PRs
+  workflow_dispatch: {} # manual run if needed
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy-backend:
+  build:
+    name: Build backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: backend/yarn.lock
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      # - name: Test
+      #   run: yarn test --ci
+
+  deploy-backend:
+    name: Deploy to Lightsail (main only)
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout (for SSH known_hosts usage if needed)
         uses: actions/checkout@v4
 
       - name: Setup SSH
@@ -18,8 +54,12 @@ jobs:
           ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}
 
       - name: Deploy Backend
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" << 'EOF'
+            set -euo pipefail
             cd ~/project/backend
             git fetch --all
             git reset --hard origin/main
@@ -27,8 +67,6 @@ jobs:
             yarn install --frozen-lockfile
             yarn build
 
-            pm2 restart backend --update-env || \
-            pm2 start dist/server.js --name backend
-
+            pm2 restart backend --update-env || pm2 start dist/server.js --name backend
             pm2 save
           EOF
