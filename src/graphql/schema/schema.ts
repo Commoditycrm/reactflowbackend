@@ -632,7 +632,15 @@ const typeDefs = gql`
         {
           operations: [DELETE]
           where: {
-            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
+            OR: [
+              {
+                node: {
+                  organization: { createdBy: { externalId: "$jwt.sub" } }
+                }
+              }
+              { node: { invitedBy: { externalId: "$jwt.sub" } } }
+              { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+            ]
           }
         }
       ]
@@ -1339,6 +1347,39 @@ const typeDefs = gql`
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
         columnName: "backlogItemsCount"
+      )
+    getAllFiles(
+      limit: Int = 10
+      offset: Int = 0
+      searchQuery: String
+    ): [File!]!
+      @cypher(
+        statement: """
+        WITH this, $searchQuery AS sq
+
+        CALL(this) {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)
+          WHERE file.deletedAt IS NULL
+          RETURN file
+
+          UNION
+
+          WITH this
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)
+          WHERE file.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN file
+        }
+
+        WITH DISTINCT file,sq
+        WHERE sq IS NULL OR trim(sq) = "" OR toLower(file.name) CONTAINS toLower(sq)
+
+        RETURN file
+        ORDER BY file.createdAt DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "file"
       )
 
     organization: Organization!
