@@ -1226,6 +1226,7 @@ const typeDefs = gql`
         }
         WITH DISTINCT n, this, f, me, tab
 
+        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
@@ -1257,20 +1258,32 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,
-          (
-            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
-          ) AS isMine,
+        WITH DISTINCT bi, tab, me,cfg,f,
+          EXISTS {
+            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+          } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense
+          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+
+        WITH bi, tab, f, cfg, hasStatusFilter
+        WHERE
+         tab IS NULL
+         OR hasStatusFilter
+         OR NOT coalesce(cfg.enabled,false)
+         OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+          }
+          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
 
         RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
@@ -1298,6 +1311,7 @@ const typeDefs = gql`
           RETURN DISTINCT n
         }
         WITH DISTINCT n, this, f, me, tab
+        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
@@ -1329,20 +1343,34 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,
-          (
-            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
-          ) AS isMine,
+        WITH DISTINCT bi, tab, me,f,cfg,
+          EXISTS {
+            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+          } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense
+          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+
+
+        WITH bi, tab, f, cfg, hasStatusFilter
+        WHERE
+         tab IS NULL
+         OR hasStatusFilter
+         OR NOT coalesce(cfg.enabled,false)
+         OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+          }
+          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
+
 
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
@@ -1454,6 +1482,78 @@ const typeDefs = gql`
         type: "HAS_AUTO_HIDE_CONFIG"
         direction: OUT
         nestedOperations: [CREATE]
+        aggregate: false
+      )
+  }
+
+  type CalenderEvent implements Timestamped & TimestampedCreatable
+    @query(read: true, aggregate: false)
+    @authorization(
+      validate: [
+        {
+          when: [BEFORE, AFTER]
+          operations: [READ, CREATE]
+          where: {
+            node: {
+              OR: [
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [UPDATE, DELETE]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    ) {
+    id: ID! @id
+    title: String!
+    # eventDate:DateTime!
+    startDate:DateTime!
+    endDate:DateTime!
+    description:String
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+    createdBy: User!
+      @relationship(
+        type: "CREATED_EVENT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    project: Project!
+      @relationship(
+        type: "HAS_EVENT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    resources: [Resource!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
       )
   }
