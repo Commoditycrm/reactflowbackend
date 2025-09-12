@@ -1259,10 +1259,9 @@ const typeDefs = gql`
           )
 
         WITH DISTINCT bi, tab, me,cfg,f,
-          (
-            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
-          ) AS isMine,
+          EXISTS {
+            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+          } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1345,10 +1344,9 @@ const typeDefs = gql`
           )
 
         WITH DISTINCT bi, tab, me,f,cfg,
-          (
-            (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-            OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
-          ) AS isMine,
+          EXISTS {
+            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
+          } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1484,6 +1482,78 @@ const typeDefs = gql`
         type: "HAS_AUTO_HIDE_CONFIG"
         direction: OUT
         nestedOperations: [CREATE]
+        aggregate: false
+      )
+  }
+
+  type CalenderEvent implements Timestamped & TimestampedCreatable
+    @query(read: true, aggregate: false)
+    @authorization(
+      validate: [
+        {
+          when: [BEFORE, AFTER]
+          operations: [READ, CREATE]
+          where: {
+            node: {
+              OR: [
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [UPDATE, DELETE]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    ) {
+    id: ID! @id
+    title: String!
+    # eventDate:DateTime!
+    startDate:DateTime!
+    endDate:DateTime!
+    description:String
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+    createdBy: User!
+      @relationship(
+        type: "CREATED_EVENT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    project: Project!
+      @relationship(
+        type: "HAS_EVENT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    resources: [Resource!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
       )
   }
