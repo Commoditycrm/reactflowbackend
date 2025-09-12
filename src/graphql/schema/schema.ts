@@ -1226,6 +1226,7 @@ const typeDefs = gql`
         }
         WITH DISTINCT n, this, f, me, tab
 
+        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
@@ -1257,7 +1258,7 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,
+        WITH DISTINCT bi, tab, me,cfg,f,
           (
             (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
             OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
@@ -1265,12 +1266,25 @@ const typeDefs = gql`
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense
+          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+
+        WITH bi, tab, f, cfg, hasStatusFilter
+        WHERE
+         tab IS NULL
+         OR hasStatusFilter
+         OR NOT coalesce(cfg.enabled,false)
+         OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+          }
+          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
 
         RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
@@ -1298,6 +1312,7 @@ const typeDefs = gql`
           RETURN DISTINCT n
         }
         WITH DISTINCT n, this, f, me, tab
+        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
@@ -1329,7 +1344,7 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,
+        WITH DISTINCT bi, tab, me,f,cfg,
           (
             (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
             OR (:User {externalId: me})-[:CREATED_ITEM]->(bi)
@@ -1337,12 +1352,27 @@ const typeDefs = gql`
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense
+          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+
+
+        WITH bi, tab, f, cfg, hasStatusFilter
+        WHERE
+         tab IS NULL
+         OR hasStatusFilter
+         OR NOT coalesce(cfg.enabled,false)
+         OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+          }
+          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
+
 
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
