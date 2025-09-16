@@ -1215,41 +1215,32 @@ const typeDefs = gql`
       @cypher(
         statement: """
         WITH this
-        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
 
-        OPTIONAL MATCH path=(this)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
-          AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+        CALL(this) {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        WITH this, coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS allFiles
+          UNION
 
-        WITH this,
-          CASE WHEN size(allFiles) > 0
-            THEN allFiles
-            ELSE [null]
-          END AS filesToProcess
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+         }
+         WITH DISTINCT n
+         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-        UNWIND filesToProcess AS file
-        WITH DISTINCT this, file
-
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE file IS NOT NULL AND n.deletedAt IS NULL
-        WITH DISTINCT this, n
-
-        OPTIONAL MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
-
-        WITH this,
-          count(DISTINCT bi) AS totalItems,
+         WITH count(DISTINCT bi) AS totalItems,
           count(DISTINCT CASE WHEN toLower(s.defaultName) IN ['completed','done','closed'] THEN bi END) AS completedItems
 
-        RETURN CASE
-          WHEN totalItems > 0
-            THEN toFloat(round(100.0 * completedItems / totalItems))
-            ELSE 0.0
-          END AS progress
+         RETURN CASE
+           WHEN totalItems > 0
+             THEN toFloat(round(100.0 * completedItems / totalItems))
+             ELSE 0.0
+           END AS progress
         """
         columnName: "progress"
       )
@@ -1622,7 +1613,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    resources: [Resource!]!
+    resources: Resource!
       @relationship(
         type: "HAS_RESOURCE"
         direction: OUT
