@@ -770,6 +770,8 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
+      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
+      @settable(onCreate: false, onUpdate: false)
     resourceType: ResourceType!
     firstName: String!
     lastName: String!
@@ -840,6 +842,8 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
+      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
+      @settable(onCreate: false, onUpdate: false)
     resourceType: ResourceType!
     firstName: String!
     lastName: String!
@@ -913,7 +917,6 @@ const typeDefs = gql`
     name: String!
     resourceType: ResourceType!
     assetType: String!
-    assetName: String!
     assetDescription: String
     modelNumber: String
     serialNumber: String
@@ -984,7 +987,6 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     resourceType: ResourceType!
-    businessName: String!
     businessEmail: String
     phone: String
     website: String
@@ -1593,12 +1595,17 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     title: String!
-    # eventDate:DateTime!
     startDate: DateTime!
     endDate: DateTime!
     description: String
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    uniqueDuration: String!
+      @populatedBy(
+        operations: [CREATE, UPDATE]
+        callback: "uniqueEventExtractor"
+      )
+      @unique
     createdBy: User!
       @relationship(
         type: "CREATED_EVENT"
@@ -1613,7 +1620,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    resources: Resource!
+    resource: Resource!
       @relationship(
         type: "HAS_RESOURCE"
         direction: OUT
@@ -2801,7 +2808,7 @@ const typeDefs = gql`
 
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
-    updateUserDetail(name: String!, phoneNumber: String!): [User!]!
+    updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
     assignUserToProject(userId: ID!, projectId: ID!): Boolean!
     assignUserToBacklogItem(userId: ID!, backlogItemId: ID!): Boolean!
