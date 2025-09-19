@@ -93,10 +93,31 @@ const typeDefs = gql`
     pendingTask(projectId: ID!): Int!
       @cypher(
         statement: """
-        MATCH (this)<-[:HAS_ASSIGNED_USER]-(item:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project {id:$projectId})
-        MATCH (item)-[:HAS_STATUS]->(s:Status)
-        WHERE toLower(s.defaultName) <> "completed"
-        RETURN COUNT(DISTINCT item) AS pendingTask
+        MATCH (p:Project {id: $projectId})
+
+        CALL(p) {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN n
+          UNION
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN n
+        }
+
+        WITH DISTINCT p, n, this
+
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        MATCH (bi)-[:HAS_STATUS]->(s:Status)
+        WHERE bi.deletedAt IS NULL
+          AND toLower(s.defaultName) <> 'completed'
+          AND (
+            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
+          )
+
+        RETURN COUNT(DISTINCT bi) AS pendingTask
         """
         columnName: "pendingTask"
       )
@@ -104,13 +125,36 @@ const typeDefs = gql`
     completedTask(projectId: ID!): Int!
       @cypher(
         statement: """
-        MATCH (this)<-[:HAS_ASSIGNED_USER]-(item:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project {id:$projectId})
-        MATCH (item)-[:HAS_STATUS]->(s:Status)
-        WHERE toLower(s.defaultName) = "completed"
-        RETURN COUNT(DISTINCT item) AS completedTask
+        MATCH (p:Project {id: $projectId})
+
+        CALL {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN n
+          UNION
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN n
+        }
+
+        WITH DISTINCT p, n, this
+
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
+        MATCH (bi)-[:HAS_STATUS]->(s:Status)
+        WHERE s.deletedAt IS NULL
+          AND s.defaultName = 'Completed'
+          AND (
+            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
+          )
+
+        RETURN COUNT(DISTINCT bi) AS completedTask
         """
         columnName: "completedTask"
       )
+
     role: String!
       @populatedBy(callback: "userRoleSetter", operations: [CREATE])
       @settable(onCreate: true, onUpdate: false)
@@ -691,6 +735,7 @@ const typeDefs = gql`
     organization: Organization! @declareRelationship
     address: Address @declareRelationship
     attachedFiles: [ExternalFile!]! @declareRelationship
+    projects: [Project!]! @declareRelationship
     notes: [Comment!]! @declareRelationship
     lastModified: DateTime
   }
@@ -725,6 +770,8 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
+      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
+      @settable(onCreate: false, onUpdate: false)
     resourceType: ResourceType!
     firstName: String!
     lastName: String!
@@ -752,6 +799,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    projects: [Project!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: IN
+        nestedOperations: []
+        aggregate: false
       )
     notes: [Comment!]!
       @relationship(
@@ -788,6 +842,8 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
+      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
+      @settable(onCreate: false, onUpdate: false)
     resourceType: ResourceType!
     firstName: String!
     lastName: String!
@@ -816,6 +872,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    projects: [Project!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: IN
+        nestedOperations: []
+        aggregate: false
       )
     notes: [Comment!]!
       @relationship(
@@ -854,7 +917,6 @@ const typeDefs = gql`
     name: String!
     resourceType: ResourceType!
     assetType: String!
-    assetName: String!
     assetDescription: String
     modelNumber: String
     serialNumber: String
@@ -881,6 +943,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    projects: [Project!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: IN
+        nestedOperations: []
+        aggregate: false
       )
     notes: [Comment!]!
       @relationship(
@@ -918,7 +987,6 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     resourceType: ResourceType!
-    businessName: String!
     businessEmail: String
     phone: String
     website: String
@@ -944,6 +1012,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    projects: [Project!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: IN
+        nestedOperations: []
+        aggregate: false
       )
     notes: [Comment!]!
       @relationship(
@@ -1142,41 +1217,32 @@ const typeDefs = gql`
       @cypher(
         statement: """
         WITH this
-        OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
 
-        OPTIONAL MATCH path=(this)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
-          AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+        CALL(this) {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-        WITH this, coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS allFiles
+          UNION
 
-        WITH this,
-          CASE WHEN size(allFiles) > 0
-            THEN allFiles
-            ELSE [null]
-          END AS filesToProcess
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+         }
+         WITH DISTINCT n
+         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-        UNWIND filesToProcess AS file
-        WITH DISTINCT this, file
-
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE file IS NOT NULL AND n.deletedAt IS NULL
-        WITH DISTINCT this, n
-
-        OPTIONAL MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
-
-        WITH this,
-          count(DISTINCT bi) AS totalItems,
+         WITH count(DISTINCT bi) AS totalItems,
           count(DISTINCT CASE WHEN toLower(s.defaultName) IN ['completed','done','closed'] THEN bi END) AS completedItems
 
-        RETURN CASE
-          WHEN totalItems > 0
-            THEN toFloat(round(100.0 * completedItems / totalItems))
-            ELSE 0.0
-          END AS progress
+         RETURN CASE
+           WHEN totalItems > 0
+             THEN toFloat(round(100.0 * completedItems / totalItems))
+             ELSE 0.0
+           END AS progress
         """
         columnName: "progress"
       )
@@ -1529,12 +1595,17 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     title: String!
-    # eventDate:DateTime!
-    startDate:DateTime!
-    endDate:DateTime!
-    description:String
+    startDate: DateTime!
+    endDate: DateTime!
+    description: String
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    uniqueDuration: String!
+      @populatedBy(
+        operations: [CREATE, UPDATE]
+        callback: "uniqueEventExtractor"
+      )
+      @unique
     createdBy: User!
       @relationship(
         type: "CREATED_EVENT"
@@ -1549,7 +1620,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    resources: [Resource!]!
+    resource: Resource!
       @relationship(
         type: "HAS_RESOURCE"
         direction: OUT
@@ -2737,7 +2808,7 @@ const typeDefs = gql`
 
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
-    updateUserDetail(name: String!, phoneNumber: String!): [User!]!
+    updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
     assignUserToProject(userId: ID!, projectId: ID!): Boolean!
     assignUserToBacklogItem(userId: ID!, backlogItemId: ID!): Boolean!
@@ -3092,27 +3163,37 @@ const typeDefs = gql`
         WHERE p.deletedAt IS NULL
 
         MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)-[:HAS_STATUS]->(s:Status)
+        WHERE s.deletedAt IS NULL
 
-        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(fn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        WHERE file.deletedAt IS NULL
-          AND fn.deletedAt IS NULL
-          AND bi.deletedAt IS NULL
-          AND (bi)-[:ITEM_IN_PROJECT]->(p)
+        CALL {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
+          UNION
+          WITH p
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
+        }
 
-        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(folder:Folder)-[:HAS_CHILD_FILE]->(nestedFile:File)-[:HAS_FLOW_NODE]->(nestedFn:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(nestedBi:BacklogItem)
-        WHERE ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
-          AND nestedFile.deletedAt IS NULL
-          AND nestedFn.deletedAt IS NULL
-          AND nestedBi.deletedAt IS NULL
-          AND (nestedBi)-[:ITEM_IN_PROJECT]->(p)
+        WITH DISTINCT p, s, n
 
-        WITH s, collect(DISTINCT bi) + collect(DISTINCT nestedBi) AS allBacklogItems
+        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        WHERE bi.deletedAt IS NULL
 
-        WITH s.name AS status, s.id AS statusId, s.color AS statusColor,
-          size([item IN allBacklogItems WHERE item IS NOT NULL AND (item)-[:HAS_STATUS]->(s)]) AS count
+        WITH s, collect(DISTINCT bi) AS items
 
-        RETURN {status: status, color: statusColor, count: count, id: statusId} AS result
-        ORDER BY status
+        WITH
+          s,
+          size([x IN items WHERE EXISTS { MATCH (x)-[:HAS_STATUS]->(s) }]) AS cnt,
+          s.name  AS status,
+          s.color AS color,
+          s.id    AS sid
+
+        RETURN { status: status, color: color, count: cnt, id: sid } AS result
+        ORDER BY result.status
         """
         columnName: "result"
       )

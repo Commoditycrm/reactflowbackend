@@ -2,6 +2,8 @@ import { Neo4jGraphQLCallback } from "@neo4j/graphql";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 import { UserRole } from "../../@types/ogm.types";
+import { DateTime } from "neo4j-driver";
+import { toEpochMs } from "../../util/minutesBetweens";
 
 export const externalIdExtractor = (
   _parent: Record<string, any>,
@@ -168,4 +170,43 @@ export const messageCounterSetter = (
   _context: Record<string, any>
 ) => {
   return 0;
+};
+
+export const uniqueEventExtractor = async (
+  _parent: Record<string, any>,
+  _args: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  const projectId = _parent?.project?.connect?.where?.node?.id || null;
+  const startDate: DateTime = _parent?.startDate || _args?.startDate;
+  const endDate: DateTime = _parent?.endDate || _args?.endDate;
+
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  try {
+    const res = await session.run(
+      "MATCH(p:Project {id:$projectId})<-[:HAS_PROJECTS]-(org:Organization) RETURN org.id AS orgId",
+      {
+        projectId,
+      }
+    );
+    const orgId = res.records[0]?.get("orgId");
+    const s = toEpochMs(startDate);
+    const e = toEpochMs(endDate);
+    return `${orgId}#${s}#${e}`;
+  } catch (error) {
+    logger?.error(`error whileetting the unique event:${error}`);
+  } finally {
+    await session.close();
+  }
+};
+
+export const resourceNameSetter = (
+  _parent: Record<string, any>,
+  _args: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  const { firstName, lastName, middleName } = _parent;
+  return middleName
+    ? `${firstName} ${middleName} ${lastName}`
+    : `${firstName} ${lastName}`;
 };

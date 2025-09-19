@@ -199,6 +199,7 @@ const updateUserDetail = async (
       await getFirebaseAdminAuth().auth().updateUser(externalId, payload);
     } catch (error: any) {
       if (error.code === "auth/phone-number-already-exists") {
+        logger?.info(`updating username in firebase:${error.code}`);
         await getFirebaseAdminAuth().auth().updateUser(externalId, {
           displayName: name,
         });
@@ -211,9 +212,7 @@ const updateUserDetail = async (
       where: { externalId },
       update: {
         name,
-        ...(phoneNumber && currentUser.phoneNumber !== phoneNumber
-          ? { phoneNumber }
-          : {}),
+        phoneNumber,
       },
       context: _context,
     });
