@@ -814,7 +814,6 @@ const typeDefs = gql`
   type Contact implements Resource & Timestamped
     @authorization(
       validate: [
-        
         {
           when: [AFTER]
           operations: [CREATE]
@@ -879,7 +878,6 @@ const typeDefs = gql`
   type Asset implements Resource & Timestamped
     @authorization(
       validate: [
-        
         {
           when: [AFTER]
           operations: [CREATE]
@@ -1161,7 +1159,10 @@ const typeDefs = gql`
     isTemplate: Boolean! @default(value: false)
     uniqueProject: String!
       @unique
-      @populatedBy(callback: "uniqueProjectExtractor", operations: [CREATE,UPDATE])
+      @populatedBy(
+        callback: "uniqueProjectExtractor"
+        operations: [CREATE, UPDATE]
+      )
     startDate: DateTime
       @cypher(
         statement: """
@@ -1524,8 +1525,28 @@ const typeDefs = gql`
     @authorization(
       validate: [
         {
-          when: [BEFORE, AFTER]
-          operations: [READ, CREATE]
+          when: [BEFORE]
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [CREATE]
           where: {
             node: {
               OR: [
