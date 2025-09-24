@@ -752,18 +752,10 @@ const typeDefs = gql`
     @authorization(
       validate: [
         {
-          operations: [READ]
+          when: [AFTER]
+          operations: [CREATE]
           where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
+            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
       ]
@@ -822,20 +814,12 @@ const typeDefs = gql`
   type Contact implements Resource & Timestamped
     @authorization(
       validate: [
+        
         {
-          when: [BEFORE]
-          operations: [READ]
+          when: [AFTER]
+          operations: [CREATE]
           where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
+            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
       ]
@@ -895,20 +879,12 @@ const typeDefs = gql`
   type Asset implements Resource & Timestamped
     @authorization(
       validate: [
+        
         {
-          when: [BEFORE]
-          operations: [READ]
+          when: [AFTER]
+          operations: [CREATE]
           where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
+            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
       ]
@@ -967,19 +943,10 @@ const typeDefs = gql`
     @authorization(
       validate: [
         {
-          when: [BEFORE]
-          operations: [READ]
+          when: [AFTER]
+          operations: [CREATE]
           where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
+            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
       ]
@@ -1194,7 +1161,7 @@ const typeDefs = gql`
     isTemplate: Boolean! @default(value: false)
     uniqueProject: String!
       @unique
-      @populatedBy(callback: "uniqueProjectExtractor", operations: [CREATE])
+      @populatedBy(callback: "uniqueProjectExtractor", operations: [CREATE,UPDATE])
     startDate: DateTime
       @cypher(
         statement: """

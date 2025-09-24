@@ -90,6 +90,7 @@ const createBacklogItemWithUID = async (
             name
             email
             role
+            phoneNumber
           }
           sprints{
             id

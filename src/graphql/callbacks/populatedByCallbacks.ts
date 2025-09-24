@@ -68,14 +68,6 @@ export const topLevelParentItem: Neo4jGraphQLCallback = (
   return false;
 };
 
-export const setinvitedUserEmails = async (
-  _parent: Record<string, any>,
-  _args: Record<string, any>,
-  _context: Record<string, any>
-) => {
-  return [];
-};
-
 export const uniqueSprint = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
@@ -95,13 +87,33 @@ export const uniqueInviteExtractor = (
   return `${orgId}-${userEmail}`;
 };
 
-export const uniqueProjectExtractor = (
+export const uniqueProjectExtractor = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
 ) => {
-  const orgId = _parent?.organization?.connect?.where?.node?.id;
-  const projectName = _parent?.name?.trim().toLowerCase();
+  let orgId = _parent?.organization?.connect?.where?.node?.id;
+  const projectName = _parent?.name?.trim().toLowerCase().replace(/\s+/g, "");
+  const externalId = _context?.jwt?.uid;
+  if (!orgId) {
+    const session = (await Neo4JConnection.getInstance()).driver.session();
+    try {
+      const res = await session.executeRead((tx) =>
+        tx.run(
+          "MATCH(:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization) RETURN org.id AS orgId",
+          {
+            uid: externalId,
+          }
+        )
+      );
+      orgId = res.records[0]?.get("orgId");
+    } catch (error) {
+      logger?.error(`Field to get orgId:${error}`);
+    } finally {
+      await session.close();
+    }
+  }
+
   return `${orgId}-${projectName}`;
 };
 
