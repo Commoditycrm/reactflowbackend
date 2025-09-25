@@ -1530,14 +1530,16 @@ const typeDefs = gql`
           where: {
             node: {
               OR: [
-                { createdBy: { externalId: "$jwt.sub" } }
-                {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-                { project: { createdBy: { externalId: "$jwt.sub" } } }
                 {
                   project: {
                     organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                    }
                   }
                 }
               ]
