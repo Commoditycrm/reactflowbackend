@@ -1610,7 +1610,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    resource: Resource!
+    resource: Asset
       @relationship(
         type: "HAS_RESOURCE"
         direction: OUT

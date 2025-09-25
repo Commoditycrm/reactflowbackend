@@ -4,6 +4,8 @@ import logger from "../../logger";
 import { UserRole } from "../../@types/ogm.types";
 import { DateTime } from "neo4j-driver";
 import { toEpochMs } from "../../util/minutesBetweens";
+import { GraphQLError } from "graphql";
+import { ApolloServerErrorCode } from "@apollo/server/errors";
 
 export const externalIdExtractor = (
   _parent: Record<string, any>,
@@ -189,24 +191,56 @@ export const uniqueEventExtractor = async (
   _args: Record<string, any>,
   _context: Record<string, any>
 ) => {
-  const projectId = _parent?.project?.connect?.where?.node?.id || null;
+  const externalId = _context?.jwt?.uid;
   const startDate: DateTime = _parent?.startDate || _args?.startDate;
   const endDate: DateTime = _parent?.endDate || _args?.endDate;
 
+  let resourceId = _parent?.resource?.connect?.where?.node?.id || null;
+
+  const s = toEpochMs(startDate);
+  const e = toEpochMs(endDate);
+
   const session = (await Neo4JConnection.getInstance()).driver.session();
   try {
-    const res = await session.run(
-      "MATCH(p:Project {id:$projectId})<-[:HAS_PROJECTS]-(org:Organization) RETURN org.id AS orgId",
-      {
-        projectId,
+    if (resourceId) {
+      const res = await session.executeRead((tx) =>
+        tx.run(
+          `
+          MATCH (r:Asset {id:$resourceId})<-[:HAS_RESOURCE]-(e:CalenderEvent)
+          WHERE datetime({epochMillis: toInteger($startMs)}) < e.endDate
+          AND datetime({epochMillis: toInteger($endMs)})   > e.startDate
+          RETURN 1 LIMIT 1
+
+          `,
+          { resourceId, startMs: s, endMs: e }
+        )
+      );
+      if (res.records.length > 0) {
+        throw new GraphQLError(
+          "An event already exists in the selected time range. Please choose a different duration.",
+          {
+            extensions: {
+              code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+            },
+          }
+        );
       }
-    );
-    const orgId = res.records[0]?.get("orgId");
-    const s = toEpochMs(startDate);
-    const e = toEpochMs(endDate);
-    return `${orgId}#${s}#${e}`;
+      return `RES#${resourceId}#${s}#${e}`;
+    } else {
+      const orgRes = await session.run(
+        `
+        MATCH (:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization)
+        RETURN org.id AS orgId
+        LIMIT 1
+        `,
+        { uid: externalId }
+      );
+      const orgId = orgRes.records[0]?.get("orgId") || "NOORG";
+      return `ORG#${orgId}#${s}#${e}`;
+    }
   } catch (error) {
-    logger?.error(`error whileetting the unique event:${error}`);
+    logger?.error(`Error while setting unique event: ${error}`);
+    throw error;
   } finally {
     await session.close();
   }
