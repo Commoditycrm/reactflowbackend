@@ -1658,7 +1658,7 @@ const typeDefs = gql`
       ]
       validate: [
         {
-          when: [BEFORE]
+          when: [AFTER]
           operations: [READ]
           where: {
             OR: [
