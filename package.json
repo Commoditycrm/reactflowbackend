@@ -43,5 +43,6 @@
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "author": "floNautics <commodityccrm@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "packageManager": "yarn@4.10.3"
 }
