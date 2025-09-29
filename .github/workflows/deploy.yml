@@ -2,86 +2,56 @@ name: CI / Deploy Backend to Lightsail
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   workflow_dispatch: {}
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build backend
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: yarn
-          cache-dependency-path: yarn.lock
-
-      - name: Enable Corepack & Yarn 4
-        run: |
+      - run: |
           corepack enable
           corepack prepare yarn@4.10.3 --activate
           yarn -v
+      - run: yarn install --immutable
+      - run: yarn build
 
-      - name: Install deps
-        run: yarn install --immutable
-
-      - name: Build
-        run: yarn build
-
-  deploy-backend:
-    name: Deploy to Lightsail (main only)
+  deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}   # Lightsail .pem
-
-      - name: Trust server host key
-        run: ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy Backend
-        env:
-          HOST: ${{ secrets.LIGHTSAIL_HOST }}   # e.g., 3.129.39.38
-          USER: ${{ secrets.LIGHTSAIL_USER }}   # ubuntu
-        run: |
-          ssh "$USER@$HOST" << 'EOF'
+          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}
+      - run: ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
+      - run: |
+          ssh ubuntu@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
             set -euo pipefail
-
             APP_ROOT="/var/www/app"
-            BACKEND_DIR="$APP_ROOT/backend"
 
-            # update repo
+            sudo mkdir -p "$APP_ROOT"
+            sudo chown -R ubuntu:ubuntu "$APP_ROOT"
             cd "$APP_ROOT"
-            git fetch --all
-            git reset --hard origin/main
 
-            # ensure Yarn 4
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/${GITHUB_REPOSITORY}.git .
+            else
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
             corepack enable || true
             corepack prepare yarn@4.10.3 --activate
             yarn -v
 
-            # install & build backend
-            cd "$BACKEND_DIR"
             yarn install --immutable
             yarn build
 
-            # restart via PM2 ecosystem
-            cd "$APP_ROOT"
             pm2 start ecosystem.config.js --only backend --update-env || true
             pm2 restart backend --update-env || true
             pm2 save
