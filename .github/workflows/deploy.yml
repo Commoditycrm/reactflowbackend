@@ -49,15 +49,15 @@ jobs:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }} # .pem contents
+          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}   # Lightsail .pem
 
       - name: Trust server host key
         run: ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy Backend
         env:
-          HOST: ${{ secrets.LIGHTSAIL_HOST }} # e.g. 3.129.39.38
-          USER: ${{ secrets.LIGHTSAIL_USER }} # ubuntu
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}   # e.g., 3.129.39.38
+          USER: ${{ secrets.LIGHTSAIL_USER }}   # ubuntu
         run: |
           ssh "$USER@$HOST" << 'EOF'
             set -euo pipefail
@@ -65,22 +65,22 @@ jobs:
             APP_ROOT="/var/www/app"
             BACKEND_DIR="$APP_ROOT/backend"
 
-            # Update repo
+            # update repo
             cd "$APP_ROOT"
             git fetch --all
             git reset --hard origin/main
 
-            # Ensure Yarn 4
+            # ensure Yarn 4
             corepack enable || true
             corepack prepare yarn@4.10.3 --activate
             yarn -v
 
-            # Install & build backend
+            # install & build backend
             cd "$BACKEND_DIR"
             yarn install --immutable
             yarn build
 
-            # Restart backend with PM2 ecosystem
+            # restart via PM2 ecosystem
             cd "$APP_ROOT"
             pm2 start ecosystem.config.js --only backend --update-env || true
             pm2 restart backend --update-env || true
