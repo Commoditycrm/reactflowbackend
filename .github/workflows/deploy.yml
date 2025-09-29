@@ -24,6 +24,12 @@ jobs:
           cache: yarn
           cache-dependency-path: yarn.lock
 
+      - name: Enable Corepack & Yarn 4
+        run: |
+          corepack enable
+          corepack prepare yarn@4.10.3 --activate
+          yarn -v
+
       - name: Install deps
         run: yarn install --immutable
 
@@ -43,15 +49,15 @@ jobs:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }}  # your Lightsail .pem contents
+          ssh-private-key: ${{ secrets.LIGHTSAIL_KEY }} # .pem contents
 
       - name: Trust server host key
         run: ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy Backend
         env:
-          HOST: ${{ secrets.LIGHTSAIL_HOST }}   # e.g., 3.129.39.38
-          USER: ${{ secrets.LIGHTSAIL_USER }}   # ubuntu
+          HOST: ${{ secrets.LIGHTSAIL_HOST }} # e.g. 3.129.39.38
+          USER: ${{ secrets.LIGHTSAIL_USER }} # ubuntu
         run: |
           ssh "$USER@$HOST" << 'EOF'
             set -euo pipefail
@@ -59,30 +65,24 @@ jobs:
             APP_ROOT="/var/www/app"
             BACKEND_DIR="$APP_ROOT/backend"
 
-            # ensure directories/ownership
-            sudo mkdir -p "$BACKEND_DIR"
-            sudo chown -R "$USER":"$USER" "$APP_ROOT"
-
+            # Update repo
             cd "$APP_ROOT"
-            # repo already cloned on server; just update it
             git fetch --all
             git reset --hard origin/main
 
-            # build backend
-            cd "$BACKEND_DIR"
+            # Ensure Yarn 4
             corepack enable || true
+            corepack prepare yarn@4.10.3 --activate
+            yarn -v
+
+            # Install & build backend
+            cd "$BACKEND_DIR"
             yarn install --immutable
             yarn build
 
-            # restart via ecosystem (preferred)
+            # Restart backend with PM2 ecosystem
             cd "$APP_ROOT"
-            if [ -f "ecosystem.config.js" ] || [ -f "ecosystem.config.cjs" ]; then
-              pm2 start ecosystem.config.js --only backend --update-env || true
-              pm2 restart backend --update-env || true
-            else
-              # fallback: direct entry file (adjust if different)
-              pm2 start "$BACKEND_DIR/dist/server.js" --name backend || pm2 restart backend --update-env
-            fi
-
+            pm2 start ecosystem.config.js --only backend --update-env || true
+            pm2 restart backend --update-env || true
             pm2 save
           EOF
