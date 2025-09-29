@@ -753,11 +753,28 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [CREATE, UPDATE, DELETE]
           where: {
             node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           projects_SINGLE: {
+        #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #       ]
+        #     }
+        #   }
+        # }
       ]
     ) {
     id: ID! @id
@@ -816,11 +833,28 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [CREATE, UPDATE, DELETE]
           where: {
             node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           projects_SINGLE: {
+        #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #       ]
+        #     }
+        #   }
+        # }
       ]
     ) {
     id: ID! @id
@@ -880,11 +914,12 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [CREATE, UPDATE, DELETE]
           where: {
             node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
+        
       ]
     ) {
     id: ID! @id
@@ -942,11 +977,28 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [CREATE, UPDATE, DELETE]
           where: {
             node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           projects_SINGLE: {
+        #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #       ]
+        #     }
+        #   }
+        # }
       ]
     ) {
     id: ID! @id
@@ -2350,6 +2402,7 @@ const typeDefs = gql`
     paidOn: DateTime
     projectedExpense: Float
     isRecurringTask: Boolean! @default(value: false)
+    scheduleDays: Int
     actualExpense: Float
     isTopLevelParentItem: Boolean!
       @populatedBy(callback: "topLevelParentItem", operations: [CREATE])
