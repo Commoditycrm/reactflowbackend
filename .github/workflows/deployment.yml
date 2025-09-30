@@ -12,7 +12,7 @@ on:
 
 jobs:
   build:
-    name: Build (backend only)
+    name: Build (root project)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # don't use cache: yarn (causes early yarn call)
+          node-version: 20 # don't set cache:yarn (invokes yarn too early)
 
       - name: Remove yarnPath override (if present)
         run: |
@@ -29,34 +29,34 @@ jobs:
             sed -i '/^yarnPath:/d' .yarnrc.yml
           fi
 
-      - name: Enable Corepack + Yarn 4.10.3
+      - name: Enable Corepack + pin Yarn 4.10.3
         run: |
           corepack enable
           corepack prepare yarn@4.10.3 --activate
           yarn --version
 
+      # Yarn 4 uses a GLOBAL cache by default. Discover it and cache that path.
+      - name: Discover Yarn cache dir
+        id: yarncache
+        run: echo "YARN_CACHE_DIR=$(yarn config get cacheFolder)" >> "$GITHUB_ENV"
+
       - name: Cache Yarn artifacts
         uses: actions/cache@v4
         with:
-          path: .yarn/cache
+          path: ${{ env.YARN_CACHE_DIR }}
           key: ${{ runner.os }}-yarncache-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarncache-
 
-      - name: Install deps (root) - optional
-        run: |
-          if [ -f package.json ]; then
-            yarn install --immutable
-          fi
+      - name: Install deps
+        run: yarn install --immutable
 
-      - name: Install & build backend
+      - name: Build (only if script exists)
         run: |
-          if [ -f backend/package.json ]; then
-            cd backend
-            yarn install --immutable
-            if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
-              yarn build
-            fi
+          if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
+            yarn build
+          else
+            echo "No build script found, skipping."
           fi
 
   deploy:
@@ -74,19 +74,21 @@ jobs:
             echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy over SSH (git pull + backend build + PM2 reload)
+      - name: Deploy over SSH (git pull + install/build + PM2 reload)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
+          # If you use default 22, either remove the next line or set SSH_PORT=22 in repo secrets
+          port: ${{ secrets.SSH_PORT || 22 }}
           key: ${{ secrets.LIGHTSAIL_KEY }}
           script_stop: true
           script: |
             set -e
-            APP_DIR=${{ secrets.APP_DIR }}   # e.g. /var/www/app
+            APP_DIR=${{ secrets.APP_DIR }}   # e.g. /var/www/app/reactflowbackend
             cd "$APP_DIR"
 
-            # Update code
+            # Update code to target branch
             if [ -d .git ]; then
               git fetch --all --prune
               git checkout "${{ steps.sel.outputs.BRANCH }}"
@@ -96,33 +98,30 @@ jobs:
               exit 1
             fi
 
-            # Remove yarnPath override if exists
+            # Ensure we don't rely on a missing .yarn/releases file
             if [ -f .yarnrc.yml ]; then
               sed -i '/^yarnPath:/d' .yarnrc.yml || true
             fi
 
-            # Enable Corepack + Yarn 4.10.3
+            # Enable Corepack + Yarn 4.10.3 on server
             if command -v corepack >/dev/null 2>&1; then
               corepack enable
               corepack prepare yarn@4.10.3 --activate
+            else
+              echo "corepack not found. Install Node 18+/20+ or enable Corepack."
+              exit 1
             fi
 
-            # Root install
-            if [ -f package.json ]; then
-              yarn install --immutable
+            # Install + build at repo root
+            yarn install --immutable
+
+            if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
+              yarn build
+            else
+              echo "No build script found, skipping."
             fi
 
-            # Backend install & build
-            if [ -f backend/package.json ]; then
-              cd backend
-              yarn install --immutable
-              if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
-                yarn build
-              fi
-              cd ..
-            fi
-
-            # Reload PM2
+            # PM2 reload (expects ecosystem.config.js at repo root)
             pm2 startOrReload ecosystem.config.js
             pm2 save
             pm2 ls
