@@ -1,9 +1,9 @@
 name: CI & Deploy (Lightsail + PM2)
 
 on:
-  push: # build on every push, deploy only on main
+  push:
     branches: ["**"]
-  workflow_dispatch: # manual redeploy
+  workflow_dispatch:
     inputs:
       branch:
         description: "Branch to deploy (default: main)"
@@ -21,11 +21,27 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: yarn
+          node-version: 20 # don't use cache: yarn (causes early yarn call)
 
-      - name: Enable Corepack (Yarn)
-        run: corepack enable
+      - name: Remove yarnPath override (if present)
+        run: |
+          if [ -f .yarnrc.yml ]; then
+            sed -i '/^yarnPath:/d' .yarnrc.yml
+          fi
+
+      - name: Enable Corepack + Yarn 4.10.3
+        run: |
+          corepack enable
+          corepack prepare yarn@4.10.3 --activate
+          yarn --version
+
+      - name: Cache Yarn artifacts
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: ${{ runner.os }}-yarncache-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarncache-
 
       - name: Install deps (root) - optional
         run: |
@@ -38,7 +54,7 @@ jobs:
           if [ -f backend/package.json ]; then
             cd backend
             yarn install --immutable
-            if yarn run | grep -q " build"; then
+            if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
               yarn build
             fi
           fi
@@ -63,7 +79,6 @@ jobs:
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
-          port: ${{ secrets.SSH_PORT || 22 }}
           key: ${{ secrets.LIGHTSAIL_KEY }}
           script_stop: true
           script: |
@@ -71,7 +86,7 @@ jobs:
             APP_DIR=${{ secrets.APP_DIR }}   # e.g. /var/www/app
             cd "$APP_DIR"
 
-            # Update code to target branch
+            # Update code
             if [ -d .git ]; then
               git fetch --all --prune
               git checkout "${{ steps.sel.outputs.BRANCH }}"
@@ -81,12 +96,18 @@ jobs:
               exit 1
             fi
 
-            # Ensure Node/Yarn
-            if command -v corepack >/dev/null 2>&1; then
-              corepack enable
+            # Remove yarnPath override if exists
+            if [ -f .yarnrc.yml ]; then
+              sed -i '/^yarnPath:/d' .yarnrc.yml || true
             fi
 
-            # Root install only if root package.json exists
+            # Enable Corepack + Yarn 4.10.3
+            if command -v corepack >/dev/null 2>&1; then
+              corepack enable
+              corepack prepare yarn@4.10.3 --activate
+            fi
+
+            # Root install
             if [ -f package.json ]; then
               yarn install --immutable
             fi
@@ -95,14 +116,13 @@ jobs:
             if [ -f backend/package.json ]; then
               cd backend
               yarn install --immutable
-              if yarn run | grep -q " build"; then
+              if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
                 yarn build
               fi
               cd ..
             fi
 
-            # Reload PM2 (backend only)
+            # Reload PM2
             pm2 startOrReload ecosystem.config.js
             pm2 save
-
             pm2 ls
