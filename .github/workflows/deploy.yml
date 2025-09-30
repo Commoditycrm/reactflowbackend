@@ -1,0 +1,108 @@
+name: CI & Deploy (Lightsail + PM2)
+
+on:
+  push: # build on every push, deploy only on main
+    branches: ["**"]
+  workflow_dispatch: # manual redeploy
+    inputs:
+      branch:
+        description: "Branch to deploy (default: main)"
+        required: false
+        default: "main"
+
+jobs:
+  build:
+    name: Build (backend only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Enable Corepack (Yarn)
+        run: corepack enable
+
+      - name: Install deps (root) - optional
+        run: |
+          if [ -f package.json ]; then
+            yarn install --immutable
+          fi
+
+      - name: Install & build backend
+        run: |
+          if [ -f backend/package.json ]; then
+            cd backend
+            yarn install --immutable
+            if yarn run | grep -q " build"; then
+              yarn build
+            fi
+          fi
+
+  deploy:
+    name: Deploy to Lightsail (PM2)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Select branch (manual runs can override)
+        id: sel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BRANCH=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy over SSH (git pull + backend build + PM2 reload)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR=${{ secrets.APP_DIR }}   # e.g. /var/www/app
+            cd "$APP_DIR"
+
+            # Update code to target branch
+            if [ -d .git ]; then
+              git fetch --all --prune
+              git checkout "${{ steps.sel.outputs.BRANCH }}"
+              git reset --hard "origin/${{ steps.sel.outputs.BRANCH }}"
+            else
+              echo "Directory is not a git repo. Please clone repo into $APP_DIR first."
+              exit 1
+            fi
+
+            # Ensure Node/Yarn
+            if command -v corepack >/dev/null 2>&1; then
+              corepack enable
+            fi
+
+            # Root install only if root package.json exists
+            if [ -f package.json ]; then
+              yarn install --immutable
+            fi
+
+            # Backend install & build
+            if [ -f backend/package.json ]; then
+              cd backend
+              yarn install --immutable
+              if yarn run | grep -q " build"; then
+                yarn build
+              fi
+              cd ..
+            fi
+
+            # Reload PM2 (backend only)
+            pm2 startOrReload ecosystem.config.js
+            pm2 save
+
+            pm2 ls
