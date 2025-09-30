@@ -2,13 +2,8 @@ name: CI & Deploy (Lightsail + PM2)
 
 on:
   push:
-    branches: ["**"]
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch to deploy (default: main)"
-        required: false
-        default: "main"
+    branches: ["main"]           # deploy on main
+  workflow_dispatch: {}          # manual run
 
 jobs:
   build:
@@ -17,13 +12,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Remove legacy yarnPath so setup-node doesn't choke
-      - name: Remove yarnPath override (if present)
-        run: |
-          if [ -f .yarnrc.yml ]; then
-            sed -i '/^yarnPath:/d' .yarnrc.yml
-          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -62,35 +50,55 @@ jobs:
     name: Deploy to Lightsail (PM2)
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Select branch (manual runs can override)
-        id: sel
+      # write the SSH key from base64 to a file (avoids newline/format issues)
+      - name: Write SSH key
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "BRANCH=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
-          else
-            echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
-          fi
+          echo "${{ secrets.LIGHTSAIL_KEY_B64 }}" | base64 -d > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
+      # (optional) pre-populate known_hosts; we also pass fingerprint to ssh-action
+      - name: Add host key to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t ed25519 "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Deploy over SSH (git pull + install/build + PM2 reload)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          key: ${{ secrets.LIGHTSAIL_KEY }}
+          key_path: /tmp/deploy_key
+          port: 22
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           script_stop: true
+          debug: true
           script: |
-            cd /var/www/app/backend
-            git fetch origin
-            git checkout ${{ steps.sel.outputs.BRANCH }}
-            git pull origin ${{ steps.sel.outputs.BRANCH }}
+            set -e
+            APP_DIR=${{ secrets.APP_DIR }}
+            cd "$APP_DIR"
+
+            # update code
+            if [ -d .git ]; then
+              git fetch --all --prune
+              git checkout main
+              git reset --hard origin/main
+            else
+              echo "Not a git repo. Clone your backend into $APP_DIR first."; exit 1
+            fi
+
+            # Yarn 4 on server
             corepack enable
             corepack prepare yarn@4.10.3 --activate
+            yarn -v
+
+            # install + build
             yarn install --immutable
             if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
               yarn build
             fi
-            pm2 reload backend || pm2 start ecosystem.config.js
+
+            # PM2 reload (expects ecosystem.config.js at $APP_DIR)
+            pm2 startOrReload ecosystem.config.js --update-env
             pm2 save
+            pm2 ls
