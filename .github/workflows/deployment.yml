@@ -21,12 +21,23 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # don't set cache:yarn (invokes yarn too early)
+          node-version: 20
 
-      - name: Remove yarnPath override (if present)
+      # Strip legacy Yarn configs before we ever run yarn
+      - name: Sanitize Yarn config (remove legacy v1 settings)
         run: |
+          # remove legacy .yarnrc (Yarn v1)
+          [ -f .yarnrc ] && rm -f .yarnrc
+
+          # remove yarnPath if present (we're using Corepack-managed Yarn)
+          [ -f .yarnrc.yml ] && sed -i '/^yarnPath:/d' .yarnrc.yml
+
+          # fix or drop legacy cacheDir key (Yarn 4 uses cacheFolder)
           if [ -f .yarnrc.yml ]; then
-            sed -i '/^yarnPath:/d' .yarnrc.yml
+            if grep -q '^cacheDir:' .yarnrc.yml; then
+              # convert to cacheFolder
+              sed -i 's/^cacheDir:/cacheFolder:/' .yarnrc.yml
+            fi
           fi
 
       - name: Enable Corepack + pin Yarn 4.10.3
@@ -35,7 +46,7 @@ jobs:
           corepack prepare yarn@4.10.3 --activate
           yarn --version
 
-      # Yarn 4 uses a GLOBAL cache by default. Discover it and cache that path.
+      # Cache Yarn's actual cache folder (Yarn 4 default is global cache)
       - name: Discover Yarn cache dir
         id: yarncache
         run: echo "YARN_CACHE_DIR=$(yarn config get cacheFolder)" >> "$GITHUB_ENV"
@@ -79,7 +90,6 @@ jobs:
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
-          # If you use default 22, either remove the next line or set SSH_PORT=22 in repo secrets
           port: ${{ secrets.SSH_PORT || 22 }}
           key: ${{ secrets.LIGHTSAIL_KEY }}
           script_stop: true
@@ -98,12 +108,16 @@ jobs:
               exit 1
             fi
 
-            # Ensure we don't rely on a missing .yarn/releases file
+            # Sanitize Yarn config on server too
+            [ -f .yarnrc ] && rm -f .yarnrc || true
             if [ -f .yarnrc.yml ]; then
               sed -i '/^yarnPath:/d' .yarnrc.yml || true
+              if grep -q '^cacheDir:' .yarnrc.yml; then
+                sed -i 's/^cacheDir:/cacheFolder:/' .yarnrc.yml || true
+              fi
             fi
 
-            # Enable Corepack + Yarn 4.10.3 on server
+            # Ensure Corepack/Yarn
             if command -v corepack >/dev/null 2>&1; then
               corepack enable
               corepack prepare yarn@4.10.3 --activate
@@ -112,7 +126,6 @@ jobs:
               exit 1
             fi
 
-            # Install + build at repo root
             yarn install --immutable
 
             if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
@@ -121,7 +134,6 @@ jobs:
               echo "No build script found, skipping."
             fi
 
-            # PM2 reload (expects ecosystem.config.js at repo root)
             pm2 startOrReload ecosystem.config.js
             pm2 save
             pm2 ls
