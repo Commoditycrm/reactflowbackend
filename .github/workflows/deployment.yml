@@ -18,6 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Remove legacy yarnPath so setup-node doesn't choke
       - name: Remove yarnPath override (if present)
         run: |
           if [ -f .yarnrc.yml ]; then
@@ -81,7 +82,7 @@ jobs:
           key: ${{ secrets.LIGHTSAIL_KEY }}
           script_stop: true
           script: |
-            cd ~/reactflowbackend
+            cd /var/www/app/backend
             git fetch origin
             git checkout ${{ steps.sel.outputs.BRANCH }}
             git pull origin ${{ steps.sel.outputs.BRANCH }}
@@ -91,5 +92,5 @@ jobs:
             if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
               yarn build
             fi
-            pm2 reload reactflowbackend || pm2 start ecosystem.config.js
+            pm2 reload backend || pm2 start ecosystem.config.js
             pm2 save
