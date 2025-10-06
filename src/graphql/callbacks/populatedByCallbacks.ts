@@ -195,10 +195,26 @@ export const uniqueEventExtractor = async (
   const startDate: DateTime = _parent?.startDate || _args?.startDate;
   const endDate: DateTime = _parent?.endDate || _args?.endDate;
 
-  let resourceId = _parent?.resource?.connect?.where?.node?.id || null;
-
   const s = toEpochMs(startDate);
   const e = toEpochMs(endDate);
+
+  const durationMs = e - s;
+  const fiveMin = 5 * 60 * 1000;
+  const tenMin = 10 * 60 * 1000;
+
+  if (durationMs <= 0) {
+    throw new GraphQLError("End time must be after start time.", {
+      extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT },
+    });
+  }
+  if (durationMs === fiveMin || durationMs === tenMin) {
+    throw new GraphQLError(
+      "Event duration cannot be exactly 5 minutes or 10 minutes. Choose a different duration.",
+      { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
+    );
+  }
+
+  let resourceId = _parent?.resource?.connect?.where?.node?.id || null;
 
   const session = (await Neo4JConnection.getInstance()).driver.session();
   try {
