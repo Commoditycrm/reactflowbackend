@@ -919,7 +919,6 @@ const typeDefs = gql`
             node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
           }
         }
-        
       ]
     ) {
     id: ID! @id
@@ -1073,7 +1072,7 @@ const typeDefs = gql`
       validate: [
         {
           operations: [READ]
-          when: [BEFORE]
+          when: [AFTER]
           where: {
             OR: [
               {
