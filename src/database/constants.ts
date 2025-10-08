@@ -500,6 +500,7 @@ CALL apoc.periodic.iterate(
          newSubItem.actualExpense = subItemData.subItem.actualExpense,
          newSubItem.uid = newSubUid,
          newSubItem.itemData.sourceItem = subItemData.subItem.itemData.sourceItem,
+         newSubItem.isRecurringTask = subItemData.subItem.itemData.sourceItem,
          newSubItem.uniqueUid = toString(toInteger(newSubUid)) + '-' + org.id
      MERGE (newSubItem)<-[:CREATED_ITEM]-(user)
      MERGE (newSubItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
