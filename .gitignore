@@ -1,53 +1,85 @@
-# Node modules
+# ------------------------------
+# ⚙️ Node & Yarn (v4+ / Berry)
+# ------------------------------
 node_modules/
+.pnp.cjs
+.pnp.loader.mjs
 
-# Build output
+# Ignore everything inside .yarn but keep essential folders
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/patches
+!.yarn/versions
+!.yarnrc.yml
+
+# Optional: ignore Yarn cache and install state (auto-generated)
+.yarn/cache
+.yarn/install-state.gz
+
+# ------------------------------
+# 🏗️ Build Output
+# ------------------------------
+.next/
+out/
 dist/
 build/
 
-# Logs
+# ------------------------------
+# 🧪 Testing & Coverage
+# ------------------------------
+coverage/
+jest-results.json
+
+# ------------------------------
+# 🧰 Logs & Debugging
+# ------------------------------
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS-specific junk
-.DS_Store
-Thumbs.db
-
-# Environment variables
+# ------------------------------
+# ⚡ Environment Files
+# ------------------------------
 .env
 .env.local
 .env.*.local
 
-# TypeScript cache
+# ------------------------------
+# 🧠 TypeScript
+# ------------------------------
 *.tsbuildinfo
 
-# Editor settings
+# ------------------------------
+# 🖥️ Editor & OS Junk
+# ------------------------------
 .vscode/
-
-# Testing (e.g., Jest)
-coverage/
-
-# Cache folders (e.g., esbuild, swc, babel, etc.)
-.cache/
-.next/
-out/
-
-# Docker-related files
-Dockerfile
-*.yaml
-
-# Firebase emulators/state (optional)
-.firebase/
-firestore-debug.log
-
-# PM2 logs and pid files (optional)
-pids/
-*.pid
-
-# Temporary files
+.idea/
+.DS_Store
+Thumbs.db
 *.swp
 *.swo
 *.tmp
+
+# ------------------------------
+# 🐳 Docker / Containers
+# ------------------------------
+Dockerfile
+docker-compose.yml
+neo4j-compose.yml
+*.yaml
+
+# ------------------------------
+# 🔥 Firebase (optional)
+# ------------------------------
+.firebase/
+firestore-debug.log
+
+# ------------------------------
+# ⚙️ PM2 / Process Manager (optional)
+# ------------------------------
+pids/
+*.pid
