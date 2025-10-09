@@ -187,76 +187,114 @@ export const messageCounterSetter = (
 };
 
 export const uniqueEventExtractor = async (
-  _parent: Record<string, any>,
-  _args: Record<string, any>,
-  _context: Record<string, any>
+  _parent: any,
+  _args: any,
+  _context: any
 ) => {
   const externalId = _context?.jwt?.uid;
-  const startDate: DateTime = _parent?.startDate || _args?.startDate;
-  const endDate: DateTime = _parent?.endDate || _args?.endDate;
+  const eventId: string | null = _context?.resolveTree?.args?.where?.id ?? null;
 
-  const s = toEpochMs(startDate);
-  const e = toEpochMs(endDate);
-
-  const durationMs = e - s;
-  const fiveMin = 5 * 60 * 1000;
-  const tenMin = 10 * 60 * 1000;
-
-  if (durationMs <= 0) {
-    throw new GraphQLError("End time must be after start time.", {
-      extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT },
-    });
-  }
-  if (durationMs === fiveMin || durationMs === tenMin) {
-    throw new GraphQLError(
-      "Event duration cannot be exactly 5 minutes or 10 minutes. Choose a different duration.",
-      { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
-    );
-  }
-
-  let resourceId = _parent?.resource?.connect?.where?.node?.id || null;
+  let startDate: DateTime | null = _parent?.startDate ?? null;
+  let endDate: DateTime | null = _parent?.endDate ?? null;
+  let resourceId: string | null =
+    _parent?.resource?.connect?.where?.node?.id ?? null;
 
   const session = (await Neo4JConnection.getInstance()).driver.session();
+
+  const backfillIfNeeded = async () => {
+    if (!eventId) return;
+    if (startDate && endDate && resourceId !== null) return;
+
+    const res = await session.executeRead((tx) =>
+      tx.run(
+        `
+      MATCH (e:CalenderEvent {id:$id})
+      OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(r:Asset)
+      RETURN e.startDate AS startDate, e.endDate AS endDate, r.id AS resourceId
+      `,
+        { id: eventId }
+      )
+    );
+    const rec = res.records[0];
+    if (!rec) {
+      throw new GraphQLError("Event not found.", {
+        extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT },
+      });
+    }
+    startDate = startDate ?? rec.get("startDate");
+    endDate = endDate ?? rec.get("endDate");
+    resourceId = resourceId ?? (rec.get("resourceId") || null);
+  };
+
   try {
+    await backfillIfNeeded();
+
+    if (!startDate || !endDate) {
+      throw new GraphQLError("Start and end time are required.", {
+        extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT },
+      });
+    }
+
+    const s = toEpochMs(startDate);
+    const e = toEpochMs(endDate);
+
+    const durationMs = e - s;
+    const fiveMin = 5 * 60 * 1000;
+    const tenMin = 10 * 60 * 1000;
+
+    if (durationMs <= 0) {
+      throw new GraphQLError("End time must be after start time.", {
+        extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT },
+      });
+    }
+    if (durationMs === fiveMin || durationMs === tenMin) {
+      throw new GraphQLError(
+        "Event duration cannot be exactly 5 minutes or 10 minutes. Choose a different duration.",
+        { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
+      );
+    }
+
     if (resourceId) {
       const res = await session.executeRead((tx) =>
         tx.run(
           `
-          MATCH (r:Asset {id:$resourceId})<-[:HAS_RESOURCE]-(e:CalenderEvent)
-          WHERE datetime({epochMillis: toInteger($startMs)}) < e.endDate
-          AND datetime({epochMillis: toInteger($endMs)})   > e.startDate
-          RETURN 1 LIMIT 1
-
-          `,
-          { resourceId, startMs: s, endMs: e }
+         MATCH (r:Asset {id:$resourceId})
+         OPTIONAL MATCH (r)<-[:HAS_RESOURCE]-(other:CalenderEvent)
+         WHERE ($eventId IS NULL OR other.id <> $eventId)
+         AND other.startDate < datetime({epochMillis: toInteger($endMs)})
+         AND other.endDate   >= datetime({epochMillis: toInteger($startMs)})
+         RETURN count(other) AS conflicts
+        `,
+          { resourceId, startMs: s, endMs: e, eventId: eventId ?? null }
         )
       );
-      if (res.records.length > 0) {
+
+      const conflicts =
+        res.records[0]?.get("conflicts").toNumber?.() ??
+        res.records[0]?.get("conflicts");
+      if (conflicts > 0) {
         throw new GraphQLError(
-          "An event already exists in the selected time range. Please choose a different duration.",
-          {
-            extensions: {
-              code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-            },
-          }
+          "Another event already exists in the selected time range for this resource.",
+          { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
         );
       }
+
       return `RES#${resourceId}#${s}#${e}`;
-    } else {
-      const orgRes = await session.run(
-        `
-        MATCH (:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization)
-        RETURN org.id AS orgId
-        LIMIT 1
-        `,
-        { uid: externalId }
-      );
-      const orgId = orgRes.records[0]?.get("orgId") || "NOORG";
-      return `ORG#${orgId}#${s}#${e}`;
     }
-  } catch (error) {
-    logger?.error(`Error while setting unique event: ${error}`);
-    throw error;
+
+    const orgRes = await session.run(
+      `
+      MATCH (:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization)
+      RETURN org.id AS orgId
+      LIMIT 1
+      `,
+      { uid: externalId }
+    );
+    const orgId = orgRes.records[0]?.get("orgId") || "NOORG";
+    return `ORG#${orgId}#${s}#${e}`;
+  } catch (err) {
+    logger?.error(`Error while setting unique event: ${err}`);
+    throw err;
   } finally {
     await session.close();
   }
