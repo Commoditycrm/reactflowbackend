@@ -660,19 +660,17 @@ CALL apoc.periodic.iterate(
   WITH p, n AS parent, bi
   MATCH (org)-[:HAS_PROJECTS]->(p)
   MATCH (user:User)-[:CREATED_ITEM]->(bi)
-  MATCH (bi)-[:HAS_STATUS]->(oldStatus:Status)
+  OPTIONAL MATCH(bi)-[:HAS_ASSIGNED_USER]->(assignedUser:User)
   MATCH (org)-[:HAS_STATUS]->(status:Status)
   MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(type:BacklogItemType)
   MATCH (bi)-[:HAS_RISK_LEVEL]->(level:RiskLevel)
   MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
 
   WHERE toLower(status.defaultName) CONTAINS 'not started'
-    AND toLower(oldStatus.defaultName) CONTAINS 'completed'
-
-  RETURN bi, p, parent, level, status, type, org, user, orgCounter
+  RETURN bi, p, parent, level, status, type, org, user, orgCounter,assignedUser
 ",
 "
-  WITH bi, p, parent, level, status, type, org, user, orgCounter,
+  WITH bi, p, parent, level, status, type, org, user, orgCounter,assignedUser,
        datetime() AS now,
        duration.between(bi.startDate, bi.endDate) AS oldDuration
 
@@ -704,6 +702,9 @@ CALL apoc.periodic.iterate(
   MERGE (newItem)-[:HAS_STATUS]->(status)
   MERGE (newItem)-[:ITEM_IN_PROJECT]->(p)
   MERGE (parent)-[:HAS_CHILD_ITEM {createdAt: now}]->(newItem)
+  FOREACH (a IN CASE WHEN assignedUser IS NULL THEN [] ELSE [assignedUser] END |
+    MERGE (newItem)-[:HAS_ASSIGNED_USER]->(a)
+  )
 ",
 { batchSize: 200, parallel: false, retries: 1 }
 );
@@ -739,19 +740,18 @@ CALL apoc.periodic.iterate(
   WITH p, parentBI AS parent, bi
   MATCH (org)-[:HAS_PROJECTS]->(p)
   MATCH (user:User)-[:CREATED_ITEM]->(bi)
-  MATCH (bi)-[:HAS_STATUS]->(oldStatus:Status)
   MATCH (org)-[:HAS_STATUS]->(status:Status)
+  OPTIONAL MATCH(bi)-[:HAS_ASSIGNED_USER]->(assignedUser:User)
   MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(type:BacklogItemType)
   MATCH (bi)-[:HAS_RISK_LEVEL]->(level:RiskLevel)
   MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
 
   WHERE toLower(status.defaultName) CONTAINS 'not started'
-    AND toLower(oldStatus.defaultName) CONTAINS 'completed'
 
-  RETURN bi, p, parent, level, status, type, org, user, orgCounter
+  RETURN bi, p, parent, level, status, type, org, user, orgCounter,assignedUser
 ",
 "
-  WITH bi, p, parent, level, status, type, org, user, orgCounter,
+  WITH bi, p, parent, level, status, type, org, user, orgCounter,assignedUser,
        datetime() AS now,
        duration.between(bi.startDate, bi.endDate) AS oldDuration
 
@@ -785,6 +785,9 @@ CALL apoc.periodic.iterate(
   MERGE (newItem)-[:HAS_STATUS]->(status)
   MERGE (newItem)-[:ITEM_IN_PROJECT]->(p)
   MERGE (parent)-[:HAS_CHILD_ITEM {createdAt: now}]->(newItem)
+  FOREACH (a IN CASE WHEN assignedUser IS NULL THEN [] ELSE [assignedUser] END |
+    MERGE (newItem)-[:HAS_ASSIGNED_USER]->(a)
+  )
 ",
 { batchSize: 200, parallel: false, retries: 1 }
 );
