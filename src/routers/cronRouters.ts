@@ -7,8 +7,8 @@ import createReccuringTask from "../controllers/cronJobs/recurringTask";
 const cronRouter = Router();
 
 cronRouter.get("/warmup", warmupcontroller);
-cronRouter.get("/send-reminders", sendReminders);
-cronRouter.get("/reset-whatsapp-counter", resetMessageCounter);
-cronRouter.get("/create-recurring-task", createReccuringTask);
+cronRouter.post("/send-reminders", sendReminders);
+cronRouter.post("/reset-whatsapp-counter", resetMessageCounter);
+cronRouter.post("/create-recurring-task", createReccuringTask);
 
 export default cronRouter;
