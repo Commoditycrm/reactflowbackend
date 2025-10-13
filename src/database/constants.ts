@@ -422,7 +422,7 @@ CALL apoc.periodic.iterate(
         newBacklogItem.isTopLevelParentItem = itemData.sourceItem.isTopLevelParentItem,
         newBacklogItem.actualExpense = itemData.sourceItem.actualExpense,
         newBacklogItem.uid = newUid,
-        newBacklogItem.isRecurringTask = false,
+        newBacklogItem.isRecurringTask = itemData.sourceItem.isRecurringTask,
         newBacklogItem.uniqueUid = toString(toInteger(newUid)) + '-' + org.id
 
      MERGE (newBacklogItem)<-[:CREATED_ITEM]-(user)
@@ -499,7 +499,7 @@ CALL apoc.periodic.iterate(
          newSubItem.isTopLevelParentItem = false,
          newSubItem.actualExpense = subItemData.subItem.actualExpense,
          newSubItem.uid = newSubUid,
-         newSubItem.isRecurringTask = false,
+         newSubItem.isRecurringTask = subItemData.subItem.isRecurringTask,
          newSubItem.uniqueUid = toString(toInteger(newSubUid)) + '-' + org.id
      MERGE (newSubItem)<-[:CREATED_ITEM]-(user)
      MERGE (newSubItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
