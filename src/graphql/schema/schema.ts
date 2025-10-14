@@ -19,9 +19,10 @@ const typeDefs = gql`
 
   enum UserRole {
     COMPANY_ADMIN
+    SYSTEM_ADMIN
+    ADMIN
     SUPER_USER
     USER
-    SYSTEM_ADMIN
   }
 
   interface SoftDeletable @limit(max: 15) {
