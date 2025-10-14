@@ -1362,10 +1362,8 @@ const typeDefs = gql`
           AND (
            tab <> 'EXPENSE'
            OR
-          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)))
-           AND (f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
+          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)) OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
+           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)) OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
           ))
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
@@ -1451,13 +1449,11 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
-          AND (
+         AND (
            tab <> 'EXPENSE'
            OR
-          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)))
-           AND (f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
+          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)) OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
+           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)) OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
           ))
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
