@@ -2643,7 +2643,6 @@ const typeDefs = gql`
                   project: {
                     assignedUsers_SINGLE: {
                       externalId: "$jwt.sub"
-                      role: "SUPER_USER"
                     }
                   }
                 }
