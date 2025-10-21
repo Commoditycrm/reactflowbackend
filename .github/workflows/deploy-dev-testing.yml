@@ -47,18 +47,4 @@ jobs:
             pm2 save
 
             echo "✅ Deployment completed successfully."
-
-      - name: Trigger E2E tests (dev)
-        if: success()
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
-          repository: Commoditycrm/automated-tests
-          event-type: run-e2e
-          client-payload: |
-            {
-              "env": "dev",
-              "baseUrl": "${{ secrets.DEV_BASE_URL }}",
-              "commit": "${{ github.sha }}",
-              "branch": "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}"
-            }
+      
