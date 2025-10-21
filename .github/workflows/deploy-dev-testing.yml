@@ -1,0 +1,64 @@
+name: Deploy Dev-Testing
+
+on:
+  push:
+    branches: [dev-branch]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: "dev-branch"
+
+jobs:
+  deploy:
+    name: Deploy Backend (Dev-Testing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -euo pipefail
+            BRANCH="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}"
+            echo "🚀 Deploying branch: $BRANCH to dev server"
+
+            cd /var/www/dev/backend
+
+            echo "🔄 Fetching latest code..."
+            git fetch --all --prune
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+
+            echo "🧱 Preparing build..."
+            corepack enable
+            corepack prepare yarn@4.10.3 --activate
+            YARN_ENABLE_PROGRESS_BARS=0 yarn install --immutable
+            NEXT_TELEMETRY_DISABLED=1 yarn build
+
+            echo "♻️ Restarting PM2 service..."
+            pm2 reload /var/www/dev/ecosystem.config.js --only dev-backend || \
+              pm2 start /var/www/dev/ecosystem.config.js --only dev-backend
+            pm2 save
+
+            echo "✅ Deployment completed successfully."
+
+      - name: Trigger E2E tests (dev)
+        if: success()
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          repository: Commoditycrm/automated-tests
+          event-type: run-e2e
+          client-payload: |
+            {
+              "env": "dev",
+              "baseUrl": "${{ secrets.DEV_BASE_URL }}",
+              "commit": "${{ github.sha }}",
+              "branch": "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}"
+            }
