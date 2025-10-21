@@ -1,0 +1,48 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: "main"
+jobs:
+  deploy:
+    name: Deploy to Lightsail (PM2)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Select branch (manual runs can override)
+        id: sel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BRANCH=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy over SSH (git pull + install/build + PM2 reload)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          script_stop: true
+          script: |
+            cd /var/www/app/backend
+            git fetch origin
+            git checkout ${{ steps.sel.outputs.BRANCH }}
+            git pull origin ${{ steps.sel.outputs.BRANCH }}
+            corepack enable
+            corepack prepare yarn@4.10.3 --activate
+            yarn install --immutable
+            if yarn run | grep -qE '(^|[[:space:]])build($|[[:space:]])'; then
+              yarn build
+            fi
+            pm2 reload backend || pm2 start ecosystem.config.js
+            pm2 save
