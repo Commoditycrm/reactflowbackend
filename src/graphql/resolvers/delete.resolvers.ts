@@ -5,12 +5,6 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "../../database/connection";
 import { Model } from "@neo4j/graphql-ogm";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import {
-  DELETE_BACKLOG_CQL,
-  DELETE_FILE_CQL,
-  DELETE_FLOWNODE_CQL,
-  DELETE_FOLDER_CQL,
-} from "../../database/constants";
 import { User, UserRole } from "../../@types/ogm.types";
 import { getModelWhereClause } from "./read.resolvers";
 
@@ -182,140 +176,6 @@ const disableUser = async (
     logger?.error(error);
     throw new GraphQLError(
       "Unable to disable user account or account not found."
-    );
-  }
-};
-
-const deleteFolder = async (
-  _source: Record<string, any>,
-  { folderId }: { folderId: string },
-  _context: Record<string, any>
-) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-
-  const tx = session.beginTransaction();
-  try {
-    const result = await tx.run(DELETE_FOLDER_CQL, { folderId });
-    const summary = result.summary.counters.updates();
-    await tx.commit();
-    return {
-      nodesDeleted: summary?.nodesDeleted || 0,
-      relationshipsDeleted: summary?.relationshipsDeleted || 0,
-    };
-  } catch (error) {
-    await tx.rollback();
-    logger?.error(error);
-    if (error instanceof GraphQLError) {
-      throw error;
-    }
-    throw new GraphQLError(
-      "An unexpected error occurred while deleting the folder.",
-      {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
-      }
-    );
-  } finally {
-    session.close();
-  }
-};
-
-const deleteFile = async (
-  _source: Record<string, any>,
-  { fileId }: { fileId: string },
-  _context: Record<string, any>
-) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-
-  const tx = session.beginTransaction();
-  try {
-    const result = await tx.run(DELETE_FILE_CQL, { fileId });
-    const summary = result?.summary?.counters.updates();
-    await tx.commit();
-    return {
-      nodesDeleted: summary?.nodesDeleted || 0,
-      relationshipsDeleted: summary?.relationshipsDeleted || 0,
-    };
-  } catch (error) {
-    logger?.error(error);
-    tx.rollback();
-    if (error instanceof GraphQLError) {
-      throw error;
-    }
-    throw new GraphQLError(
-      "An unexpected error occurred while deleting the File.",
-      {
-        extensions: {
-          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-        },
-      }
-    );
-  } finally {
-    session.close();
-  }
-};
-
-const deleteFlowNode = async (
-  _source: Record<string, any>,
-  { flowNodeId }: { flowNodeId: string },
-  _context: Record<string, any>
-) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
-  try {
-    const result = await tx.run(DELETE_FLOWNODE_CQL, { nodeId: flowNodeId });
-    const summary = result.summary?.counters.updates();
-    await tx.commit();
-    return {
-      nodesDeleted: summary?.nodesDeleted || 0,
-      relationshipsDeleted: summary?.relationshipsDeleted || 0,
-    };
-  } catch (error) {
-    logger?.error(error);
-    tx.rollback();
-    if (error instanceof GraphQLError) {
-      throw error;
-    }
-    throw new GraphQLError(
-      "An unexpected error occurred while deleting the Node",
-      {
-        extensions: {
-          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-        },
-      }
-    );
-  } finally {
-    session.close();
-  }
-};
-
-const deleteBacklogItem = async (
-  _source: Record<string, any>,
-  { itemId }: { itemId: string },
-  _context: Record<string, any>
-) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
-  try {
-    const result = await tx.run(DELETE_BACKLOG_CQL, { itemId });
-    const summary = result.summary?.counters.updates();
-    await tx.commit();
-    return {
-      nodesDeleted: summary?.nodesDeleted || 0,
-      relationshipsDeleted: summary?.relationshipsDeleted || 0,
-    };
-  } catch (error) {
-    logger?.error(error);
-    tx.rollback();
-    if (error instanceof GraphQLError) {
-      throw error;
-    }
-    throw new GraphQLError(
-      "An unexpected error occurred while deleting the BacklogItem",
-      {
-        extensions: {
-          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-        },
-      }
     );
   }
 };
@@ -505,10 +365,6 @@ const deleteOrg = async (
 export const deleteOperationMutations = {
   deleteUser,
   disableUser,
-  deleteFolder,
-  deleteFile,
-  deleteFlowNode,
-  deleteBacklogItem,
   emptyRecycleBin,
   deleteFirebaseUser,
   deleteOrg,

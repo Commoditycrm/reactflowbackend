@@ -1,12 +1,8 @@
 import { GraphQLError } from "graphql";
 import { Neo4JConnection } from "../../database/connection";
-import {
-  GET_PARENT_FOLDER_FOR_BACKLOGS_CQL,
-  GET_PARENT_FOLDER_FOR_FOLDER_CQL,
-} from "../../database/constants";
 import logger from "../../logger";
 import { OGMConnection } from "../init/ogm.init";
-import { User, UserRole } from "../../@types/ogm.types";
+import { User } from "../../@types/ogm.types";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 
@@ -52,129 +48,6 @@ const updateUserRole = async (
     throw error;
   } finally {
     await session.close();
-  }
-};
-
-const isUserAssignedInParent = async (
-  userId: string,
-  itemId: string,
-  externalId: string,
-  isFolder: boolean
-) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const vars = isFolder ? { folderId: itemId } : { backlogItemId: itemId };
-
-  try {
-    const { records } = await session.run(
-      isFolder
-        ? GET_PARENT_FOLDER_FOR_FOLDER_CQL
-        : GET_PARENT_FOLDER_FOR_BACKLOGS_CQL,
-      {
-        userId,
-        ...vars,
-        externalId,
-      }
-    );
-
-    const isUserAssigned = records[0]?.get("isUserAssigned");
-    const topLevelParentId = records[0]?.get("topLevelParentId");
-
-    return { isUserAssigned, topLevelParentId };
-  } catch (e) {
-    logger?.error(e);
-    throw new Error("Internal Server");
-  } finally {
-    session.close();
-  }
-};
-
-const assignUserToProject = async (
-  _source: Record<string, any>,
-  { proectId, userId }: Record<string, any>,
-  _context: Record<string, any>
-): Promise<boolean> => {
-  const Project = await (await OGMConnection.getInstance()).model("Project");
-
-  const { isUserAssigned, topLevelParentId } = await isUserAssignedInParent(
-    userId,
-    proectId,
-    _context?.jwt?.sub,
-    true
-  );
-  // Perform assignment logic if ownership validation passes
-  if (isUserAssigned || topLevelParentId === proectId) {
-    await Project.update({
-      where: { id: proectId },
-      update: {
-        assignedUsers: [
-          {
-            connect: [
-              {
-                where: {
-                  node: {
-                    id: userId,
-                  },
-                },
-              },
-            ],
-          },
-        ],
-      },
-    });
-
-    return true;
-  } else {
-    throw new GraphQLError("User does not have permission to assign users.");
-  }
-};
-
-const assignUserToBacklogItem = async (
-  _source: Record<string, any>,
-  { backlogItemId, userId }: Record<string, any>,
-  _context: Record<string, any>
-): Promise<boolean> => {
-  const BacklogItem = await (
-    await OGMConnection.getInstance()
-  ).model("BacklogItem");
-
-  const { isUserAssigned } = await isUserAssignedInParent(
-    userId,
-    backlogItemId,
-    _context?.jwt?.sub,
-    false
-  );
-
-  // Perform assignment logic if ownership validation passes
-  if (isUserAssigned) {
-    await BacklogItem.update({
-      where: { id: backlogItemId },
-      disconnect: {
-        assignedUser: {
-          where: {
-            node: {
-              role_IN: [
-                UserRole.CompanyAdmin,
-                UserRole.SuperUser,
-                UserRole.User,
-              ],
-            },
-          },
-        },
-      },
-      connect: {
-        assignedUser: {
-          where: {
-            node: {
-              id: userId,
-            },
-          },
-        },
-      },
-    });
-
-    return true;
-  } else {
-    throw new GraphQLError("User does not have permission to assign users.");
   }
 };
 
@@ -301,8 +174,6 @@ const updatePhoneNumber = async (
 
 export const updateOperationMutations = {
   updateUserRole,
-  assignUserToProject,
-  assignUserToBacklogItem,
   updateUserDetail,
   updatePhoneNumber,
 };
