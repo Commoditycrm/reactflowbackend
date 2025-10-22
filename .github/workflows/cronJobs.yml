@@ -1,0 +1,70 @@
+name: Ensure Server Cron Jobs
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 0 * * 0" 
+
+jobs:
+  ensure-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure cron entries on Lightsail
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            bash -lc 'cat > /tmp/ensure_cron.sh << "EOS"
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            APP_DIR="/var/www/app"
+            JOBS_DIR="$APP_DIR/jobs"
+            LOGS_DIR="$APP_DIR/logs"
+
+            SCRIPTS=(
+              "create-recurring-task.sh"
+              "reset-whatsapp-counter.sh"
+              "send-reminders.sh"
+              "warmup.sh"
+              "soft-delete-data-clean-up.sh"
+            )
+
+            SCHEDULE="30 3 * * *"
+
+            echo "🗂 Ensuring logs dir and cron service"
+            mkdir -p "$LOGS_DIR"
+            if ! systemctl is-active --quiet cron; then
+              sudo systemctl start cron
+            fi
+
+            echo "🧾 Build new crontab (keep non-job lines)"
+            CURRENT_CRONTAB="$(crontab -l 2>/dev/null || true)"
+            NEW_CRONTAB="$(echo "$CURRENT_CRONTAB" | grep -v -F "$JOBS_DIR/" || true)"
+
+            for SCRIPT in "${SCRIPTS[@]}"; do
+              SCRIPT_PATH="$JOBS_DIR/$SCRIPT"
+              if [[ -f "$SCRIPT_PATH" ]]; then
+                chmod +x "$SCRIPT_PATH"
+                LOG_NAME="${SCRIPT%.sh}.log"
+                LOG_PATH="$LOGS_DIR/$LOG_NAME"
+                LINE="$SCHEDULE $SCRIPT_PATH >> $LOG_PATH 2>&1"
+                NEW_CRONTAB="$(printf "%s\n%s\n" "$NEW_CRONTAB" "$LINE")"
+                echo "✅ Ensured: $LINE"
+              else
+                echo "⚠️  Skipping (script missing): $SCRIPT_PATH"
+              fi
+            done
+
+            echo "$NEW_CRONTAB" | sed "/^[[:space:]]*$/d" | crontab -
+
+            echo "📋 Final crontab:"
+            crontab -l
+
+            echo "✅ Cron setup complete."
+            EOS
+            bash /tmp/ensure_cron.sh'
