@@ -2077,8 +2077,7 @@ const typeDefs = gql`
         }
       ]
     )
-    @query(read: true, aggregate: false)
-    @mutation(operations: [CREATE, UPDATE]) {
+    @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
     description: String
@@ -2317,8 +2316,7 @@ const typeDefs = gql`
       ]
     )
     @fulltext(indexes: [{ indexName: "fullTextOnFileName", fields: ["name"] }])
-    @query(read: true, aggregate: false)
-    @mutation(operations: [CREATE, UPDATE]) {
+    @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
     startDate: DateTime
@@ -2763,7 +2761,7 @@ const typeDefs = gql`
     @fulltext(
       indexes: [{ indexName: "fullTextOnBacklogItemLabel", fields: ["label"] }]
     )
-    @mutation(operations: [UPDATE])
+    @mutation(operations: [UPDATE, DELETE])
     @query(read: true, aggregate: false) {
     id: ID! @id
     uniqueUid: String! @unique @settable(onCreate: false, onUpdate: false)
@@ -3351,8 +3349,6 @@ const typeDefs = gql`
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
-    assignUserToProject(userId: ID!, projectId: ID!): Boolean!
-    assignUserToBacklogItem(userId: ID!, backlogItemId: ID!): Boolean!
     createBacklogItemWithUID(
       input: BacklogItemCreateInput!
     ): CreateBacklogItemsMutationResponse!
@@ -3488,10 +3484,6 @@ const typeDefs = gql`
         """
         columnName: "result"
       )
-    deleteFlowNode(flowNodeId: String!): DeleteInfo!
-    deleteFile(fileId: String!): DeleteInfo!
-    deleteFolder(folderId: String!): DeleteInfo!
-    deleteBacklogItem(itemId: String!): DeleteInfo!
     emptyRecycleBin: DeleteInfo!
     deleteOrg(orgId: String): Boolean!
   }
