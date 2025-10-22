@@ -1818,7 +1818,7 @@ const typeDefs = gql`
       validate: [
         {
           when: [BEFORE]
-          operations: [READ, UPDATE]
+          operations: [READ]
           where: {
             node: {
               OR: [
@@ -1838,13 +1838,16 @@ const typeDefs = gql`
                     }
                   }
                 }
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
               ]
             }
           }
         }
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [UPDATE]
           where: {
             node: {
               OR: [
@@ -1858,11 +1861,12 @@ const typeDefs = gql`
                     organization: {
                       memberUsers_SINGLE: {
                         externalId: "$jwt.sub"
-                        role_IN: ["SUPER_USER", "ADMIN"]
+                        role_IN: ["ADMIN"]
                       }
                     }
                   }
                 }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
               ]
             }
           }
@@ -1891,7 +1895,7 @@ const typeDefs = gql`
       validate: [
         {
           when: [BEFORE]
-          operations: [READ, UPDATE]
+          operations: [READ]
           where: {
             node: {
               OR: [
@@ -1901,6 +1905,9 @@ const typeDefs = gql`
                   }
                 }
                 { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
                 {
                   project: {
                     organization: {
@@ -1917,7 +1924,7 @@ const typeDefs = gql`
         }
         {
           when: [AFTER]
-          operations: [CREATE]
+          operations: [UPDATE]
           where: {
             node: {
               OR: [
@@ -1931,11 +1938,12 @@ const typeDefs = gql`
                     organization: {
                       memberUsers_SINGLE: {
                         externalId: "$jwt.sub"
-                        role_IN: ["SUPER_USER", "ADMIN"]
+                        role_IN: ["ADMIN"]
                       }
                     }
                   }
                 }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
               ]
             }
           }
