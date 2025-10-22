@@ -1016,7 +1016,6 @@ const typeDefs = gql`
     name: String!
     resourceType: ResourceType!
     assetType: String!
-    assetDescription: String
     modelNumber: String
     serialNumber: String
     dateOfManufacture: DateTime
