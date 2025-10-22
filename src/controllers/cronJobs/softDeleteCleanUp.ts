@@ -4,7 +4,7 @@ import { CLEANUP_SOFT_DELETE_ITEMS } from "../../database/constants";
 import logger from "../../logger";
 
 const softDeleteCleanUp = async (req: Request, res: Response) => {
-  const windowDays = 15
+  const windowDays = 30
 
   const params = {
     window: `P${windowDays}D`,
