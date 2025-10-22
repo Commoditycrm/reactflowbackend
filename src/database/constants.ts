@@ -792,3 +792,20 @@ CALL apoc.periodic.iterate(
 { batchSize: 200, parallel: false, retries: 1 }
 );
 `;
+
+export const CLEANUP_SOFT_DELETE_ITEMS = `
+CALL apoc.periodic.iterate(
+  '
+  MATCH (n)
+  WHERE n.deletedAt IS NOT NULL
+    AND n.deletedAt < datetime() - duration($window)
+  RETURN n
+  ',
+  '
+  DETACH DELETE n
+  ',
+  { batchSize: 1000, parallel: false ,params:{window:$window} }
+)
+YIELD batches, total, failedBatches, errorMessages
+RETURN total AS deletedNodes, batches, failedBatches, errorMessages
+`;
