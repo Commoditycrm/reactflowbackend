@@ -1164,7 +1164,7 @@ const typeDefs = gql`
       validate: [
         {
           operations: [READ]
-          when: [AFTER]
+          when: [BEFORE]
           where: {
             OR: [
               {
@@ -3690,7 +3690,7 @@ const typeDefs = gql`
           (projectId IS NOT NULL AND p.id = projectId) OR
           (
             projectId IS NULL AND
-            (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId})
+            (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(:User {externalId: userId})
           )
         WITH DISTINCT p
         WHERE p.deletedAt IS NULL
@@ -3775,8 +3775,8 @@ const typeDefs = gql`
           WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
           WHERE projectId IS NULL
 
-          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(:User {externalId: userId})
-          WHERE p.deletedAt IS NULL
+          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
+          WHERE p.deletedAt IS NULL AND u.role IN ["COMPANY_ADMIN","ADMIN"]
 
           OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
           WHERE rf.deletedAt IS NULL
@@ -3850,8 +3850,8 @@ const typeDefs = gql`
           WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
           WHERE projectId IS NULL
 
-          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(:User {externalId: userId})
-          WHERE p.deletedAt IS NULL
+          MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
+          WHERE p.deletedAt IS NULL AND u.role IN ["COMPANY_ADMIN","ADMIN"]
 
           OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
           WHERE rf.deletedAt IS NULL
@@ -3894,7 +3894,7 @@ const typeDefs = gql`
         WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
         OPTIONAL MATCH (p:Project)
         WHERE (projectId IS NOT NULL AND p.id = projectId)
-          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
+          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(:User {externalId: userId}))
         WITH DISTINCT p, f
         WHERE p.deletedAt IS NULL
 
@@ -3940,7 +3940,7 @@ const typeDefs = gql`
         WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
         OPTIONAL MATCH (p:Project)
         WHERE (projectId IS NOT NULL AND p.id = projectId)
-          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS]-(:User {externalId: userId}))
+          OR (projectId IS NULL AND (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(:User {externalId: userId}))
         WITH DISTINCT p, f
         WHERE p.deletedAt IS NULL
 
