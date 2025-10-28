@@ -1,0 +1,50 @@
+name: Deploy QA-Testing
+
+on:
+  push:
+    branches: [dev-branch]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: "dev-branch"
+
+jobs:
+  deploy:
+    name: Deploy Backend (Qa-Testing)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.QA_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -euo pipefail
+            BRANCH="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}"
+            echo "🚀 Deploying branch: $BRANCH to qa server"
+
+            cd /var/www/qa/backend
+
+            echo "🔄 Fetching latest code..."
+            git fetch --all --prune
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+
+            echo "🧱 Preparing build..."
+            corepack enable
+            corepack prepare yarn@4.10.3 --activate
+            YARN_ENABLE_PROGRESS_BARS=0 yarn install --immutable
+            NEXT_TELEMETRY_DISABLED=1 yarn build
+
+            echo "♻️ Restarting PM2 service..."
+            pm2 reload /var/www/qa/ecosystem.config.js --only qa-backend || \
+              pm2 start /var/www/qa/ecosystem.config.js --only qa-backend
+            pm2 save
+
+            echo "✅ Deployment completed successfully."
+      
