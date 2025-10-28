@@ -2,13 +2,13 @@ name: Deploy QA-Testing
 
 on:
   push:
-    branches: [dev-branch]
+    branches: [qa-branch]
   workflow_dispatch:
     inputs:
       branch:
         description: "Branch to deploy"
         required: false
-        default: "dev-branch"
+        default: "qa-branch"
 
 jobs:
   deploy:
