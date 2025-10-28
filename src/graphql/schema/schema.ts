@@ -1234,55 +1234,6 @@ const typeDefs = gql`
             ]
           }
         }
-        # {
-        #   when: [AFTER]
-        #   operations: [UPDATE]
-        #   where: {
-        #     OR: [
-        #       {
-        #         AND: [
-        #           { node: { isTemplate: true } }
-        #           { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        #         ]
-        #       }
-        #       {
-        #         AND: [
-        #           { node: { isTemplate: false } }
-        #           {
-        #             OR: [
-        #               {
-        #                 node: {
-        #                   organization: {
-        #                     createdBy: { externalId: "$jwt.sub" }
-        #                   }
-        #                 }
-        #               }
-        #               {
-        #                 node:{
-        #                   organization:{
-        #                     memberUsers_SINGLE:{
-        #                       externalId:"$jwt.sub"
-        #                       role:"ADMIN"
-        #                     }
-        #                   }
-        #                 }
-        #               }
-        #               { node: { createdBy: { externalId: "$jwt.sub" } } }
-        #               {
-        #                 node: {
-        #                   assignedUsers_SINGLE: {
-        #                     externalId: "$jwt.sub"
-        #                     role: "SUPER_USER"
-        #                   }
-        #                 }
-        #               }
-        #             ]
-        #           }
-        #         ]
-        #       }
-        #     ]
-        #   }
-        # }
         {
           when: [BEFORE]
           operations: [DELETE, UPDATE]
@@ -1301,40 +1252,25 @@ const typeDefs = gql`
                 }
               ]
             }
-            # OR: [
-            #   {
-            #     AND: [
-            #       { node: { isTemplate: true } }
-            #       { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-            #     ]
-            #   }
-            #   {
-            #     AND: [
-            #       { node: { isTemplate: false } }
-            #       {
-            #         OR: [
-            #           {
-            #             node: {
-            #               organization: {
-            #                 createdBy: { externalId: "$jwt.sub" }
-            #               }
-            #             }
-            #           }
-            #           {
-            #             node:{
-            #               organization:{
-            #                 memberUsers_SINGLE:{
-            #                   externalId:"$jwt.sub"
-            #                 }
-            #               }
-            #             }
-            #           }
-            #           { node: { createdBy: { externalId: "$jwt.sub" } } }
-            #         ]
-            #       }
-            #     ]
-            #   }
-            # ]
+          }
+        }
+        {
+          when: [BEFORE]
+          operations: [DELETE_RELATIONSHIP]
+          where: {
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
       ]
@@ -1656,6 +1592,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+
     sprints: [Sprint!]!
       @relationship(
         type: "HAS_SPRINTS"
