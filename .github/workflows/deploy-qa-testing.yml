@@ -47,4 +47,5 @@ jobs:
             pm2 save
 
             echo "✅ Deployment completed successfully."
+            pm2 list
       
