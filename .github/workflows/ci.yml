@@ -4,8 +4,6 @@ on:
   push:
     branches-ignore:
       - main
-      - dev-branch
-      - qa-branch
 
 jobs:
   build:
