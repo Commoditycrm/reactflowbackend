@@ -996,17 +996,11 @@ export type Mutation = {
   updateUserRole: Scalars["Boolean"]["output"];
   updateUserDetail: Array<User>;
   updatePhoneNumber: Scalars["Boolean"]["output"];
-  assignUserToProject: Scalars["Boolean"]["output"];
-  assignUserToBacklogItem: Scalars["Boolean"]["output"];
   createBacklogItemWithUID: CreateBacklogItemsMutationResponse;
   deleteUser: Array<User>;
   deleteFirebaseUser: Scalars["Boolean"]["output"];
   disableUser: Scalars["Boolean"]["output"];
   createProjectWithTemplate: Array<Project>;
-  deleteFlowNode: DeleteInfo;
-  deleteFile: DeleteInfo;
-  deleteFolder: DeleteInfo;
-  deleteBacklogItem: DeleteInfo;
   emptyRecycleBin: DeleteInfo;
   deleteOrg: Scalars["Boolean"]["output"];
   createUsers: CreateUsersMutationResponse;
@@ -1135,16 +1129,6 @@ export type MutationUpdatePhoneNumberArgs = {
   phoneNumber: Scalars["String"]["input"];
 };
 
-export type MutationAssignUserToProjectArgs = {
-  userId: Scalars["ID"]["input"];
-  projectId: Scalars["ID"]["input"];
-};
-
-export type MutationAssignUserToBacklogItemArgs = {
-  userId: Scalars["ID"]["input"];
-  backlogItemId: Scalars["ID"]["input"];
-};
-
 export type MutationCreateBacklogItemWithUidArgs = {
   input: BacklogItemCreateInput;
 };
@@ -1167,22 +1151,6 @@ export type MutationCreateProjectWithTemplateArgs = {
   description?: InputMaybe<Scalars["String"]["input"]>;
   startDate: Scalars["String"]["input"];
   orgId: Scalars["ID"]["input"];
-};
-
-export type MutationDeleteFlowNodeArgs = {
-  flowNodeId: Scalars["String"]["input"];
-};
-
-export type MutationDeleteFileArgs = {
-  fileId: Scalars["String"]["input"];
-};
-
-export type MutationDeleteFolderArgs = {
-  folderId: Scalars["String"]["input"];
-};
-
-export type MutationDeleteBacklogItemArgs = {
-  itemId: Scalars["String"]["input"];
 };
 
 export type MutationDeleteOrgArgs = {
