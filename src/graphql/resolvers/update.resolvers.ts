@@ -59,69 +59,111 @@ const updateUserDetail = async (
   const User = (await OGMConnection.getInstance()).model("User");
   const externalId = _context?.jwt?.sub;
 
+  if (!externalId) {
+    throw new GraphQLError("Unauthenticated.", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+
+  const auth = getFirebaseAdminAuth().auth();
+
   try {
-    const currentUser = await getFirebaseAdminAuth().auth().getUser(externalId);
+    const currentUser = await auth.getUser(externalId);
+    logger?.info(`Fetched Firebase user: ${externalId}`);
 
-    const payload: any = { displayName: name };
-
-    if (phoneNumber && currentUser.phoneNumber !== phoneNumber) {
-      payload.phoneNumber = phoneNumber;
+    // --- sanitize phone number ---
+    const cleanedPhone = phoneNumber?.replace(/[^\d+]/g, "") ?? null;
+    if (cleanedPhone && !/^\+\d{7,15}$/.test(cleanedPhone)) {
+      throw new GraphQLError(
+        "Invalid phone format. Must be E.164 like +14155552671",
+        {
+          extensions: { code: "BAD_USER_INPUT" },
+        }
+      );
     }
 
-    try {
-      await getFirebaseAdminAuth().auth().updateUser(externalId, payload);
-    } catch (error: any) {
-      if (error.code === "auth/phone-number-already-exists") {
-        logger?.info(`updating username in firebase:${error.code}`);
-        await getFirebaseAdminAuth().auth().updateUser(externalId, {
-          displayName: name,
-        });
-      } else {
-        throw error;
+    const payload: Record<string, any> = {};
+
+    // --- detect changes ---
+    if (name && name !== currentUser.displayName) {
+      payload.displayName = name;
+    }
+    if (cleanedPhone && cleanedPhone !== currentUser.phoneNumber) {
+      payload.phoneNumber = cleanedPhone;
+    }
+    console.log(payload,"Hello")
+
+    // --- update Firebase if anything changed ---
+    if (Object.keys(payload).length > 0) {
+      try {
+        await auth.updateUser(externalId, payload);
+        logger?.info(
+          `Firebase user updated: uid=${externalId}, changes=${JSON.stringify(
+            payload
+          )}`
+        );
+      } catch (error: any) {
+        if (error.code === "auth/phone-number-already-exists") {
+          logger?.warn(
+            `Phone number already in use. Skipping phone update for uid=${externalId}`
+          );
+          // only update name in that case
+          if (payload.displayName) {
+            await auth.updateUser(externalId, {
+              displayName: payload.displayName,
+            });
+            logger?.info(`Firebase display name updated for uid=${externalId}`);
+          }
+        } else {
+          logger?.error(
+            `Firebase update failed for uid=${externalId}: ${
+              error.code || error.message
+            }`
+          );
+          throw error;
+        }
       }
+    } else {
+      logger?.info(`No Firebase changes for uid=${externalId}`);
     }
 
+    // --- update Neo4j DB ---
     const result = await User.update<{ users: User[] }>({
       where: { externalId },
       update: {
-        name,
-        phoneNumber,
+        ...(name && { name }),
+        ...(cleanedPhone && { phoneNumber: cleanedPhone }),
       },
       context: _context,
     });
 
-    const updated = result?.users;
-    if (!updated[0]) {
-      throw new GraphQLError("User not found.", {
+    const updatedUser = result?.users?.[0];
+    if (!updatedUser) {
+      throw new GraphQLError("User not found in database.", {
         extensions: { code: "FORBIDDEN" },
       });
     }
 
     logger?.info(
-      `user detail updated for uid=${externalId}, user=${updated[0]?.email}`
+      `User detail updated in Neo4j for uid=${externalId}, name=${updatedUser.name}, phone=${updatedUser.phoneNumber}`
     );
-    return updated ?? [];
-  } catch (err: unknown) {
+
+    return [updatedUser];
+  } catch (err: any) {
     const logMsg =
       err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     logger?.error(
       `Failed to update user detail for uid=${externalId}: ${logMsg}`
     );
-    if (err instanceof GraphQLError) throw err;
-    const message =
-      err instanceof Error
-        ? err.message
-        : typeof err === "string"
-        ? err
-        : "Unexpected server error.";
 
-    throw new GraphQLError(message, {
+    throw new GraphQLError(err?.message || "Unexpected server error.", {
       originalError: err instanceof Error ? err : undefined,
       extensions: {
-        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-        ...(typeof (err as any)?.code === "string" && {
-          firebaseCode: (err as any).code,
-        }),
+        code:
+          err instanceof GraphQLError
+            ? err.extensions?.code
+            : ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+        ...(typeof err?.code === "string" && { firebaseCode: err.code }),
         detail: logMsg,
       },
     });
