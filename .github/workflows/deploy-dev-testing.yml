@@ -14,6 +14,7 @@ jobs:
   deploy:
     name: Deploy Backend (Dev-Testing)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -23,23 +24,37 @@ jobs:
           key: ${{ secrets.DEV_KEY }}
           port: 22
           script_stop: true
+          envs: GITHUB_REF_NAME,GITHUB_EVENT_NAME
           script: |
             set -euo pipefail
             BRANCH="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref_name }}"
             echo "🚀 Deploying branch: $BRANCH to dev server"
 
             cd /var/www/dev/backend
+            git config --global --add safe.directory /var/www/dev/backend
+
+            echo "🔒 Ensuring clean workspace..."
+            git reset --hard
+            git clean -fd
 
             echo "🔄 Fetching latest code..."
             git fetch --all --prune
-            git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
+
+            echo "📌 Checking out target branch..."
+            if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
+              git checkout "$BRANCH"
+            else
+              git checkout -b "$BRANCH" "origin/$BRANCH"
+            fi
+
+            echo "⏩ Force-sync to origin/$BRANCH..."
+            git reset --hard "origin/$BRANCH"
 
             echo "🧱 Preparing build..."
             corepack enable
             corepack prepare yarn@4.10.3 --activate
             YARN_ENABLE_PROGRESS_BARS=0 yarn install --immutable
-            NEXT_TELEMETRY_DISABLED=1 yarn build
+            NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production yarn build
 
             echo "♻️ Restarting PM2 service..."
             pm2 reload /var/www/dev/ecosystem.config.js --only dev-backend || \
@@ -47,4 +62,4 @@ jobs:
             pm2 save
 
             echo "✅ Deployment completed successfully."
-      
+            pm2 list
