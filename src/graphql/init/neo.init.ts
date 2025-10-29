@@ -68,7 +68,6 @@ export class NeoConnection {
     const neoSchema = await this.neo.getSchema();
     if (!isProduction() && process.env.INIT_SCHEMA === "true") {
       await this.neo.checkNeo4jCompat();
-      await this.neo.assertIndexesAndConstraints();
       await this.neo.assertIndexesAndConstraints({ options: { create: true } });
     }
 
