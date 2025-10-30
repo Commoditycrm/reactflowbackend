@@ -1,35 +1,34 @@
 import cors from "cors";
-import { Request, Response } from "express";
+import { EnvLoader } from "../../util/EnvLoader";
+import logger from "../../logger";
 
-export const applyCorsMiddleware = (req: Request, res: Response) => {
-  const allowOrigins = [
-    process.env.CLIENT_URL,
-    process.env.ADMIN_PANEL_API,
-  ].filter(Boolean);
+// Build allowlist once
+const ALLOW_ORIGINS = new Set(
+  [
+    EnvLoader.get("CLIENT_URL"),
+    EnvLoader.get("ADMIN_PANEL_API"),
+    EnvLoader.get("API_URL"),
+  ].filter(Boolean) as string[]
+);
 
 
-  const corsOptions = {
-    origin: (origin: string | undefined, callback: Function) => {
-      try {
-        if (!origin || allowOrigins.includes(origin)) {
-          return callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
-      } catch (error) {
-        callback(new Error("Internal CORS check error"));
+export const corsMiddleware = cors({
+  credentials: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  optionsSuccessStatus: 204,
+
+  origin(origin, callback) {
+    try {
+      if (!origin) return callback(null, true);
+
+      if (ALLOW_ORIGINS.has(origin)) {
+        return callback(null, true);
       }
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    credentials: true,
-  };
 
-  return new Promise((resolve, reject) => {
-    cors(corsOptions)(req, res, (result: unknown) => {
-      if (result instanceof Error) {
-        return reject(result);
-      }
-      return resolve(result);
-    });
-  });
-};
+      logger?.warn(`Blocked by CORS: ${origin}`);
+      return callback(new Error("Not allowed by CORS"));
+    } catch (e) {
+      return callback(new Error("Internal CORS check error"));
+    }
+  },
+});

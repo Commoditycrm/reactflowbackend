@@ -1,8 +1,9 @@
 import { Request, Response } from "express";
 import logger from "../../logger";
+import { EnvLoader } from "../../util/EnvLoader";
 
 const warmupcontroller = async (req: Request, res: Response) => {
-  const API_URL = process.env.API_URL + "/api/v1/graphql";
+  const API_URL = `${EnvLoader.getOrThrow("API_URL")}/api/v1/graphql`;
   try {
     const response = await fetch(API_URL, {
       method: "POST",

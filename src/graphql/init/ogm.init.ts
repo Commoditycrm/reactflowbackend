@@ -5,10 +5,11 @@ import { Neo4JConnection } from "../../database/connection";
 import { isDevelopment, isProduction } from "../../env/detector";
 import { NeoConnection } from "./neo.init";
 import typeDefs from "../schema/schema";
+import { EnvLoader } from "../../util/EnvLoader";
 
 export class OGMConnection {
   private static ogm: OGM;
-  private constructor() { }
+  private constructor() {}
 
   static async getInstance(): Promise<OGM> {
     if (this.ogm) return this.ogm;
@@ -32,7 +33,7 @@ export class OGMConnection {
 
     await this.ogm.init();
 
-    if (isDevelopment() && process.env.GENERATE_OGM_TYPES) {
+    if (isDevelopment() && EnvLoader.get("GENERATE_OGM_TYPES")) {
       await generate({
         ogm: this.ogm,
         outFile: `./@types/ogm.types.ts`,

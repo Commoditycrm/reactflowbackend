@@ -44,9 +44,10 @@ yarn-error.log*
 # ------------------------------
 # ⚡ Environment Files
 # ------------------------------
-.env
+.env*
 .env.local
 .env.*.local
+!.env.example
 
 # ------------------------------
 # 🧠 TypeScript
