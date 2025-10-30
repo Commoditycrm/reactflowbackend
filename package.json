@@ -9,6 +9,7 @@
     "@apollo/server": "^4.12.2",
     "@neo4j/graphql": "^5.12.8",
     "@neo4j/graphql-ogm": "^5.11.4",
+    "@sendgrid/mail": "^8.1.6",
     "connect-timeout": "^1.9.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

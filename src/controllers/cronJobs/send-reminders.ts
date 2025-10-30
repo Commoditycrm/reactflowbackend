@@ -4,13 +4,12 @@ import logger from "../../logger";
 import { User } from "../../@types/ogm.types";
 import { Integer } from "neo4j-driver";
 import pLimit from "p-limit";
+import { EnvLoader } from "../../util/EnvLoader";
 
 const CONCURRENCY_LIMIT = 10;
 
 const sendReminder = async (user: User, taskCount: Integer) => {
-  const REMINDER_URL =
-    process.env.REMINDER_URL ||
-    "https://react-auth-flow.vercel.app/api/users/reminders";
+  const REMINDER_URL = EnvLoader.getOrThrow("REMINDER_URL");
   try {
     const res = await fetch(REMINDER_URL, {
       method: "POST",
