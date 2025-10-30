@@ -31,6 +31,7 @@ import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
+import { EnvLoader } from "../../util/EnvLoader";
 
 export type IResolvers =
   | {
@@ -66,7 +67,7 @@ export class NeoConnection {
   }
   async init(): Promise<GraphQLSchema> {
     const neoSchema = await this.neo.getSchema();
-    if (!isProduction() && process.env.INIT_SCHEMA === "true") {
+    if (!isProduction() && EnvLoader.get("INIT_SCHEMA") === "true") {
       await this.neo.checkNeo4jCompat();
       await this.neo.assertIndexesAndConstraints({ options: { create: true } });
     }
@@ -158,7 +159,7 @@ export class NeoConnection {
       },
       subscriptions: true,
       authorization: {
-        key: process.env.INVITE_JWT_SECRET as string,
+        key: EnvLoader.getOrThrow("INVITE_JWT_SECRET"),
       },
     };
   }

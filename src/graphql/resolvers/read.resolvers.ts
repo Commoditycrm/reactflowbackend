@@ -6,6 +6,7 @@ import { getFirebaseAdminAuth } from "../firebase/admin";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { SprintWhere, User, UserRole } from "../../@types/ogm.types";
+import { EnvLoader } from "../../util/EnvLoader";
 export const getModelWhereClause = (
   modelName: string,
   loggedInUser: User
@@ -330,7 +331,7 @@ const generateTask = async (
   _context: Record<string, any>
 ): Promise<{ id: string; content: string; description: string }[]> => {
   const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY"),
   });
 
   try {
