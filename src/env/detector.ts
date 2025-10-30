@@ -1,22 +1,33 @@
 import fs from "fs";
+import path from "path";
+import * as dotenv from "dotenv";
 
-enum EnvState {
+export enum EnvState {
   PROD = "production",
   DEV = "development",
   STAGE = "staging",
 }
 
-const isProduction = () => process.env.NODE_ENV === EnvState.PROD;
+export const NODE_ENV: EnvState | "test" =
+  (process.env.NODE_ENV as EnvState | "test") ?? EnvState.DEV;
 
-const isDevelopment = () => process.env.NODE_ENV === EnvState.DEV;
+export const isProduction = () => NODE_ENV === EnvState.PROD;
+export const isDevelopment = () => NODE_ENV === EnvState.DEV;
+export const isLocal = () => !isProduction() && !isDevelopment();
 
-const isLocal = () => !isProduction() && !isDevelopment();
+let _resolvedPath: string | null | undefined;
 
-const getEnvFileName = () => {
-  const envName = process.env.NODE_ENV;
-  if (fs.existsSync(`.env.${envName || "local"}`)) {
-    return `.env.${envName || "local"}`;
-  }
-};
+export function getEnvFileName(): string | null {
+  if (_resolvedPath !== undefined) return _resolvedPath;
+  const candidate = `.env.${NODE_ENV || "development"}`;
+  const full = path.resolve(process.cwd(), candidate);
+  _resolvedPath = fs.existsSync(full) ? candidate : null;
+  return _resolvedPath;
+}
 
-export { getEnvFileName, isDevelopment, isLocal, isProduction };
+export function loadDotenv(): string | null {
+  const envFile = getEnvFileName();
+  if (envFile) dotenv.config({ path: envFile });
+  else dotenv.config(); // fallback to .env if present
+  return envFile;
+}
