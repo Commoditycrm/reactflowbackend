@@ -18,9 +18,9 @@ jobs:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.QA_HOST }}
-          username: ${{ secrets.DEV_USER }}
-          key: ${{ secrets.DEV_KEY }}
+          host: ${{ secrets.TESTING_IP_ADDRESS }}
+          username: ${{ secrets.TESTING_LIGHTSAIL_USER }}
+          key: ${{ secrets.TESTING_SSH_KEY }}
           port: 22
           script_stop: true
           script: |
