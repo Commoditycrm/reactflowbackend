@@ -619,6 +619,12 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT, DISCONNECT]
       )
+    # memberUsers: @relationship(
+    #     type: "MEMBER_OF"
+    #     direction: IN
+    #     aggregate: false
+    #     nestedOperations: [CONNECT, DISCONNECT]
+    #   )
     invites: [Invite!]!
       @relationship(
         type: "INVITE_FOR"
@@ -808,6 +814,31 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+  }
+
+  # work force schema
+
+  type WorkForce {
+    id: ID! @id
+    firstName: String
+    middleName: String
+    lastName: String
+    fullName: String
+    email: String!
+    phoneNumber: String!
+    role: UserRole!
+    externalId: String
+    designation: String
+    hourlyRate: Float
+    address: Address
+      @relationship(
+        type: "HAS_ADDRESS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CREATE]
+      )
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime! @timestamp(operations: [UPDATE])
   }
 
   enum ResourceType {
@@ -1391,6 +1422,14 @@ const typeDefs = gql`
         aggregate: true
         nestedOperations: [CONNECT, DISCONNECT]
       )
+    workforces: [WorkForce!]!
+      @relationship(
+        type: "HAS_ASSIGNED_WORK_FORCE"
+        direction: OUT
+        aggregate: true
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+
     folders: [Folder!]!
       @relationship(
         type: "HAS_CHILD_FOLDER"
