@@ -30,10 +30,11 @@ jobs:
 
             cd /var/www/qa/backend
 
-            echo "🔄 Fetching latest code..."
+            echo "🔄 Syncing repository to remote branch state..."
             git fetch --all --prune
-            git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            git reset --hard "origin/$BRANCH"
+            git clean -fd
 
             echo "🧱 Preparing build..."
             corepack enable
@@ -48,4 +49,3 @@ jobs:
 
             echo "✅ Deployment completed successfully."
             pm2 list
-      
