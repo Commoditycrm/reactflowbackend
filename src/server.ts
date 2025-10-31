@@ -5,7 +5,6 @@ import express from "express";
 import logger from "./logger";
 import { createServer } from "http";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import initRoutes from "./routers";
 import { EnvLoader } from "./util/EnvLoader";
 import { corsMiddleware } from "./graphql/middleware/cors";
