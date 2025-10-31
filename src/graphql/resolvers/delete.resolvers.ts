@@ -5,8 +5,8 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "../../database/connection";
 import { Model } from "@neo4j/graphql-ogm";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { User, UserRole } from "../../@types/ogm.types";
 import { getModelWhereClause } from "./read.resolvers";
+import { User, UserRole } from "../../interfaces";
 
 const deleteUser = async (
   _source: Record<string, any>,
