@@ -2,7 +2,7 @@ import { GraphQLError } from "graphql";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 import { OGMConnection } from "../init/ogm.init";
-import { User } from "../../@types/ogm.types";
+import { User } from "../../interfaces";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 
