@@ -846,7 +846,16 @@ const typeDefs = gql`
           when: [AFTER]
           operations: [CREATE, UPDATE, DELETE]
           where: {
-            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub", role: "ADMIN" }
+                  }
+                }
+              ]
+            }
           }
         }
         # {
@@ -926,7 +935,19 @@ const typeDefs = gql`
           when: [AFTER]
           operations: [CREATE, UPDATE, DELETE]
           where: {
-            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
         # {
@@ -1007,7 +1028,19 @@ const typeDefs = gql`
           when: [AFTER]
           operations: [CREATE, UPDATE, DELETE]
           where: {
-            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
       ]
@@ -1068,7 +1101,19 @@ const typeDefs = gql`
           when: [AFTER]
           operations: [CREATE, UPDATE, DELETE]
           where: {
-            node: { organization: { createdBy: { externalId: "$jwt.sub" } } }
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
         # {
