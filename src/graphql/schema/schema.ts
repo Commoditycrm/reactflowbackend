@@ -2708,14 +2708,14 @@ const typeDefs = gql`
                   }
                 }
                 { project: { createdBy: { externalId: "$jwt.sub" } } }
-                # {
-                #   project: {
-                #     assignedUsers_SINGLE: {
-                #       externalId: "$jwt.sub"
-                #       role_NOT: "USER"
-                #     }
-                #   }
-                # }
+                {
+                  project: {
+                    assignedUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role_NOT: "USER"
+                    }
+                  }
+                }
                 { createdBy: { externalId: "$jwt.sub" } }
                 { assignedUser: { externalId: "$jwt.sub" } }
                 {
