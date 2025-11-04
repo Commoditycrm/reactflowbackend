@@ -111,7 +111,7 @@ export class NeoConnection {
         );
 
         const now = Math.floor(Date.now() / 1000);
-        if (decoded.exp < now || decoded.role !== "invitee") {
+        if (decoded.exp < now || decoded.type !== "invitee") {
           throw new Error("Token expired or Unknown user");
         }
         return { token: token as string };

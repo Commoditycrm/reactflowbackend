@@ -18,7 +18,7 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
-import { BacklogItem } from "../../interfaces";
+import { BacklogItem } from "../../@types/ogm.types";
 
 const createBacklogItemWithUID = async (
   _source: Record<string, any>,

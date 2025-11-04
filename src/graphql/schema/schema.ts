@@ -732,6 +732,11 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
+  enum InviteStatus {
+    PENDING
+    EXPIRED
+  }
+
   type Invite
     @mutation(operations: [CREATE, DELETE])
     @authorization(
@@ -787,9 +792,13 @@ const typeDefs = gql`
       ]
     ) {
     id: ID! @id
+    firstName: String!
+    middleName: String
+    lastName: String
     email: String!
     token: String! @unique
-    createdAt: DateTime! @timestamp(operations: [CREATE])
+    status: InviteStatus! @default(value: PENDING)
+    invitedAt: DateTime! @timestamp(operations: [CREATE])
     uniqueInvite: String!
       @unique
       @populatedBy(callback: "uniqueInviteExtractor", operations: [CREATE])
@@ -814,22 +823,58 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    workforce: WorkForce
+      @relationship(
+        type: "INVITE_OF_WORKFORCE"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+  }
+
+  enum WorkForceStatus {
+    PENDING
+    INVITED
+    INACTIVE
+    ACTIVE
   }
 
   # work force schema
-
-  type WorkForce {
+  type WorkForce implements Timestamped @query(aggregate: false, read: true) {
     id: ID! @id
-    firstName: String
-    middleName: String
+    firstName: String!
     lastName: String
-    fullName: String
+    # fullName: String
     email: String!
-    phoneNumber: String!
-    role: UserRole!
+    phoneNumber: String
+    role: UserRole
     externalId: String
     designation: String
     hourlyRate: Float
+    resourceType: ResourceType! @default(value: WORK_FORCE)
+    status: WorkForceStatus! @default(value: PENDING)
+    ownedOrganization: Organization
+      @relationship(
+        type: "OWNS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CREATE]
+      )
+      @settable(onCreate: true, onUpdate: false)
+    memberOfOrganizations: [Organization!]!
+      @relationship(
+        type: "MEMBER_OF"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+    organization: Organization!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
     address: Address
       @relationship(
         type: "HAS_ADDRESS"
@@ -838,10 +883,13 @@ const typeDefs = gql`
         nestedOperations: [CREATE]
       )
     createdAt: DateTime! @timestamp(operations: [CREATE])
-    updatedAt: DateTime! @timestamp(operations: [UPDATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
+  # 3905-de28acfc-4eae-4826-acf0-31fa0f580d4f
+
   enum ResourceType {
+    WORK_FORCE
     HUMAN_RESOURCES
     CONTACTS
     ASSETS
@@ -882,7 +930,10 @@ const typeDefs = gql`
                 { organization: { createdBy: { externalId: "$jwt.sub" } } }
                 {
                   organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub", role: "ADMIN" }
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
                   }
                 }
               ]
@@ -1004,7 +1055,7 @@ const typeDefs = gql`
     name: String!
       @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
       @settable(onCreate: false, onUpdate: false)
-    resourceType: ResourceType!
+    resourceType: ResourceType! @default(value: CONTACTS)
     firstName: String!
     lastName: String!
     middleName: String
@@ -1078,7 +1129,7 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
-    resourceType: ResourceType!
+    resourceType: ResourceType! @default(value: ASSETS)
     assetType: String!
     modelNumber: String
     serialNumber: String
@@ -1168,7 +1219,7 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
-    resourceType: ResourceType!
+    resourceType: ResourceType! @default(value: ACCOUNTS)
     businessEmail: String
     phone: String
     website: String

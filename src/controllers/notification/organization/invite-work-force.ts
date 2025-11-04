@@ -6,6 +6,7 @@ import { EnvLoader } from "../../../util/EnvLoader";
 import { InviteWorkForceProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
+import crypto from "crypto";
 
 // ---- SINGLETONS (hoisted) ----
 const auth = getFirebaseAdminAuth().auth();
@@ -26,6 +27,7 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     orgId,
     organizationName,
     senderName,
+    address,
   } = req.body;
 
   email = String(email || "")
@@ -37,7 +39,7 @@ const inviteWorkForce = async (req: Request, res: Response) => {
   if (
     !role ||
     !email ||
-    !phoneNumber ||
+    !firstName||
     !orgId ||
     !organizationName ||
     !senderName
@@ -48,12 +50,21 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     });
   }
 
+  const jti = crypto.randomUUID();
+
+  const payload = {
+    email,
+    sub: email,
+    role,
+    orgId,
+    type:"invitee",
+    jti
+  };
+
   // Pre-generate token & link
-  const token = jwt.sign(
-    { email, sub: email, role, name: fullName, orgId },
-    jwtSecret,
-    { expiresIn: "1d" }
-  );
+  
+  const token = jwt.sign(payload, jwtSecret, { expiresIn: "1d" });
+  const hashToken = crypto.createHash("sha256").update(token).digest("hex");
   const invitationLink = `${clientUrl}/invite?token=${token}`;
   const t1 = performance.now();
 
@@ -126,7 +137,7 @@ const inviteWorkForce = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(201).json({ success: true, link: invitationLink, token });
+    return res.status(201).json({ success: true, link: invitationLink, token:hashToken });
   } catch (error: any) {
     const tEnd = performance.now();
     logger.error("InviteWorkForce crashed sending email", {

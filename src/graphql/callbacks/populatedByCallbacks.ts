@@ -5,7 +5,7 @@ import { DateTime } from "neo4j-driver";
 import { toEpochMs } from "../../util/minutesBetweens";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { UserRole } from "../../interfaces";
+import { UserRole } from "../../@types/ogm.types";
 
 export const externalIdExtractor = (
   _parent: Record<string, any>,

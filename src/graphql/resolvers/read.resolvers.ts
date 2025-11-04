@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from "uuid";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { SprintWhere, User, UserRole } from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
+import { SprintWhere, User, UserRole } from "../../@types/ogm.types";
 export const getModelWhereClause = (
   modelName: string,
   loggedInUser: User
