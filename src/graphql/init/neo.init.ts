@@ -5,7 +5,6 @@ import { DocumentNode, GraphQLError, GraphQLSchema } from "graphql";
 import { Driver } from "neo4j-driver";
 import { isProduction } from "../../env/detector";
 import { getTokenFromHeader } from "../../util/tokenExtractor";
-import { getFirebaseAdminAuth } from "../firebase/admin";
 import { deleteOperationMutations } from "../resolvers/delete.resolvers";
 
 import {
@@ -32,6 +31,7 @@ import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
 import { EnvLoader } from "../../util/EnvLoader";
+import { getFirebaseAdminAuth } from "../firebase/admin";
 
 export type IResolvers =
   | {

@@ -792,10 +792,12 @@ const typeDefs = gql`
       ]
     ) {
     id: ID! @id
-    firstName: String!
-    middleName: String
-    lastName: String
     email: String!
+    firstName: String!
+    lastName: String
+    phoneNumber: String
+    designation:String
+    hourlyRate: Float
     token: String! @unique
     status: InviteStatus! @default(value: PENDING)
     invitedAt: DateTime! @timestamp(operations: [CREATE])
@@ -815,6 +817,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: [CONNECT]
+      )
+    address: Address
+      @relationship(
+        type: "HAS_ADDRESS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CREATE]
       )
     projects: [Project!]!
       @relationship(
@@ -844,7 +853,13 @@ const typeDefs = gql`
     id: ID! @id
     firstName: String!
     lastName: String
-    # fullName: String
+    fullName: String!
+      @cypher(
+        statement: """
+        RETURN (this.firstName + ' ' + this.lastName) AS fullName
+        """
+        columnName: "fullName"
+      )
     email: String!
     phoneNumber: String
     role: UserRole
@@ -3436,36 +3451,34 @@ const typeDefs = gql`
     ): [Project!]!
 
     finishInviteSignup(
-      email: String!
-      name: String!
-      externalId: String!
-      phoneNumber: String
-    ): [User!]!
-      @cypher(
-        statement: """
-        MATCH (invite:Invite {email: $email})
-        OPTIONAL MATCH (invite)-[:INVITE_FOR]->(org:Organization)
-        OPTIONAL MATCH (invite)-[:INVITE_TO_PROJECT]->(project:Project)
+      input: WorkForceCreateInput!
+      password: String!
+    ): [WorkForce!]!
+    # @cypher(
+    #   statement: """
+    #   MATCH (invite:Invite {email: $email})
+    #   OPTIONAL MATCH (invite)-[:INVITE_FOR]->(org:Organization)
+    #   OPTIONAL MATCH (invite)-[:INVITE_TO_PROJECT]->(project:Project)
 
-        MERGE (user:User {email: $email})
-          ON CREATE SET user.name = $name,
-            user.createdAt = datetime(),
-            user.externalId = $externalId,
-            user.role='SUPER_USER',
-            user.id=randomUUID(),
-            user.showHelpText = true,
-            user.phoneNumber = $phoneNumber
+    #   MERGE (user:User {email: $email})
+    #     ON CREATE SET user.name = $name,
+    #       user.createdAt = datetime(),
+    #       user.externalId = $externalId,
+    #       user.role='SUPER_USER',
+    #       user.id=randomUUID(),
+    #       user.showHelpText = true,
+    #       user.phoneNumber = $phoneNumber
 
-        MERGE (user)-[:MEMBER_OF]->(org)
-        FOREACH (p IN CASE WHEN project IS NULL THEN [] ELSE [project] END |
-          MERGE (p)-[:HAS_ASSIGNED_USER]->(user)
-        )
+    #   MERGE (user)-[:MEMBER_OF]->(org)
+    #   FOREACH (p IN CASE WHEN project IS NULL THEN [] ELSE [project] END |
+    #     MERGE (p)-[:HAS_ASSIGNED_USER]->(user)
+    #   )
 
-        DETACH DELETE invite
-        RETURN user
-        """
-        columnName: "user"
-      )
+    #   DETACH DELETE invite
+    #   RETURN user
+    #   """
+    #   columnName: "user"
+    # )
     customizationDataCreation(orgId: ID!): CustomizationDataCreationResult!
       @cypher(
         statement: """

@@ -18,7 +18,14 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
-import { BacklogItem } from "../../@types/ogm.types";
+import {
+  BacklogItem,
+  UserRole,
+  WorkForceCreateInput,
+} from "../../@types/ogm.types";
+import { FirebaseFunctions } from "../firebase/firebaseFunctions";
+
+const firebaseFunctions = FirebaseFunctions.getInstance();
 
 const createBacklogItemWithUID = async (
   _source: Record<string, any>,
@@ -225,7 +232,41 @@ const createProjectWithTemplate = async (
   }
 };
 
+const finishInviteSignup = async (
+  _source: Record<string, any>,
+  { input, password }: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  const role = _context?.jwt?.role || UserRole.SuperUser;
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const fullName = [input?.firstName, input?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const inviteUserPayLoad = {
+    email: input?.email,
+    password,
+    name: fullName,
+    phoneNumber: input?.phoneNumber,
+    role,
+  };
+  try {
+    const tx = session.beginTransaction();
+    const user = await firebaseFunctions.createInvitedUser(inviteUserPayLoad);
+    console.log(user);
+  } catch (error) {
+    throw new GraphQLError(`${error}`, {
+      extensions: {
+        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+      },
+    });
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
+  finishInviteSignup,
 };
