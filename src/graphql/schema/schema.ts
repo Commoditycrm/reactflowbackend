@@ -796,7 +796,7 @@ const typeDefs = gql`
     firstName: String!
     lastName: String
     phoneNumber: String
-    designation:String
+    designation: String
     hourlyRate: Float
     token: String! @unique
     status: InviteStatus! @default(value: PENDING)
@@ -860,10 +860,10 @@ const typeDefs = gql`
         """
         columnName: "fullName"
       )
-    email: String!
-    phoneNumber: String
+    email: String! @unique
+    phoneNumber: String @unique
     role: UserRole
-    externalId: String
+    externalId: String @unique
     designation: String
     hourlyRate: Float
     resourceType: ResourceType! @default(value: WORK_FORCE)
@@ -3421,6 +3421,20 @@ const typeDefs = gql`
     defaultRiskLevelCount: Int!
   }
 
+  type WorkForceTable
+    @query(aggregate: false, read: false)
+    @mutation(operations: []) {
+    id: ID!
+    firstName: String!
+    lastName: String
+    fullName: String!
+    createdAt: DateTime!
+    status: String!
+    hourlyRate: Float
+    source: String!
+    role:UserRole
+  }
+
   input CommentsFilter {
     assignedUserIds: [ID!]
     riskLevelIds: [ID!]
@@ -4209,6 +4223,55 @@ const typeDefs = gql`
         """
         columnName: "result"
       )
+    getWorkForceTableData(
+      limit: Int! = 10
+      offset: Int! = 0
+      orgId: ID!
+    ): [WorkForceTable!]!
+      @cypher(
+        statement: """
+        MATCH (org:Organization {id:$orgId})
+
+        CALL {
+          WITH org
+          MATCH (invites:Invite)-[:INVITE_FOR]->(org)
+          RETURN invites {
+            .id,
+            .firstName,
+            .lastName,
+            createdAt: invites.invitedAt,
+            .designation,
+            .hourlyRate,
+            status: toString(invites.status),
+            fullName:trim(coalesce(invites.firstName,'') + ' ' + coalesce(invites.lastName,'')),
+            source: 'INVITE',
+            .role
+          } AS workForceTableData
+          UNION
+          WITH org
+          MATCH (org)-[:HAS_RESOURCE]->(workforce:WorkForce)
+          RETURN workforce {
+            .id,
+            .firstName,
+            .lastName,
+            .designation,
+            .createdAt,
+            .hourlyRate,
+            status: toString(workforce.status),
+            fullName:trim(coalesce(workforce.firstName,'') + ' ' + coalesce(workforce.lastName,'')),
+            source: 'WORKFORCE',
+            .role
+          } AS workForceTableData
+        }
+
+        WITH DISTINCT workForceTableData
+        RETURN workForceTableData
+        ORDER BY workForceTableData.createdAt DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "workForceTableData"
+      )
+
     getFirebaseStorage(orgId: String!): FirebaseStorage!
   }
 `;

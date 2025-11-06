@@ -8,6 +8,7 @@ import {
   CLONE_SUB_ITEM,
   CONNECT_DEPENDENCY_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
+  FINISH_SIGNUP_CQL,
   getUpdateDependentTaskDatesCQL,
   LINK_TO_FLOWNODE,
   REMOVE_REFID_EXISTING_NODE,
@@ -18,11 +19,7 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
-import {
-  BacklogItem,
-  UserRole,
-  WorkForceCreateInput,
-} from "../../@types/ogm.types";
+import { BacklogItem, UserRole } from "../../@types/ogm.types";
 import { FirebaseFunctions } from "../firebase/firebaseFunctions";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
@@ -168,7 +165,6 @@ const createProjectWithTemplate = async (
           return `${msg} (${safeCount})`;
         })
         .join("; ");
-      console.log(messages);
 
       throw new GraphQLError("Project creation failed: " + messages, {
         extensions: {
@@ -238,7 +234,9 @@ const finishInviteSignup = async (
   _context: Record<string, any>
 ) => {
   const role = _context?.jwt?.role || UserRole.SuperUser;
+  const orgId = _context?.jwt?.orgId;
   const session = (await Neo4JConnection.getInstance()).driver.session();
+
   const fullName = [input?.firstName, input?.lastName]
     .filter(Boolean)
     .join(" ")
@@ -247,18 +245,64 @@ const finishInviteSignup = async (
     email: input?.email,
     password,
     name: fullName,
-    phoneNumber: input?.phoneNumber,
+    ...(input.phoneNumber && { phoneNumber: `+${input?.phoneNumber}` }),
     role,
   };
+
+  const tx = session.beginTransaction();
   try {
-    const tx = session.beginTransaction();
-    const user = await firebaseFunctions.createInvitedUser(inviteUserPayLoad);
-    console.log(user);
-  } catch (error) {
-    throw new GraphQLError(`${error}`, {
-      extensions: {
-        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-      },
+    logger.info("finishInviteSignup:start", { email: input?.email, orgId });
+
+    // create firebase user
+    logger.info("Creating Firebase user", { email: input?.email });
+    const { user } = await firebaseFunctions.createInvitedUser(
+      inviteUserPayLoad
+    );
+    logger.info("Firebase user created", { uid: user?.uid });
+
+    // run signup cypher
+    const params = {
+      orgId,
+      status: input?.status,
+      resourceType: input?.resourceType,
+      email: input?.email,
+      externalId: user.uid,
+      firstName: input?.firstName,
+      role,
+    };
+
+    logger.info("Executing FINISH_SIGNUP_CQL", params);
+    const response = await tx.run(FINISH_SIGNUP_CQL, params);
+    await tx.commit();
+
+    const result = response.records[0]?.get("workforce");
+    if (!result) {
+      logger.error("No workforce returned from Cypher", {
+        email: input?.email,
+      });
+      return [];
+    }
+
+    const workForce = result.properties || result;
+    logger.info("WorkForce created successfully", {
+      id: workForce.id,
+      email: workForce.email,
+    });
+    return [workForce];
+  } catch (err) {
+    logger.error("finishInviteSignup:error", {
+      error: String(err),
+      email: input?.email,
+    });
+    try {
+      await tx.rollback();
+    } catch (rollbackErr) {
+      logger.error("Transaction rollback failed", {
+        error: String(rollbackErr),
+      });
+    }
+    throw new GraphQLError("FINISH_INVITE_SIGNUP_FAILED", {
+      extensions: { code: "INTERNAL_SERVER_ERROR", detail: String(err) },
     });
   } finally {
     await session.close();

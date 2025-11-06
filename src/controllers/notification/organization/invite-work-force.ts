@@ -3,10 +3,10 @@ import { getFirebaseAdminAuth } from "../../../graphql/firebase/admin";
 import { OrganizationEmailService } from "../../../services";
 import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
-import { InviteWorkForceProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
 import crypto from "crypto";
+import { InviteWorkForceProps } from "../../../interfaces";
 
 // ---- SINGLETONS (hoisted) ----
 const auth = getFirebaseAdminAuth().auth();
@@ -23,11 +23,9 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     lastName,
     role,
     email,
-    phoneNumber,
     orgId,
     organizationName,
     senderName,
-    address,
   } = req.body;
 
   email = String(email || "")

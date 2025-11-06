@@ -699,3 +699,41 @@ CALL apoc.periodic.iterate(
 YIELD batches, total, failedBatches, errorMessages
 RETURN total AS deletedNodes, batches, failedBatches, errorMessages
 `;
+
+export const FINISH_SIGNUP_CQL = `
+MATCH (org:Organization { id: $orgId })
+OPTIONAL MATCH (i:Invite { email: $email })-[:INVITE_FOR]->(org)
+
+MERGE (w:WorkForce { email: $email })
+ON CREATE SET
+  w.id = randomUUID(),
+  w.firstName = coalesce($firstName,i.firstName),
+  w.lastName  = i.lastName,
+  w.resourceType = $resourceType,
+  w.status = $status,
+  w.role = coalesce($role,i.role),
+  w.createdAt = datetime(),
+  w.externalId = $externalId
+
+MERGE (org)-[:HAS_RESOURCE]->(w)
+MERGE (w)-[:MEMBER_OF]->(org)
+
+WITH w, i
+OPTIONAL MATCH (i)-[:HAS_ADDRESS]->(addr:Address)
+FOREACH (_ IN CASE WHEN addr IS NULL THEN [] ELSE [1] END |
+  MERGE (w)-[:HAS_ADDRESS]->(addr)
+)
+
+WITH w, i
+OPTIONAL MATCH (i)-[:INVITE_TO_PROJECT]->(p:Project)
+WITH w, i, collect(DISTINCT p) AS ps
+FOREACH (proj IN ps | MERGE (proj)-[:HAS_ASSIGNED_WORK_FORCE]->(w))
+
+WITH DISTINCT i, w
+FOREACH (_ IN CASE WHEN i IS NULL THEN [] ELSE [1] END |
+  SET i.status = 'ACCEPTED'
+  DETACH DELETE i
+)
+
+RETURN w AS workforce
+`;
