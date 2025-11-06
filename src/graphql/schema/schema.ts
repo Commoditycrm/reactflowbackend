@@ -3432,7 +3432,7 @@ const typeDefs = gql`
     status: String!
     hourlyRate: Float
     source: String!
-    role:UserRole
+    role: UserRole
   }
 
   input CommentsFilter {
@@ -4270,6 +4270,28 @@ const typeDefs = gql`
         SKIP $offset LIMIT $limit
         """
         columnName: "workForceTableData"
+      )
+    getWorkForceTableCount(
+      orgId: ID!
+    ):Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization {id:$orgId})
+
+        CALL {
+          WITH org
+          MATCH (invites:Invite)-[:INVITE_FOR]->(org)
+          RETURN invites AS workForceTableData
+          UNION
+          WITH org
+          MATCH (org)-[:HAS_RESOURCE]->(workforce:WorkForce)
+          RETURN workforce AS workForceTableData
+        }
+
+        WITH COUNT(DISTINCT workForceTableData) AS getWorkForceTableCount
+        RETURN getWorkForceTableCount
+        """
+        columnName: "getWorkForceTableCount"
       )
 
     getFirebaseStorage(orgId: String!): FirebaseStorage!
