@@ -14,18 +14,6 @@ export class FirebaseFunctions {
     this.admin = getFirebaseAdminAuth();
   }
 
-  private isCompanyEmail(email: string) {
-    if (!email) return false;
-    return email.endsWith("@agilenautics.com");
-  }
-
-  private getRoleByEmail(email: string): string[] {
-    if (this.isCompanyEmail(email)) {
-      return ["SYSTEM_ADMIN"];
-    }
-    return ["USER"];
-  }
-
   static getInstance() {
     if (!FirebaseFunctions.instance) {
       FirebaseFunctions.instance = new FirebaseFunctions();
@@ -43,20 +31,26 @@ export class FirebaseFunctions {
       email: userInput?.email,
       password: userInput?.password,
       displayName: userInput?.name,
-      phoneNumber: userInput.phoneNumber,
+      ...(userInput.phoneNumber && { phoneNumber: userInput.phoneNumber }),
     });
 
-    await this.setUserClaims(user.uid, user.email, UserRole.CompanyAdmin);
+    await this.setUserClaims(
+      user.uid,
+      user.email,
+      UserRole.CompanyAdmin,
+      false
+    );
+    logger.info(`User claim set to:${userInput.email}`);
 
     const verifyLink = await this.generateVerificationLink(userInput.email);
 
-    logger?.debug(`verifyLink: ${verifyLink}`);
+    logger?.debug(`sent verification link`, { verifyLink });
 
-    return verifyLink;
+    return { status: true, verifyLink };
   }
 
   async generateVerificationLink(email: string) {
-    const url = `${EnvLoader.getOrThrow("BASE_URL")}/login`;
+    const url = `${EnvLoader.getOrThrow("CLIENT_URL")}/login`;
     const actionCodeSettings: ActionCodeSettings = {
       url,
       handleCodeInApp: true,
@@ -65,7 +59,7 @@ export class FirebaseFunctions {
       .auth()
       .generateEmailVerificationLink(email, actionCodeSettings);
   }
-
+// kaedan80@dotoctuvo.com
   async resetPassword(email: string, actionCodeSettings: ActionCodeSettings) {
     const passwordResetLink = await this.admin
       .auth()
@@ -77,14 +71,15 @@ export class FirebaseFunctions {
   async setUserClaims(
     userId: string | undefined,
     email: string | undefined,
-    accessRole: string
+    accessRole: string,
+    orgCreated: boolean
   ): Promise<string[]> {
     if (!userId || !email || !accessRole)
       throw new Error("Invalid userId or Email or accessRole");
 
     await this.admin
       .auth()
-      .setCustomUserClaims(userId, { roles: [accessRole] });
+      .setCustomUserClaims(userId, { roles: [accessRole], orgCreated });
     return [accessRole];
   }
 
@@ -110,7 +105,7 @@ export class FirebaseFunctions {
       emailVerified: true,
       ...(userInput.phoneNumber && { phoneNumber: userInput.phoneNumber }),
     });
-    await this.setUserClaims(user.uid, user.email, userInput?.role);
+    await this.setUserClaims(user.uid, user.email, userInput?.role, true);
     return { user };
   }
 }

@@ -524,22 +524,22 @@ const typeDefs = gql`
           operations: [CREATE, UPDATE]
           where: { node: { createdBy: { externalId: "$jwt.sub" } } }
         }
-        {
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                { invites_SOME: { email: "$jwt.email" } }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ, DELETE, UPDATE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         { memberUsers_SOME: { externalId: "$jwt.sub" } }
+        #         { invites_SOME: { email: "$jwt.email" } }
+        #         { createdBy: { externalId: "$jwt.sub" } }
+        #       ]
+        #     }
+        #   }
+        # }
+        # {
+        #   operations: [READ, DELETE, UPDATE]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     )
     @mutation(operations: [UPDATE])
@@ -760,21 +760,21 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                {
-                  organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                }
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                { email: "$jwt.sub" }
-                { email: "$jwt.email" }
-              ]
-            }
-          }
-        }
+        # {
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
+        #         }
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #         { email: "$jwt.sub" }
+        #         { email: "$jwt.email" }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           operations: [DELETE]
           where: {
@@ -795,6 +795,13 @@ const typeDefs = gql`
     email: String!
     firstName: String!
     lastName: String
+    fullName: String!
+      @cypher(
+        statement: """
+        RETURN trim(this.firstName + ' ' + coalesce(this.lastName, '')) AS fullName
+        """
+        columnName: "fullName"
+      )
     phoneNumber: String
     designation: String
     hourlyRate: Float
@@ -856,7 +863,7 @@ const typeDefs = gql`
     fullName: String!
       @cypher(
         statement: """
-        RETURN (this.firstName + ' ' + this.lastName) AS fullName
+        RETURN trim(this.firstName + ' ' + coalesce(this.lastName, '')) AS fullName
         """
         columnName: "fullName"
       )
@@ -4271,9 +4278,7 @@ const typeDefs = gql`
         """
         columnName: "workForceTableData"
       )
-    getWorkForceTableCount(
-      orgId: ID!
-    ):Int!
+    getWorkForceTableCount(orgId: ID!): Int!
       @cypher(
         statement: """
         MATCH (org:Organization {id:$orgId})

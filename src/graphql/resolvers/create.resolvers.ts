@@ -258,7 +258,10 @@ const finishInviteSignup = async (
     const { user } = await firebaseFunctions.createInvitedUser(
       inviteUserPayLoad
     );
-    logger.info("Firebase user created", { uid: user?.uid });
+    logger.info("Firebase user created", {
+      uid: user?.uid,
+      email: user?.email,
+    });
 
     // run signup cypher
     const params = {
