@@ -505,7 +505,7 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type Organization implements TimestampedCreatable & Timestamped & SoftDeletable
+  type Organization implements Timestamped & SoftDeletable
     @authorization(
       filter: [
         {
@@ -524,25 +524,25 @@ const typeDefs = gql`
           operations: [CREATE, UPDATE]
           where: { node: { createdBy: { externalId: "$jwt.sub" } } }
         }
-        # {
-        #   operations: [READ]
-        #   where: {
-        #     node: {
-        #       OR: [
-        #         { memberUsers_SOME: { externalId: "$jwt.sub" } }
-        #         { invites_SOME: { email: "$jwt.email" } }
-        #         { createdBy: { externalId: "$jwt.sub" } }
-        #       ]
-        #     }
-        #   }
-        # }
-        # {
-        #   operations: [READ, DELETE, UPDATE]
-        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        # }
+        {
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { memberUsers_SOME: { externalId: "$jwt.sub" } }
+                { invites_SOME: { email: "$jwt.email" } }
+                { createdBy: { externalId: "$jwt.sub" } }
+              ]
+            }
+          }
+        }
+        {
+          operations: [READ, DELETE, UPDATE]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        }
       ]
     )
-    @mutation(operations: [UPDATE])
+    @mutation(operations: [UPDATE, CREATE])
     @limit(default: 10, max: 15)
     @query(read: true, aggregate: false) {
     id: ID! @id
@@ -619,12 +619,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT, DISCONNECT]
       )
-    # memberUsers: @relationship(
-    #     type: "MEMBER_OF"
-    #     direction: IN
-    #     aggregate: false
-    #     nestedOperations: [CONNECT, DISCONNECT]
-    #   )
+    memberWorkForce: [WorkForce!]!
+      @relationship(
+        type: "MEMBER_OF"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
     invites: [Invite!]!
       @relationship(
         type: "INVITE_FOR"
@@ -643,11 +644,11 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "OWNS"
         direction: IN
-        nestedOperations: [CONNECT]
+        nestedOperations: [CONNECT_OR_CREATE]
         aggregate: false
       )
       @settable(onCreate: true, onUpdate: false)
@@ -760,21 +761,20 @@ const typeDefs = gql`
             }
           }
         }
-        # {
-        #   operations: [READ]
-        #   where: {
-        #     node: {
-        #       OR: [
-        #         {
-        #           organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
-        #         }
-        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
-        #         { email: "$jwt.sub" }
-        #         { email: "$jwt.email" }
-        #       ]
-        #     }
-        #   }
-        # }
+        {
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                {
+                  organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
+                }
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                { email: "$jwt.sub" }
+              ]
+            }
+          }
+        }
         {
           operations: [DELETE]
           where: {
@@ -853,6 +853,7 @@ const typeDefs = gql`
     INVITED
     INACTIVE
     ACTIVE
+    DISABLED
   }
 
   # work force schema
@@ -874,7 +875,7 @@ const typeDefs = gql`
     designation: String
     hourlyRate: Float
     resourceType: ResourceType! @default(value: WORK_FORCE)
-    status: WorkForceStatus! @default(value: PENDING)
+    status: WorkForceStatus! @default(value: INACTIVE)
     ownedOrganization: Organization
       @relationship(
         type: "OWNS"
@@ -3470,7 +3471,6 @@ const typeDefs = gql`
       startDate: String!
       orgId: ID!
     ): [Project!]!
-
     finishInviteSignup(
       input: WorkForceCreateInput!
       password: String!

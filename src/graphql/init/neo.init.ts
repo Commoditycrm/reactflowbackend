@@ -7,25 +7,7 @@ import { isProduction } from "../../env/detector";
 import { getTokenFromHeader } from "../../util/tokenExtractor";
 import { deleteOperationMutations } from "../resolvers/delete.resolvers";
 
-import {
-  counterStarter,
-  emailExtractor,
-  externalIdExtractor,
-  userRoleSetter,
-  topLevelParentItem,
-  userNameExtractor,
-  uniqueSprint,
-  uniqueInviteExtractor,
-  uniqueProjectExtractor,
-  updateOrgLastModified,
-  defaultKeySetter,
-  uniqueKeySetter,
-  defaultNameSetter,
-  phoneNumberExtractor,
-  messageCounterSetter,
-  uniqueEventExtractor,
-  resourceNameSetter,
-} from "./../callbacks/populatedByCallbacks";
+import { populatedCallBacks } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
@@ -138,23 +120,7 @@ export class NeoConnection {
     return {
       populatedBy: {
         callbacks: {
-          externalIdExtractor,
-          userNameExtractor,
-          emailExtractor,
-          phoneNumberExtractor,
-          counterStarter,
-          userRoleSetter,
-          topLevelParentItem,
-          uniqueSprint,
-          uniqueInviteExtractor,
-          uniqueProjectExtractor,
-          updateOrgLastModified,
-          defaultKeySetter,
-          uniqueKeySetter,
-          defaultNameSetter,
-          messageCounterSetter,
-          uniqueEventExtractor,
-          resourceNameSetter,
+          ...populatedCallBacks,
         },
       },
       subscriptions: true,

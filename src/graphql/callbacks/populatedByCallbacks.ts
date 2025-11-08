@@ -6,16 +6,20 @@ import { toEpochMs } from "../../util/minutesBetweens";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { UserRole } from "../../@types/ogm.types";
+import { FirebaseFunctions } from "../firebase/firebaseFunctions";
 
-export const externalIdExtractor = (
+const firebaseFunctions = FirebaseFunctions.getInstance();
+
+const externalIdExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
 ) => {
-  return _context?.authorization?.jwt?.sub as string;
+  const uid = _context?.jwt?.sub || _context?.authorization?.jwt?.sub;
+  return uid;
 };
 
-export const userNameExtractor = (
+const userNameExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -23,7 +27,7 @@ export const userNameExtractor = (
   return _context?.authorization?.jwt?.name;
 };
 
-export const phoneNumberExtractor = (
+const phoneNumberExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -31,7 +35,7 @@ export const phoneNumberExtractor = (
   return _context?.authorization?.jwt?.phone_number;
 };
 
-export const emailExtractor = (
+const emailExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -39,7 +43,7 @@ export const emailExtractor = (
   return _context?.authorization?.jwt?.email as string;
 };
 
-export const counterStarter = (
+const counterStarter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -47,7 +51,7 @@ export const counterStarter = (
   return 0;
 };
 
-export const userRoleSetter = (
+const userRoleSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -59,7 +63,7 @@ export const userRoleSetter = (
   return UserRole.SuperUser;
 };
 
-export const topLevelParentItem: Neo4jGraphQLCallback = (
+const topLevelParentItem: Neo4jGraphQLCallback = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -70,7 +74,7 @@ export const topLevelParentItem: Neo4jGraphQLCallback = (
   return false;
 };
 
-export const uniqueSprint = (
+const uniqueSprint = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -79,7 +83,7 @@ export const uniqueSprint = (
   return `${projectId}-${_parent?.name.trim()}`;
 };
 
-export const uniqueInviteExtractor = (
+const uniqueInviteExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -89,7 +93,7 @@ export const uniqueInviteExtractor = (
   return `${orgId}-${userEmail}`;
 };
 
-export const uniqueProjectExtractor = async (
+const uniqueProjectExtractor = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -119,7 +123,7 @@ export const uniqueProjectExtractor = async (
   return `${orgId}-${projectName}`;
 };
 
-export const updateOrgLastModified = async (
+const updateOrgLastModified = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   context: Record<string, any>
@@ -146,7 +150,7 @@ export const updateOrgLastModified = async (
   }
 };
 
-export const defaultKeySetter = (
+const defaultKeySetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -157,7 +161,7 @@ export const defaultKeySetter = (
   return true;
 };
 
-export const defaultNameSetter = (
+const defaultNameSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -166,7 +170,7 @@ export const defaultNameSetter = (
   return name;
 };
 
-export const uniqueKeySetter = (
+const uniqueKeySetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -178,15 +182,32 @@ export const uniqueKeySetter = (
   return `${orgId}-${name}`;
 };
 
-export const messageCounterSetter = (
+const messageCounterSetter = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
-) => {
+): Promise<number> => {
+  const uid = _context?.jwt?.sub;
+  const email = _context?.jwt?.email;
+
+  try {
+    await firebaseFunctions.setUserClaims(
+      uid,
+      email,
+      UserRole.CompanyAdmin,
+      true
+    );
+    logger.info(`✅ User claim set: orgCreated = true for ${email}`);
+  } catch (error: any) {
+    logger.error(`Error setting user claims for ${email}:`, error);
+    throw new Error(
+      error?.message || "Failed to set user claims. Please try again."
+    );
+  }
   return 0;
 };
 
-export const uniqueEventExtractor = async (
+const uniqueEventExtractor = async (
   _parent: any,
   _args: any,
   _context: any
@@ -300,7 +321,7 @@ export const uniqueEventExtractor = async (
   }
 };
 
-export const resourceNameSetter = (
+const resourceNameSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
   _context: Record<string, any>
@@ -309,4 +330,24 @@ export const resourceNameSetter = (
   return middleName
     ? `${firstName} ${middleName} ${lastName}`
     : `${firstName} ${lastName}`;
+};
+
+export const populatedCallBacks = {
+  externalIdExtractor,
+  userNameExtractor,
+  emailExtractor,
+  phoneNumberExtractor,
+  counterStarter,
+  userRoleSetter,
+  topLevelParentItem,
+  uniqueSprint,
+  uniqueInviteExtractor,
+  uniqueProjectExtractor,
+  updateOrgLastModified,
+  defaultKeySetter,
+  uniqueKeySetter,
+  defaultNameSetter,
+  messageCounterSetter,
+  uniqueEventExtractor,
+  resourceNameSetter,
 };
