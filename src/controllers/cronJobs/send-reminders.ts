@@ -4,7 +4,7 @@ import logger from "../../logger";
 import { Integer } from "neo4j-driver";
 import pLimit from "p-limit";
 import { EnvLoader } from "../../util/EnvLoader";
-import { User } from "../../interfaces";
+import { User } from "../../@types/ogm.types";
 
 const CONCURRENCY_LIMIT = 10;
 

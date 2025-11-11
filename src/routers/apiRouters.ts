@@ -1,10 +1,10 @@
 import express from "express";
 import { createServer } from "http";
 import { initializeApolloServer } from "../graphql/init/apollo.init";
-import login from "../controllers/auth/login";
 import cronRouter from "./cronRouters";
 import orgRouter from "./organizationRouters";
 import authRouter from "./authRouter";
+import login from "../controllers/auth/login";
 
 const apiRouter = async (
   httpServer: ReturnType<typeof createServer>
@@ -17,8 +17,6 @@ const apiRouter = async (
   router.get("/health", (_, res) => {
     res.status(200).json({ status: "ok" });
   });
-
-  router.get("/login", login);
 
   router.use("/cron", cronRouter);
   router.use("/notification", orgRouter);

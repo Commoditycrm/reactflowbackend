@@ -13,4 +13,4 @@ const initRoutes = async (
   return router;
 };
 
-export default initRoutes
+export default initRoutes;

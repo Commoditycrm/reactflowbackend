@@ -12,15 +12,19 @@ const login = async (req: Request, res: Response) => {
     // rBxQi90cCeSn9pjyhWaMqaF7ecD2
     // const user = await signInWithEmailAndPassword(getFirebaseAdminAuth().auth(),email,password)
     // console.log(user)
-    const adminAuth = await getFirebaseAdminAuth().auth();
-    const user = await adminAuth.getUser('tRdnCpagQ7aImn92CG8OSZK7zhz1');
-    const currentClaims = user.customClaims || {};
-    await adminAuth.setCustomUserClaims("tRdnCpagQ7aImn92CG8OSZK7zhz1", {
-      ...currentClaims,
-      roles: ["SYSTEM_ADMIN"],
-    });
+    // const adminAuth = getFirebaseAdminAuth().auth();
+    // const user = await adminAuth.getUser("tRdnCpagQ7aImn92CG8OSZK7zhz1");
+    // const currentClaims = user.customClaims || {};
+    // await adminAuth.setCustomUserClaims("tRdnCpagQ7aImn92CG8OSZK7zhz1", {
+    //   ...currentClaims,
+    //   roles: ["SYSTEM_ADMIN"],
+    // });
 
-    res.status(200).json({ message: "Ok", user: currentClaims });
+    const user = getFirebaseAdminAuth()
+      .auth()
+      .updateUser("NgzATFIH1WXVkCt0X1acLeyV0hz1", { emailVerified: false });
+
+    res.status(200).json({ message: "Ok", user });
   } catch (error) {
     res.status(500).json(error);
   }
