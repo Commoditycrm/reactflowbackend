@@ -37,11 +37,20 @@ const inviteWorkForce = async (req: Request, res: Response) => {
   if (
     !role ||
     !email ||
-    !firstName||
+    !firstName ||
     !orgId ||
     !organizationName ||
     !senderName
   ) {
+    logger.info("Validation Error", {
+      firstName,
+      lastName,
+      role,
+      email,
+      orgId,
+      organizationName,
+      senderName,
+    });
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
@@ -55,12 +64,12 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     sub: email,
     role,
     orgId,
-    type:"invitee",
-    jti
+    type: "invitee",
+    jti,
   };
 
   // Pre-generate token & link
-  
+
   const token = jwt.sign(payload, jwtSecret, { expiresIn: "1d" });
   const hashToken = crypto.createHash("sha256").update(token).digest("hex");
   const invitationLink = `${clientUrl}/invite?token=${token}`;
@@ -135,7 +144,9 @@ const inviteWorkForce = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(201).json({ success: true, link: invitationLink, token:hashToken });
+    return res
+      .status(201)
+      .json({ success: true, link: invitationLink, token: hashToken });
   } catch (error: any) {
     const tEnd = performance.now();
     logger.error("InviteWorkForce crashed sending email", {

@@ -35,7 +35,7 @@ const typeDefs = gql`
   }
 
   interface TimestampedCreatable implements Timestamped @limit(max: 15) {
-    createdBy: User! @declareRelationship
+    createdBy: WorkForce! @declareRelationship
     createdAt: DateTime!
     updatedAt: DateTime
   }
@@ -201,7 +201,7 @@ const typeDefs = gql`
       @settable(onCreate: true, onUpdate: false)
   }
 
-  type Status implements Timestamped
+  type Status implements Timestamped & TimestampedCreatable
     @query(read: true, aggregate: false)
     @mutation(operations: [CREATE, DELETE, UPDATE])
     @authorization(
@@ -301,11 +301,18 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    createdBy: WorkForce!
+      @relationship(
+        type: "CREATED_STATUS"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type BacklogItemType implements Timestamped
+  type BacklogItemType implements Timestamped & TimestampedCreatable
     @query(read: true, aggregate: false)
     @authorization(
       validate: [
@@ -400,11 +407,18 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    createdBy: WorkForce!
+      @relationship(
+        type: "CREATED_BACKLOGITEM_TYPE"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type RiskLevel implements Timestamped
+  type RiskLevel implements Timestamped & TimestampedCreatable
     @authorization(
       validate: [
         {
@@ -500,12 +514,19 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    createdBy: WorkForce!
+      @relationship(
+        type: "CREATED_RISKLEVEL"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
 
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type Organization implements Timestamped & SoftDeletable
+  type Organization implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
         {
@@ -808,10 +829,12 @@ const typeDefs = gql`
     token: String! @unique
     status: InviteStatus! @default(value: PENDING)
     invitedAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt:DateTime @timestamp(operations:[UPDATE])
+    joinedAt:DateTime
     uniqueInvite: String!
       @unique
       @populatedBy(callback: "uniqueInviteExtractor", operations: [CREATE])
-    invitedBy: User!
+    invitedBy: WorkForce!
       @relationship(
         type: "INVITED_BY"
         direction: OUT
@@ -941,7 +964,7 @@ const typeDefs = gql`
     street: String
   }
 
-  type Human implements Resource & Timestamped
+  type Human implements Resource & Timestamped & TimestampedCreatable
     @authorization(
       validate: [
         {
@@ -1000,6 +1023,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    createdBy:WorkForce! @relationship(type:"CREATED_RESOURCE" direction:IN nestedOperations:[CONNECT] aggregate:false)
     address: Address
       @relationship(
         type: "HAS_ADDRESS"
@@ -1033,7 +1057,7 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type Contact implements Resource & Timestamped
+  type Contact implements Resource & Timestamped & TimestampedCreatable
     @authorization(
       validate: [
         {
@@ -1093,6 +1117,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    createdBy:WorkForce! @relationship(type:"CREATED_RESOURCE" direction:IN aggregate:false nestedOperations:[CONNECT])
     address: Address
       @relationship(
         type: "HAS_ADDRESS"
@@ -1126,7 +1151,7 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type Asset implements Resource & Timestamped
+  type Asset implements Resource & Timestamped & TimestampedCreatable
     @authorization(
       validate: [
         {
@@ -1166,6 +1191,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    createdBy:WorkForce! @relationship(type:"CREATED_RESOURCE" direction:IN aggregate:false nestedOperations:[CONNECT])
     address: Address
       @relationship(
         type: "HAS_ADDRESS"
@@ -1199,7 +1225,7 @@ const typeDefs = gql`
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
-  type Account implements Resource & Timestamped
+  type Account implements Resource & Timestamped & TimestampedCreatable
     @authorization(
       validate: [
         {
@@ -1255,6 +1281,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    createdBy:WorkForce! @relationship(type:"CREATED_RESOURCE" direction:IN aggregate:false nestedOperations:[CONNECT])
     address: Address
       @relationship(
         type: "HAS_ADDRESS"
@@ -1306,7 +1333,7 @@ const typeDefs = gql`
     paidOn: DateTime
   }
 
-  type Project implements SoftDeletable
+  type Project implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
@@ -1743,7 +1770,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_PROJECT"
         direction: IN
@@ -1791,7 +1818,7 @@ const typeDefs = gql`
       )
   }
 
-  type CalenderEvent implements Timestamped & TimestampedCreatable
+  type CalenderEvent implements TimestampedCreatable & Timestamped
     @query(read: true, aggregate: false)
     @authorization(
       validate: [
@@ -1884,7 +1911,7 @@ const typeDefs = gql`
         callback: "uniqueEventExtractor"
       )
       @unique
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_EVENT"
         direction: IN
@@ -2234,7 +2261,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: true
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_FOLDER"
         direction: IN
@@ -2448,7 +2475,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT, DISCONNECT]
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_FILE"
         direction: IN
@@ -2699,7 +2726,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: []
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_FLOW_NODE"
         direction: IN
@@ -2736,7 +2763,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "LINK_CREATED"
         direction: IN
@@ -2937,7 +2964,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: false, onUpdate: false)
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_ITEM"
         direction: IN
@@ -3122,7 +3149,7 @@ const typeDefs = gql`
         ]
       )
     pinned: Boolean! @default(value: false)
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "COMMENTED"
         direction: IN
@@ -3151,7 +3178,7 @@ const typeDefs = gql`
       @settable(onCreate: false, onUpdate: true)
   }
 
-  type Sprint implements TimestampedCreatable & Timestamped
+  type Sprint implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
@@ -3259,7 +3286,7 @@ const typeDefs = gql`
       @unique
       @settable(onCreate: false, onUpdate: false)
       @populatedBy(callback: "uniqueSprint", operations: [CREATE])
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_SPRINT"
         direction: IN
@@ -3295,7 +3322,7 @@ const typeDefs = gql`
     url: String!
     name: String
     type: ExternalFileType! #TODO: creator connection . can only be deleted by the creator, company admin or super user
-    createdBy: User!
+    createdBy: WorkForce!
       @relationship(
         type: "CREATED_EXTERNAL_FILE"
         direction: IN
