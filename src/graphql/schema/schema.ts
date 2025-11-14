@@ -851,7 +851,10 @@ const typeDefs = gql`
                 { organization: { createdBy: { externalId: "$jwt.sub" } } }
                 {
                   organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub", role: "ADMIN" }
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
                   }
                 }
               ]
@@ -3316,6 +3319,17 @@ const typeDefs = gql`
     defaultRiskLevelCount: Int!
   }
 
+  type OrgMembersResponse
+    @query(aggregate: false, read: false)
+    @mutation(operations: []) {
+    id: ID!
+    name: String
+    email: String!
+    role: UserRole
+    createdAt: DateTime!
+    source: String!
+  }
+
   input CommentsFilter {
     assignedUserIds: [ID!]
     riskLevelIds: [ID!]
@@ -4105,6 +4119,75 @@ const typeDefs = gql`
         RETURN result
         """
         columnName: "result"
+      )
+    getOrgMembers(
+      limit: Int! = 10
+      offset: Int! = 10
+      orgId: ID!
+    ): [OrgMembersResponse!]!
+      @cypher(
+        statement: """
+        MATCH(org:Organization {id:$orgId})
+        CALL(org) {
+          WITH org
+          MATCH(org)<-[:INVITE_FOR]-(invitees:Invite)
+          RETURN invitees {
+            .id,
+            .name,
+            .createdAt,
+            .email,
+            source:"INVITE",
+            isOwner: false
+          } AS results
+          UNION
+          MATCH(org)<-[:MEMBER_OF]-(users:User)
+          RETURN users {
+            .id,
+            .name,
+            .createdAt,
+            .role,
+            .email,
+            source:"USER",
+            isOwner: false
+          } AS results
+          UNION
+          MATCH(org)<-[:OWNS]-(owner:User)
+          RETURN owner {
+            .id,
+            .name,
+            .createdAt,
+            .role,
+            .email,
+            source:"USER",
+            isOwner: true
+          } AS results
+        }
+
+        WITH DISTINCT results AS orgMembers
+
+        RETURN orgMembers
+        ORDER BY orgMembers.isOwner DESC, orgMembers.createdAt DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "orgMembers"
+      )
+
+    orgMembersCount(orgId: ID!): Int!
+      @cypher(
+        statement: """
+        MATCH(org:Organization {id:$orgId})
+        CALL(org) {
+         WITH org
+         MATCH(org)<-[:INVITE_FOR]-(invitees:Invite)
+         RETURN invitees AS results
+         UNION
+         MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
+         RETURN users AS results
+        }
+        WITH COUNT(DISTINCT results) AS orgMembersCount
+        RETURN orgMembersCount
+        """
+        columnName: "orgMembersCount"
       )
     getFirebaseStorage(orgId: String!): FirebaseStorage!
   }
