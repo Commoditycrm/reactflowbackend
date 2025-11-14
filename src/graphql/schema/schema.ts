@@ -1373,7 +1373,7 @@ const typeDefs = gql`
           RETURN DISTINCT n
          }
          WITH DISTINCT n
-         MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+         MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
          OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
          WITH count(DISTINCT bi) AS totalItems,
@@ -1434,7 +1434,7 @@ const typeDefs = gql`
         WITH DISTINCT n, this, f, me, tab
 
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
           AND (
@@ -1524,7 +1524,7 @@ const typeDefs = gql`
         }
         WITH DISTINCT n, this, f, me, tab
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
           AND (
@@ -2075,7 +2075,7 @@ const typeDefs = gql`
         WHERE file.deletedAt IS NULL
         MATCH(file)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
         WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
+        MATCH(flownode)-[:HAS_CHILD_ITEM*1..5]->(backlogItem:BacklogItem)
         WHERE backlogItem.deletedAt is NULL
         RETURN min(backlogItem.startDate) AS startDate
         """
@@ -2090,7 +2090,7 @@ const typeDefs = gql`
         WHERE file.deletedAt IS NULL
         MATCH(file)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
         WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
+        MATCH(flownode)-[:HAS_CHILD_ITEM*1..5]->(backlogItem:BacklogItem)
         WHERE backlogItem.deletedAt is NULL
         RETURN max(backlogItem.endDate) AS endDate
         """
@@ -2309,7 +2309,7 @@ const typeDefs = gql`
         statement: """
         MATCH(this)-[:HAS_FLOW_NODE]->(flowNode:FlowNode)
         WHERE flowNode.deletedAt IS NULL
-        MATCH(flowNode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
+        MATCH(flowNode)-[:HAS_CHILD_ITEM*1..5]->(backlogItem:BacklogItem)
         RETURN min(backlogItem.startDate) AS startDate
         """
         columnName: "startDate"
@@ -2319,7 +2319,7 @@ const typeDefs = gql`
         statement: """
         MATCH(this)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
         WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
+        MATCH(flownode)-[:HAS_CHILD_ITEM*1..5]->(backlogItem:BacklogItem)
         RETURN max(backlogItem.endDate) AS endDate
         """
         columnName: "endDate"
@@ -3789,7 +3789,7 @@ const typeDefs = gql`
             AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
 
           UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
           MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
             AND bi.endDate <= datetime()
@@ -3832,7 +3832,7 @@ const typeDefs = gql`
             AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
 
           UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
           MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
             AND bi.endDate <= datetime()
@@ -3864,7 +3864,7 @@ const typeDefs = gql`
             AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
 
           UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
           MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
             AND bi.endDate <= datetime()
@@ -3919,7 +3919,7 @@ const typeDefs = gql`
           )
 
         UNWIND files AS file
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
         MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
           AND (coalesce(f.riskLevelIds,[]) = [] OR
@@ -3971,7 +3971,7 @@ const typeDefs = gql`
           )
 
         UNWIND files AS file
-        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
+        OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(nodes)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
         MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
           AND (coalesce(f.riskLevelIds,[]) = [] OR
@@ -4011,7 +4011,7 @@ const typeDefs = gql`
           RETURN DISTINCT n
         }
         WITH DISTINCT n, p, org, rl,statusIds
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE bi.deletedAt IS NULL
           AND (
             statusIds IS NULL OR size(statusIds) = 0 OR
@@ -4050,7 +4050,7 @@ const typeDefs = gql`
           RETURN DISTINCT n AS nodes
         }
         WITH DISTINCT nodes , p
-        MATCH(nodes)-[:HAS_CHILD_ITEM*1..2]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        MATCH(nodes)-[:HAS_CHILD_ITEM*1..5]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE b.endDate IS NOT NULL AND b.updatedAt IS NOT NULL
           AND b.deletedAt IS NULL
           AND b.endDate >= datetime($start)
