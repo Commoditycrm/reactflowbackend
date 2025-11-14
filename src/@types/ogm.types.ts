@@ -177,6 +177,9 @@ export type Query = {
   customizationDataCreationResults: Array<CustomizationDataCreationResult>;
   customizationDataCreationResultsConnection: CustomizationDataCreationResultsConnection;
   customizationDataCreationResultsAggregate: CustomizationDataCreationResultAggregateSelection;
+  orgMembersResponses: Array<OrgMembersResponse>;
+  orgMembersResponsesConnection: OrgMembersResponsesConnection;
+  orgMembersResponsesAggregate: OrgMembersResponseAggregateSelection;
   backlogItemsSearchWithUid: Array<BacklogItem>;
   fullTextSearchOnBacklogItems: Array<BacklogItem>;
   countBacklogItemsGroupedByRisk: Array<ItemCountGroupedRiskLevel>;
@@ -188,6 +191,8 @@ export type Query = {
   backlogItemCountByRiskLevel: Array<RiskLevelItemCount>;
   countBacklogItemsCompletionTrends: Array<ItemCountResult>;
   getItemCountByUserActivity: Array<ItemCountResult>;
+  getOrgMembers: Array<OrgMembersResponse>;
+  orgMembersCount: Scalars["Int"]["output"];
 };
 
 export type QuerySoftDeletedFoldersArgs = {
@@ -930,6 +935,22 @@ export type QueryCustomizationDataCreationResultsAggregateArgs = {
   where?: InputMaybe<CustomizationDataCreationResultWhere>;
 };
 
+export type QueryOrgMembersResponsesArgs = {
+  where?: InputMaybe<OrgMembersResponseWhere>;
+  options?: InputMaybe<OrgMembersResponseOptions>;
+};
+
+export type QueryOrgMembersResponsesConnectionArgs = {
+  first?: InputMaybe<Scalars["Int"]["input"]>;
+  after?: InputMaybe<Scalars["String"]["input"]>;
+  where?: InputMaybe<OrgMembersResponseWhere>;
+  sort?: InputMaybe<Array<InputMaybe<OrgMembersResponseSort>>>;
+};
+
+export type QueryOrgMembersResponsesAggregateArgs = {
+  where?: InputMaybe<OrgMembersResponseWhere>;
+};
+
 export type QueryBacklogItemsSearchWithUidArgs = {
   query: Scalars["String"]["input"];
   limit?: InputMaybe<Scalars["Int"]["input"]>;
@@ -989,6 +1010,16 @@ export type QueryCountBacklogItemsCompletionTrendsArgs = {
 
 export type QueryGetItemCountByUserActivityArgs = {
   projectId: Scalars["ID"]["input"];
+};
+
+export type QueryGetOrgMembersArgs = {
+  limit?: Scalars["Int"]["input"];
+  offset?: Scalars["Int"]["input"];
+  orgId: Scalars["ID"]["input"];
+};
+
+export type QueryOrgMembersCountArgs = {
+  orgId: Scalars["ID"]["input"];
 };
 
 export type Mutation = {
@@ -1111,6 +1142,9 @@ export type Mutation = {
   createCustomizationDataCreationResults: CreateCustomizationDataCreationResultsMutationResponse;
   deleteCustomizationDataCreationResults: DeleteInfo;
   updateCustomizationDataCreationResults: UpdateCustomizationDataCreationResultsMutationResponse;
+  createOrgMembersResponses: CreateOrgMembersResponsesMutationResponse;
+  deleteOrgMembersResponses: DeleteInfo;
+  updateOrgMembersResponses: UpdateOrgMembersResponsesMutationResponse;
   finishInviteSignup: Array<User>;
   customizationDataCreation: CustomizationDataCreationResult;
 };
@@ -1667,6 +1701,19 @@ export type MutationUpdateCustomizationDataCreationResultsArgs = {
   update?: InputMaybe<CustomizationDataCreationResultUpdateInput>;
 };
 
+export type MutationCreateOrgMembersResponsesArgs = {
+  input: Array<OrgMembersResponseCreateInput>;
+};
+
+export type MutationDeleteOrgMembersResponsesArgs = {
+  where?: InputMaybe<OrgMembersResponseWhere>;
+};
+
+export type MutationUpdateOrgMembersResponsesArgs = {
+  where?: InputMaybe<OrgMembersResponseWhere>;
+  update?: InputMaybe<OrgMembersResponseUpdateInput>;
+};
+
 export type MutationFinishInviteSignupArgs = {
   email: Scalars["String"]["input"];
   name: Scalars["String"]["input"];
@@ -1838,6 +1885,9 @@ export type Subscription = {
   customizationDataCreationResultCreated: CustomizationDataCreationResultCreatedEvent;
   customizationDataCreationResultUpdated: CustomizationDataCreationResultUpdatedEvent;
   customizationDataCreationResultDeleted: CustomizationDataCreationResultDeletedEvent;
+  orgMembersResponseCreated: OrgMembersResponseCreatedEvent;
+  orgMembersResponseUpdated: OrgMembersResponseUpdatedEvent;
+  orgMembersResponseDeleted: OrgMembersResponseDeletedEvent;
 };
 
 export type SubscriptionUserCreatedArgs = {
@@ -2458,6 +2508,18 @@ export type SubscriptionCustomizationDataCreationResultUpdatedArgs = {
 
 export type SubscriptionCustomizationDataCreationResultDeletedArgs = {
   where?: InputMaybe<CustomizationDataCreationResultSubscriptionWhere>;
+};
+
+export type SubscriptionOrgMembersResponseCreatedArgs = {
+  where?: InputMaybe<OrgMembersResponseSubscriptionWhere>;
+};
+
+export type SubscriptionOrgMembersResponseUpdatedArgs = {
+  where?: InputMaybe<OrgMembersResponseSubscriptionWhere>;
+};
+
+export type SubscriptionOrgMembersResponseDeletedArgs = {
+  where?: InputMaybe<OrgMembersResponseSubscriptionWhere>;
 };
 
 export enum BacklogTable {
@@ -5964,6 +6026,12 @@ export type CreateOrganizationsMutationResponse = {
   organizations: Array<Organization>;
 };
 
+export type CreateOrgMembersResponsesMutationResponse = {
+  __typename?: "CreateOrgMembersResponsesMutationResponse";
+  info: CreateInfo;
+  orgMembersResponses: Array<OrgMembersResponse>;
+};
+
 export type CreateProjectsMutationResponse = {
   __typename?: "CreateProjectsMutationResponse";
   info: CreateInfo;
@@ -9086,6 +9154,71 @@ export type OrganizationUserMemberUsersNodeAggregateSelection = {
   updatedAt: DateTimeAggregateSelection;
 };
 
+export type OrgMembersResponse = {
+  __typename?: "OrgMembersResponse";
+  id: Scalars["ID"]["output"];
+  name?: Maybe<Scalars["String"]["output"]>;
+  email: Scalars["String"]["output"];
+  role?: Maybe<UserRole>;
+  createdAt: Scalars["DateTime"]["output"];
+  source: Scalars["String"]["output"];
+};
+
+export type OrgMembersResponseAggregateSelection = {
+  __typename?: "OrgMembersResponseAggregateSelection";
+  count: Scalars["Int"]["output"];
+  id: IdAggregateSelection;
+  name: StringAggregateSelection;
+  email: StringAggregateSelection;
+  createdAt: DateTimeAggregateSelection;
+  source: StringAggregateSelection;
+};
+
+export type OrgMembersResponseCreatedEvent = {
+  __typename?: "OrgMembersResponseCreatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  createdOrgMembersResponse: OrgMembersResponseEventPayload;
+};
+
+export type OrgMembersResponseDeletedEvent = {
+  __typename?: "OrgMembersResponseDeletedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  deletedOrgMembersResponse: OrgMembersResponseEventPayload;
+};
+
+export type OrgMembersResponseEdge = {
+  __typename?: "OrgMembersResponseEdge";
+  cursor: Scalars["String"]["output"];
+  node: OrgMembersResponse;
+};
+
+export type OrgMembersResponseEventPayload = {
+  __typename?: "OrgMembersResponseEventPayload";
+  id: Scalars["ID"]["output"];
+  name?: Maybe<Scalars["String"]["output"]>;
+  email: Scalars["String"]["output"];
+  role?: Maybe<UserRole>;
+  createdAt: Scalars["DateTime"]["output"];
+  source: Scalars["String"]["output"];
+};
+
+export type OrgMembersResponsesConnection = {
+  __typename?: "OrgMembersResponsesConnection";
+  totalCount: Scalars["Int"]["output"];
+  pageInfo: PageInfo;
+  edges: Array<OrgMembersResponseEdge>;
+};
+
+export type OrgMembersResponseUpdatedEvent = {
+  __typename?: "OrgMembersResponseUpdatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  previousState: OrgMembersResponseEventPayload;
+  updatedOrgMembersResponse: OrgMembersResponseEventPayload;
+};
+
 /** Pagination information (Relay) */
 export type PageInfo = {
   __typename?: "PageInfo";
@@ -10880,6 +11013,12 @@ export type UpdateOrganizationsMutationResponse = {
   __typename?: "UpdateOrganizationsMutationResponse";
   info: UpdateInfo;
   organizations: Array<Organization>;
+};
+
+export type UpdateOrgMembersResponsesMutationResponse = {
+  __typename?: "UpdateOrgMembersResponsesMutationResponse";
+  info: UpdateInfo;
+  orgMembersResponses: Array<OrgMembersResponse>;
 };
 
 export type UpdateProjectsMutationResponse = {
@@ -40122,6 +40261,205 @@ export type OrganizationWhere = {
   createdByAggregate?: InputMaybe<OrganizationCreatedByAggregateInput>;
 };
 
+export type OrgMembersResponseCreateInput = {
+  id: Scalars["ID"]["input"];
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  email: Scalars["String"]["input"];
+  role?: InputMaybe<UserRole>;
+  createdAt: Scalars["DateTime"]["input"];
+  source: Scalars["String"]["input"];
+};
+
+export type OrgMembersResponseOptions = {
+  limit?: InputMaybe<Scalars["Int"]["input"]>;
+  offset?: InputMaybe<Scalars["Int"]["input"]>;
+  /** Specify one or more OrgMembersResponseSort objects to sort OrgMembersResponses by. The sorts will be applied in the order in which they are arranged in the array. */
+  sort?: InputMaybe<Array<OrgMembersResponseSort>>;
+};
+
+/** Fields to sort OrgMembersResponses by. The order in which sorts are applied is not guaranteed when specifying many fields in one OrgMembersResponseSort object. */
+export type OrgMembersResponseSort = {
+  id?: InputMaybe<SortDirection>;
+  name?: InputMaybe<SortDirection>;
+  email?: InputMaybe<SortDirection>;
+  role?: InputMaybe<SortDirection>;
+  createdAt?: InputMaybe<SortDirection>;
+  source?: InputMaybe<SortDirection>;
+};
+
+export type OrgMembersResponseSubscriptionWhere = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT?: InputMaybe<Scalars["ID"]["input"]>;
+  id_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  id_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  id_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  id_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  name_IN?: InputMaybe<Array<InputMaybe<Scalars["String"]["input"]>>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_IN?: InputMaybe<Array<InputMaybe<Scalars["String"]["input"]>>>;
+  name_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  name_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  name_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  email?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  email_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  email_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  email_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  email_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  role?: InputMaybe<UserRole>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  role_NOT?: InputMaybe<UserRole>;
+  role_IN?: InputMaybe<Array<InputMaybe<UserRole>>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  role_NOT_IN?: InputMaybe<Array<InputMaybe<UserRole>>>;
+  createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdAt_NOT_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  createdAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  source?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  source_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  source_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  source_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  source_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<OrgMembersResponseSubscriptionWhere>>;
+  AND?: InputMaybe<Array<OrgMembersResponseSubscriptionWhere>>;
+  NOT?: InputMaybe<OrgMembersResponseSubscriptionWhere>;
+};
+
+export type OrgMembersResponseUpdateInput = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  email?: InputMaybe<Scalars["String"]["input"]>;
+  role?: InputMaybe<UserRole>;
+  createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  source?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type OrgMembersResponseWhere = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT?: InputMaybe<Scalars["ID"]["input"]>;
+  id_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  id_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  id_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  id_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  name_IN?: InputMaybe<Array<InputMaybe<Scalars["String"]["input"]>>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_IN?: InputMaybe<Array<InputMaybe<Scalars["String"]["input"]>>>;
+  name_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  name_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  name_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  email?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  email_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  email_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  email_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  email_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  email_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  role?: InputMaybe<UserRole>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  role_NOT?: InputMaybe<UserRole>;
+  role_IN?: InputMaybe<Array<InputMaybe<UserRole>>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  role_NOT_IN?: InputMaybe<Array<InputMaybe<UserRole>>>;
+  createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdAt_NOT_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  createdAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  createdAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  source?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  source_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  source_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  source_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  source_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  source_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<OrgMembersResponseWhere>>;
+  AND?: InputMaybe<Array<OrgMembersResponseWhere>>;
+  NOT?: InputMaybe<OrgMembersResponseWhere>;
+};
+
 export type ProjectAssignedUsersAggregateInput = {
   count?: InputMaybe<Scalars["Int"]["input"]>;
   count_LT?: InputMaybe<Scalars["Int"]["input"]>;
@@ -50909,6 +51247,56 @@ export declare class CustomizationDataCreationResultModel {
   }): Promise<CustomizationDataCreationResultAggregateSelection>;
 }
 
+export interface OrgMembersResponseAggregateSelectionInput {
+  count?: boolean;
+  id?: boolean;
+  name?: boolean;
+  email?: boolean;
+  createdAt?: boolean;
+  source?: boolean;
+}
+
+export declare class OrgMembersResponseModel {
+  public find(args?: {
+    where?: OrgMembersResponseWhere;
+
+    options?: OrgMembersResponseOptions;
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<OrgMembersResponse[]>;
+  public create(args: {
+    input: OrgMembersResponseCreateInput[];
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<CreateOrgMembersResponsesMutationResponse>;
+  public update(args: {
+    where?: OrgMembersResponseWhere;
+    update?: OrgMembersResponseUpdateInput;
+
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<UpdateOrgMembersResponsesMutationResponse>;
+  public delete(args: {
+    where?: OrgMembersResponseWhere;
+
+    context?: any;
+    rootValue?: any;
+  }): Promise<{ nodesDeleted: number; relationshipsDeleted: number }>;
+  public aggregate(args: {
+    where?: OrgMembersResponseWhere;
+
+    aggregate: OrgMembersResponseAggregateSelectionInput;
+    context?: any;
+    rootValue?: any;
+  }): Promise<OrgMembersResponseAggregateSelection>;
+}
+
 export interface ModelMap {
   User: UserModel;
   Counter: CounterModel;
@@ -50946,4 +51334,5 @@ export interface ModelMap {
   ItemCountGroupedRiskLevel: ItemCountGroupedRiskLevelModel;
   FirebaseStorage: FirebaseStorageModel;
   CustomizationDataCreationResult: CustomizationDataCreationResultModel;
+  OrgMembersResponse: OrgMembersResponseModel;
 }
