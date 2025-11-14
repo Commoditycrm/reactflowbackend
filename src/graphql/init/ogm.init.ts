@@ -6,6 +6,7 @@ import { isDevelopment, isProduction } from "../../env/detector";
 import { NeoConnection } from "./neo.init";
 import typeDefs from "../schema/schema";
 import { EnvLoader } from "../../util/EnvLoader";
+import path from "path";
 
 export class OGMConnection {
   private static ogm: OGM;
@@ -36,7 +37,7 @@ export class OGMConnection {
     if (isDevelopment() && EnvLoader.get("GENERATE_OGM_TYPES")) {
       await generate({
         ogm: this.ogm,
-        outFile: `./@types/ogm.types.ts`,
+        outFile: path.resolve(__dirname,'../../@types/ogm.types.ts'),
       });
     }
 
