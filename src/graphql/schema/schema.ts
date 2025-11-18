@@ -1486,7 +1486,7 @@ const typeDefs = gql`
           } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab IN ['WORK_ITEMS', 'HEIRARCHY'] AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
           OR (tab = 'HIERARCHY')
@@ -1612,7 +1612,7 @@ const typeDefs = gql`
           } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab IN ['WORK_ITEMS', 'HEIRARCHY'] AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
           OR (tab = 'HIERARCHY')
