@@ -1190,6 +1190,7 @@ const typeDefs = gql`
     WORK_ITEMS
     MY_ITEMS
     EXPENSE
+    HEIRARCHY
   }
 
   input BacklogItemFilterInput {
@@ -1434,7 +1435,7 @@ const typeDefs = gql`
         WITH DISTINCT n, this, f, me, tab
 
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        MATCH (n)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
           AND (
@@ -1475,7 +1476,7 @@ const typeDefs = gql`
           } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab IN ['WORK_ITEMS', 'HEIRARCHY'] AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
           AND (
@@ -1524,7 +1525,7 @@ const typeDefs = gql`
         }
         WITH DISTINCT n, this, f, me, tab
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        MATCH (n)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL
 
           AND (
@@ -1565,7 +1566,7 @@ const typeDefs = gql`
           } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+          OR (tab IN ['WORK_ITEMS', 'HEIRARCHY'] AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
          AND (
