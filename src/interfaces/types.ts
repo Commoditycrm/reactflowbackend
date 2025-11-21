@@ -10,3 +10,7 @@ export type InviteWorkForceProps = SendEmailProps & {
   inviteLink:string
   name:string
 };
+
+export type InviteUserProps = SendEmailProps & {
+  
+}
