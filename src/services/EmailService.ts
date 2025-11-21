@@ -1,4 +1,3 @@
-// src/services/email/EmailService.ts
 import sgMail, {
   MailDataRequired,
   ClientResponse,
@@ -41,7 +40,7 @@ export class EmailService {
 
   /** Single dynamic-template email (no undefined keys) */
   async sendTemplate(opts: {
-    to: MailDataRequired["to"];
+    to: NonNullable<MailDataRequired["to"]>;
     templateId: NonNullable<MailDataRequired["templateId"]>;
     dynamicTemplateData: NonNullable<MailDataRequired["dynamicTemplateData"]>;
     subject?: MailDataRequired["subject"];

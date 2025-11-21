@@ -7,12 +7,10 @@ import { InviteWorkForceProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
 
-// ---- SINGLETONS (hoisted) ----
-const auth = getFirebaseAdminAuth().auth();
 const jwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
 const clientUrl = EnvLoader.getOrThrow("CLIENT_URL");
 const sendEmail = new OrganizationEmailService();
-
+const auth = getFirebaseAdminAuth().auth();
 const inviteWorkForce = async (req: Request, res: Response) => {
   const t0 = performance.now();
 
