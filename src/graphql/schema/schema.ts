@@ -1948,6 +1948,13 @@ const typeDefs = gql`
 
   union FolderParent = Project | Folder
 
+  enum FolderType {
+    EPIC
+    STORY
+    FEATURE
+    FOLDER
+  }
+
   type Folder implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
@@ -2067,6 +2074,7 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
+    type: FolderType!
     startDate: DateTime
       @cypher(
         statement: """
@@ -2331,6 +2339,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    backlogItem: BacklogItem
+      @relationship(
+        type: "HAS_FILE_ITEM"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate:false
       )
     parent: FileParent!
       @relationship(
