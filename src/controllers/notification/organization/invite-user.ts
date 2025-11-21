@@ -7,13 +7,12 @@ import { InviteWorkForceProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
 
-// ---- SINGLETONS (hoisted) ----
 const auth = getFirebaseAdminAuth().auth();
 const jwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
 const clientUrl = EnvLoader.getOrThrow("CLIENT_URL");
 const sendEmail = new OrganizationEmailService();
 
-const inviteWorkForce = async (req: Request, res: Response) => {
+const inviteUserToOrg = async (req: Request, res: Response) => {
   const t0 = performance.now();
 
   // Extract + normalize
@@ -129,7 +128,7 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, link: invitationLink, token });
   } catch (error: any) {
     const tEnd = performance.now();
-    logger.error("InviteWorkForce crashed sending email", {
+    logger.error("Invite user to org crashed sending email", {
       email,
       code: error?.code || "unknown",
       message: error?.message || String(error),
@@ -145,4 +144,4 @@ const inviteWorkForce = async (req: Request, res: Response) => {
   }
 };
 
-export default inviteWorkForce;
+export default inviteUserToOrg;
