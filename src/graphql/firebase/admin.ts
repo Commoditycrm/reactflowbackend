@@ -10,7 +10,6 @@ export const getFirebaseAdminAuth = () => {
         privateKey: EnvLoader.getFirebasePrivateKey(),
         projectId: EnvLoader.getOrThrow("FIREBASE_PROJECT_ID"),
       }),
-      storageBucket: EnvLoader.getOrThrow("FIREBASE_STORAGE_BUCKET"),
     });
     logger?.info("Firebase Admin SDK initialized successfully.");
   }
