@@ -3,7 +3,7 @@ import { getFirebaseAdminAuth } from "../../../graphql/firebase/admin";
 import { OrganizationEmailService } from "../../../services";
 import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
-import { InviteWorkForceProps } from "../../../interfaces";
+import { InviteWorkForceProps, UserRole } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
 
@@ -16,31 +16,14 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
   const t0 = performance.now();
 
   // Extract + normalize
-  let {
-    firstName,
-    lastName,
-    role,
-    email,
-    phoneNumber,
-    orgId,
-    organizationName,
-    senderName,
-  } = req.body;
+  let { role, email, orgId, organizationName } = req.body;
 
   email = String(email || "")
     .trim()
     .toLowerCase();
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
 
   // Basic validation
-  if (
-    !role ||
-    !email ||
-    !phoneNumber ||
-    !orgId ||
-    !organizationName ||
-    !senderName
-  ) {
+  if (!email || !orgId || !organizationName) {
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
@@ -49,9 +32,11 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
 
   // Pre-generate token & link
   const token = jwt.sign(
-    { email, sub: email, role, name: fullName, orgId },
+    { email, sub: email, role: UserRole.SuperUser, orgId },
     jwtSecret,
-    { expiresIn: "1d" }
+    {
+      expiresIn: "1d",
+    }
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
   const t1 = performance.now();
@@ -61,7 +46,7 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
   const tExistsStart = performance.now();
   try {
     await auth.getUserByEmail(email);
-    userExists = true; // if we got here, user exists
+    userExists = true;
   } catch (e: any) {
     if (e?.code === "auth/user-not-found") {
       userExists = false;
@@ -90,19 +75,17 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
   }
 
   // ----- Send invite email (synchronous 201) -----
-  const mailData: InviteWorkForceProps = {
+  const mailData = {
     inviteLink: invitationLink,
-    name: fullName,
     role,
     organizationName,
-    senderName,
     to: email,
-    type: "INVITE_WORKFORCE",
+    type: "INVITE_USER",
   };
 
   const tSendStart = performance.now();
   try {
-    const ok = await sendEmail.inviteWorkForce(mailData);
+    const ok = await sendEmail.inviteUser(mailData);
 
     const tEnd = performance.now();
     logger.info("Invitation email attempted", {
