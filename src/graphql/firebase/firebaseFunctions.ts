@@ -59,7 +59,7 @@ export class FirebaseFunctions {
       .auth()
       .generateEmailVerificationLink(email, actionCodeSettings);
   }
-// kaedan80@dotoctuvo.com
+  // kaedan80@dotoctuvo.com
   async resetPassword(email: string, actionCodeSettings: ActionCodeSettings) {
     const passwordResetLink = await this.admin
       .auth()
