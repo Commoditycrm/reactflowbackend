@@ -11,10 +11,10 @@ const verifyLinkTemplateId = EnvLoader.getOrThrow(
 );
 
 const createOwner = async (req: Request, res: Response) => {
-  const { email, password, firstName, lastName, phoneNumber } = req.body;
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-  if (!email || !password || !firstName) {
-    logger.info("Validation Error", { email, password, firstName });
+  const { email, password, name, phoneNumber } = req.body;
+  //   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  if (!email || !password) {
+    logger.warn("Validation Error", { email, password, name });
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
@@ -25,7 +25,7 @@ const createOwner = async (req: Request, res: Response) => {
     email,
     password,
     ...(phoneNumber && { phoneNumber: `+${phoneNumber}` }),
-    name: fullName,
+    name,
   };
 
   try {
