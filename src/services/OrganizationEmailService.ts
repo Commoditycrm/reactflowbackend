@@ -54,7 +54,7 @@ export class OrganizationEmailService {
   }
 
   async inviteUser(props: InviteUserProps): Promise<boolean> {
-    const { to, type, inviteLink, ...rest } = props;
+    const { to, type, ...rest } = props;
     const templateId = EnvLoader.getOrThrow(`${type}_TEMPLATE_ID`);
 
     return this.emailService.sendTemplate({

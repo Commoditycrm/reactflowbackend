@@ -3,9 +3,10 @@ import { getFirebaseAdminAuth } from "../../../graphql/firebase/admin";
 import { OrganizationEmailService } from "../../../services";
 import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
-import { InviteWorkForceProps, UserRole } from "../../../interfaces";
+import { InviteUserProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
+import crypto from "crypto";
 
 const auth = getFirebaseAdminAuth().auth();
 const jwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
@@ -16,14 +17,15 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
   const t0 = performance.now();
 
   // Extract + normalize
-  let { role, email, orgId, organizationName } = req.body;
+  let { email, orgId, orgName, inviterName, inviterEmail } = req.body;
 
   email = String(email || "")
     .trim()
     .toLowerCase();
 
   // Basic validation
-  if (!email || !orgId || !organizationName) {
+  if (!email || !orgId || !orgName || !inviterName || !inviterEmail) {
+    logger.warn("Validation Error", { ...req.body });
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
@@ -32,18 +34,19 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
 
   // Pre-generate token & link
   const token = jwt.sign(
-    { email, sub: email, role: UserRole.SuperUser, orgId },
+    { email, sub: email, role: "invitee", orgId },
     jwtSecret,
     {
       expiresIn: "1d",
     }
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
-  const t1 = performance.now();
+  const hashToken = crypto
+    .createHash("sha256")
+    .update(token + jwtSecret)
+    .digest("hex");
 
-  // ----- STRICT user-exists check (no timeouts, no optimistic fallback) -----
   let userExists = false;
-  const tExistsStart = performance.now();
   try {
     await auth.getUserByEmail(email);
     userExists = true;
@@ -63,39 +66,32 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
       });
     }
   }
-  const tExistsEnd = performance.now();
 
   if (userExists) {
     logger.info("Invite skipped: user already exists", {
       email,
-      dtJwtMs: Math.round(t1 - t0),
-      dtExistsMs: Math.round(tExistsEnd - tExistsStart),
     });
     return res.status(409).json({ message: "User already exists." });
   }
 
   // ----- Send invite email (synchronous 201) -----
-  const mailData = {
+  const mailData: InviteUserProps = {
     inviteLink: invitationLink,
-    role,
-    organizationName,
+    orgName,
+    inviterName,
     to: email,
     type: "INVITE_USER",
   };
 
-  const tSendStart = performance.now();
   try {
     const ok = await sendEmail.inviteUser(mailData);
 
-    const tEnd = performance.now();
     logger.info("Invitation email attempted", {
       email,
-      org: organizationName,
-      sent: ok,
-      dtJwtMs: Math.round(t1 - t0),
-      dtExistsMs: Math.round(tExistsEnd - tExistsStart),
-      dtSendMs: Math.round(tEnd - tSendStart),
-      dtTotalMs: Math.round(tEnd - t0),
+      org: {
+        id: orgId,
+        name: orgName,
+      },
     });
 
     if (!ok) {
@@ -108,7 +104,9 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(201).json({ success: true, link: invitationLink, token });
+    return res
+      .status(201)
+      .json({ success: true, link: invitationLink, token: hashToken });
   } catch (error: any) {
     const tEnd = performance.now();
     logger.error("Invite user to org crashed sending email", {
