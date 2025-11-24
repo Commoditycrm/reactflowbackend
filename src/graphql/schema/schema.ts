@@ -3362,34 +3362,11 @@ const typeDefs = gql`
     finishInviteSignup(
       email: String!
       name: String!
-      externalId: String!
+      password:String!
+      uniqueInvite: String!
       phoneNumber: String
     ): [User!]!
-      @cypher(
-        statement: """
-        MATCH (invite:Invite {email: $email})
-        OPTIONAL MATCH (invite)-[:INVITE_FOR]->(org:Organization)
-        OPTIONAL MATCH (invite)-[:INVITE_TO_PROJECT]->(project:Project)
 
-        MERGE (user:User {email: $email})
-          ON CREATE SET user.name = $name,
-            user.createdAt = datetime(),
-            user.externalId = $externalId,
-            user.role='SUPER_USER',
-            user.id=randomUUID(),
-            user.showHelpText = true,
-            user.phoneNumber = $phoneNumber
-
-        MERGE (user)-[:MEMBER_OF]->(org)
-        FOREACH (p IN CASE WHEN project IS NULL THEN [] ELSE [project] END |
-          MERGE (p)-[:HAS_ASSIGNED_USER]->(user)
-        )
-
-        DETACH DELETE invite
-        RETURN user
-        """
-        columnName: "user"
-      )
     customizationDataCreation(orgId: ID!): CustomizationDataCreationResult!
       @cypher(
         statement: """
