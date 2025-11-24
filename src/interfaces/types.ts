@@ -13,4 +13,6 @@ export type InviteWorkForceProps = SendEmailProps & {
 
 export type InviteUserProps = SendEmailProps & {
   inviteLink: string;
+  inviterName: string;
+  orgName: string;
 };

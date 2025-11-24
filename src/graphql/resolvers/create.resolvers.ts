@@ -7,6 +7,7 @@ import {
   CLONE_SUB_FOLDERS,
   CLONE_SUB_ITEM,
   CONNECT_DEPENDENCY_CQL,
+  CREATE_INVITE_USER_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
   getUpdateDependentTaskDatesCQL,
   LINK_TO_FLOWNODE,
@@ -18,7 +19,10 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
-import { BacklogItem } from "../../interfaces";
+import { BacklogItem, User, UserRole } from "../../interfaces";
+import { FirebaseFunctions } from "../firebase/firebaseFunctions";
+
+const firebaseFunctions = FirebaseFunctions.getInstance();
 
 const createBacklogItemWithUID = async (
   _source: Record<string, any>,
@@ -225,7 +229,66 @@ const createProjectWithTemplate = async (
   }
 };
 
+const finishInviteSignup = async (
+  _source: Record<string, any>,
+  {
+    email,
+    password,
+    name,
+    phoneNumber,
+    uniqueInvite,
+  }: {
+    email: string;
+    password: string;
+    name: string;
+    phoneNumber: string;
+    uniqueInvite: string;
+  },
+  _context: Record<string, any>
+) => {
+  console.log(password);
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
+  const payLaod = {
+    email,
+    name,
+    password,
+    ...(phoneNumber && { phoneNumber: `+${phoneNumber}` }),
+    role: UserRole.SuperUser,
+  };
+  try {
+    logger.info("Start creating invite user", { email, name });
+    const { user } = await firebaseFunctions.createInvitedUser(payLaod);
+    logger.info("Finishes creating user in firebase", { user });
+    const response = await tx.run(CREATE_INVITE_USER_CQL, {
+      name,
+      email,
+      externalId: user.uid,
+      ...(phoneNumber
+        ? { phoneNumber: `+${phoneNumber}` }
+        : { phoneNumber: null }),
+      uniqueInvite,
+    });
+    logger.info("Created invite user in database", { email });
+    const userNode =
+      response.records.map((user) => user.get("user").properties) || [];
+    await tx.commit();
+    return userNode;
+  } catch (error) {
+    await tx.rollback();
+    logger?.error("Field to create Invite user", error);
+    throw new GraphQLError(`${error}`, {
+      extensions: {
+        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+      },
+    });
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
+  finishInviteSignup,
 };
