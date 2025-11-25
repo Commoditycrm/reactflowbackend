@@ -3362,10 +3362,12 @@ const typeDefs = gql`
     finishInviteSignup(
       email: String!
       name: String!
-      password:String!
+      password: String!
       uniqueInvite: String!
       phoneNumber: String
     ): [User!]!
+
+    finishInviteSignupInOrgPage: [User!]!
 
     customizationDataCreation(orgId: ID!): CustomizationDataCreationResult!
       @cypher(
