@@ -21,6 +21,8 @@ import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
 import { BacklogItem, User, UserRole } from "../../interfaces";
 import { FirebaseFunctions } from "../firebase/firebaseFunctions";
+import { getFirebaseAdminAuth } from "../firebase/admin";
+import retrySetClaims from "../../util/retrySetCustomClaims";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
 
@@ -246,7 +248,6 @@ const finishInviteSignup = async (
   },
   _context: Record<string, any>
 ) => {
-  console.log(password);
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
   const payLaod = {
@@ -287,8 +288,85 @@ const finishInviteSignup = async (
   }
 };
 
+const finishInviteSignupInOrgPage = async (
+  _source: Record<string, any>,
+  _arg: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  const uid = _context?.jwt?.uid;
+
+  if (!uid) {
+    throw new GraphQLError("Unauthorized: missing user id", {
+      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+    });
+  }
+
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
+
+  const adminAuth = getFirebaseAdminAuth().auth();
+
+  try {
+    const user = await adminAuth.getUser(uid);
+    const currentClaims = user.customClaims;
+    logger.info("Start creating invite user", {
+      email: user?.email,
+      name: user?.displayName,
+    });
+    const response = await tx.run(CREATE_INVITE_USER_CQL, {
+      name: user?.displayName,
+      email: user?.email,
+      externalId: user?.uid,
+      ...(user.phoneNumber
+        ? { phoneNumber: `+${user?.phoneNumber}` }
+        : { phoneNumber: null }),
+    });
+    logger.info("Created invite user in database", {
+      email: user?.email,
+    });
+    const userNode =
+      response.records.map((user) => user.get("user").properties) || [];
+    await tx.commit();
+    if (userNode.length > 0) {
+      try {
+        await retrySetClaims(() =>
+          firebaseFunctions.setUserClaims(
+            user.uid,
+            user.email,
+            UserRole.SuperUser,
+            true
+          )
+        );
+
+        logger.info("Custom claims updated successfully", { uid: user.uid });
+      } catch (claimsError) {
+        logger.error(
+          "Failed to set custom claims even after retries",
+          claimsError
+        );
+
+        // optional: background retry queue
+        // optional: return partial success to client
+      }
+    }
+
+    return userNode;
+  } catch (error) {
+    await tx.rollback();
+    logger?.error("Field to create Invite user", error);
+    throw new GraphQLError(`${error}`, {
+      extensions: {
+        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+      },
+    });
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
   finishInviteSignup,
+  finishInviteSignupInOrgPage,
 };
