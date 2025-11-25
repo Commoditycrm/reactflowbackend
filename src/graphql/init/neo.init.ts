@@ -71,37 +71,52 @@ export class NeoConnection {
       };
     }
     const token: string | null = getTokenFromHeader(req.headers.authorization);
-    let decodedToken = null;
     if (!token) {
       throw new GraphQLError("Authentication token is required", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+        extensions: { code: "UNAUTHENTICATED" },
       });
     }
     try {
-      // Try Firebase first
-      decodedToken = await getFirebaseAdminAuth().auth().verifyIdToken(token!);
+      const decodedToken = await getFirebaseAdminAuth()
+        .auth()
+        .verifyIdToken(token, true);
 
       if (!decodedToken?.email_verified) {
-        throw new GraphQLError("Please verify your email first.");
+        throw new GraphQLError("Please verify your email first.", {
+          extensions: { code: "EMAIL_NOT_VERIFIED" },
+        });
       }
 
       return { jwt: decodedToken };
-    } catch (e) {
-      try {
-        const decoded = JSON.parse(
-          Buffer.from(token.split(".")[1] ?? "", "base64").toString()
+    } catch (e: any) {
+      if (
+        e?.code === "auth/id-token-revoked" ||
+        e?.code === "auth/user-disabled" ||
+        e?.code === "auth/user-not-found"
+      ) {
+        throw new GraphQLError(
+          "Your account has been deleted or disabled by the owner/company admin.",
+          {
+            extensions: { code: "ACCOUNT_DELETED" },
+          }
         );
-
-        const now = Math.floor(Date.now() / 1000);
-        if (decoded.exp < now || decoded.role !== "invitee") {
-          throw new Error("Token expired or Unknown user");
-        }
-        return { token: token as string };
-      } catch (err) {
-        throw new GraphQLError("Token expired or Unknown user", {
-          extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
-        });
       }
+    }
+
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(token.split(".")[1] ?? "", "base64").toString()
+      );
+
+      const now = Math.floor(Date.now() / 1000);
+      if (decoded.exp < now || decoded.role !== "invitee") {
+        throw new Error("Token expired or Unknown user");
+      }
+      return { token: token as string };
+    } catch {
+      throw new GraphQLError("Token expired or Unknown user", {
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+      });
     }
   }
 
