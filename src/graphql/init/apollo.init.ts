@@ -104,8 +104,14 @@ export const initializeApolloServer = async (
   router.use(
     "/graphql",
     expressMiddleware(server, {
-      context: async ({ req }) =>
-        await NeoConnection.authorizeUserOnContext(req as any),
+      context: async ({ req }) => {
+        const body = (req as any).body;
+        const operationName = body?.operationName;
+        if (operationName === "IntrospectionQuery") {
+          return { jwt: null };
+        }
+        return await NeoConnection.authorizeUserOnContext(req as any);
+      },
     })
   );
 
