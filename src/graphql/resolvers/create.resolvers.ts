@@ -308,7 +308,6 @@ const finishInviteSignupInOrgPage = async (
 
   try {
     const user = await adminAuth.getUser(uid);
-    const currentClaims = user.customClaims;
     logger.info("Start creating invite user", {
       email: user?.email,
       name: user?.displayName,
@@ -320,6 +319,7 @@ const finishInviteSignupInOrgPage = async (
       ...(user.phoneNumber
         ? { phoneNumber: `+${user?.phoneNumber}` }
         : { phoneNumber: null }),
+      uniqueInvite: null,
     });
     logger.info("Created invite user in database", {
       email: user?.email,
@@ -344,9 +344,6 @@ const finishInviteSignupInOrgPage = async (
           "Failed to set custom claims even after retries",
           claimsError
         );
-
-        // optional: background retry queue
-        // optional: return partial success to client
       }
     }
 
