@@ -12,6 +12,7 @@ const updateUserRole = async (
   _context: Record<string, any>
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
+  const auth = getFirebaseAdminAuth().auth();
 
   try {
     const tx = session.beginTransaction();
@@ -21,7 +22,7 @@ const updateUserRole = async (
       `
       MATCH (user:User {id: $userId})-[:MEMBER_OF]->(org)<-[:OWNS]-(creator:User {externalId: $externalId})
       SET user.role = $role
-      RETURN user.id AS userId, user.role AS updatedRole
+      RETURN user.id AS userId, user.role AS updatedRole , user.externalId AS uid
     `,
       {
         userId: userId,
@@ -35,8 +36,16 @@ const updateUserRole = async (
       throw new Error("User not found or not authorized to update role.");
     }
 
+    const uid = result.records[0]?.get("uid");
+
     if (result.records[0] && result.records[0].get("updatedRole") === role) {
+      const userRecord = await auth.getUser(uid);
+      const currentClaims = userRecord.customClaims || {};
       await tx.commit();
+      await auth.setCustomUserClaims(uid, {
+        ...currentClaims,
+        roles: [role],
+      });
       logger?.info("Role updated successfully.");
       return true;
     } else {
@@ -91,7 +100,7 @@ const updateUserDetail = async (
     if (cleanedPhone && cleanedPhone !== currentUser.phoneNumber) {
       payload.phoneNumber = cleanedPhone;
     }
-    console.log(payload,"Hello")
+    console.log(payload, "Hello");
 
     // --- update Firebase if anything changed ---
     if (Object.keys(payload).length > 0) {
