@@ -2344,8 +2344,8 @@ const typeDefs = gql`
       @relationship(
         type: "HAS_FILE_ITEM"
         direction: IN
-        nestedOperations: [CONNECT]
-        aggregate: false
+        nestedOperations: [CONNECT,DISCONNECT]
+        aggregate:false
       )
     parent: FileParent!
       @relationship(
