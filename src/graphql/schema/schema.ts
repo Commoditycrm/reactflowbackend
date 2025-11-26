@@ -2886,7 +2886,7 @@ const typeDefs = gql`
       )
   }
 
-  union BacklogItemParent = FlowNode | BacklogItem
+  union BacklogItemParent = FlowNode | BacklogItem | Project
 
   type BacklogItem implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
