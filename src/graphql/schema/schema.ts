@@ -2556,80 +2556,79 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          when: [AFTER]
-          operations: [CREATE]
-          where: {
-            node: {
-              OR: [
-                {
-                  file: {
-                    parentConnection: {
-                      Project: {
-                        node: {
-                          OR: [
-                            {
-                              organization: {
-                                createdBy: { externalId: "$jwt.sub" }
-                              }
-                            }
-                            { createdBy: { externalId: "$jwt.sub" } }
-                            { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                            {
-                              organization: {
-                                memberUsers_SINGLE: {
-                                  externalId: "$jwt.sub"
-                                  role: "ADMIN"
-                                }
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-                {
-                  file: {
-                    parentConnection: {
-                      Folder: {
-                        node: {
-                          OR: [
-                            {
-                              project: {
-                                organization: {
-                                  createdBy: { externalId: "$jwt.sub" }
-                                }
-                              }
-                            }
-                            {
-                              project: { createdBy: { externalId: "$jwt.sub" } }
-                            }
-                            {
-                              project: {
-                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
-                              }
-                            }
-                            {
-                              project: {
-                                organization: {
-                                  memberUsers_SINGLE: {
-                                    externalId: "$jwt.sub"
-                                    role: "ADMIN"
-                                  }
-                                }
-                              }
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   when: [AFTER]
+        #   operations: [CREATE]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           file: {
+        #             parentConnection: {
+        #               Project: {
+        #                 node: {
+        #                   OR: [
+        #                     {
+        #                       organization: {
+        #                         createdBy: { externalId: "$jwt.sub" }
+        #                       }
+        #                     }
+        #                     { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+        #                     {
+        #                       organization: {
+        #                         memberUsers_SINGLE: {
+        #                           externalId: "$jwt.sub"
+        #                           role: "ADMIN"
+        #                         }
+        #                       }
+        #                     }
+        #                   ]
+        #                 }
+        #               }
+        #             }
+        #           }
+        #         }
+        #         {
+        #           file: {
+        #             parentConnection: {
+        #               Folder: {
+        #                 node: {
+        #                   OR: [
+        #                     {
+        #                       project: {
+        #                         organization: {
+        #                           createdBy: { externalId: "$jwt.sub" }
+        #                         }
+        #                       }
+        #                     }
+        #                     {
+        #                       project: { createdBy: { externalId: "$jwt.sub" } }
+        #                     }
+        #                     {
+        #                       project: {
+        #                         assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+        #                       }
+        #                     }
+        #                     {
+        #                       project: {
+        #                         organization: {
+        #                           memberUsers_SINGLE: {
+        #                             externalId: "$jwt.sub"
+        #                             role: "ADMIN"
+        #                           }
+        #                         }
+        #                       }
+        #                     }
+        #                   ]
+        #                 }
+        #               }
+        #             }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
       ]
     )
     @query(read: true, aggregate: false) {
