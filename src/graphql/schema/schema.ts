@@ -2345,7 +2345,7 @@ const typeDefs = gql`
         type: "HAS_FILE_ITEM"
         direction: IN
         nestedOperations: [CONNECT]
-        aggregate:false
+        aggregate: false
       )
     parent: FileParent!
       @relationship(
@@ -2717,6 +2717,7 @@ const typeDefs = gql`
         }
         {
           operations: [UPDATE]
+          when: [BEFORE]
           where: {
             node: {
               OR: [
