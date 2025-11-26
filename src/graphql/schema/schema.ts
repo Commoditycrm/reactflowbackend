@@ -2952,6 +2952,7 @@ const typeDefs = gql`
         }
         {
           operations: [UPDATE]
+          when: [BEFORE]
           where: {
             node: {
               OR: [
