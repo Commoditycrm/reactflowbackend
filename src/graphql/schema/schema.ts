@@ -2057,7 +2057,10 @@ const typeDefs = gql`
                 node: {
                   project: {
                     organization: {
-                      memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
                     }
                   }
                 }
@@ -2358,7 +2361,7 @@ const typeDefs = gql`
                             project: {
                               assignedUsers_SINGLE: {
                                 externalId: "$jwt.sub"
-                                role: "SUPER_USER"
+                                role_NOT: "USER"
                               }
                             }
                           }
@@ -2374,6 +2377,31 @@ const typeDefs = gql`
                           }
                         ]
                       }
+                    }
+                  }
+                }
+                {
+                  createdBy:{
+                    externalId:"$jwt.sub"
+                  }
+                }
+                # need to validate by project level
+                {
+                  backlogItem: {
+                    project: {
+                      organization: {
+                        memberUsers_SINGLE: {
+                          externalId: "$jwt.sub"
+                          role_NOT: "USER"
+                        }
+                      }
+                    }
+                  }
+                }
+                {
+                  backlogItem: {
+                    project: {
+                      organization: { createdBy: { externalId: "$jwt.sub" } }
                     }
                   }
                 }
