@@ -2619,7 +2619,7 @@ export enum BacklogTable {
   WorkItems = "WORK_ITEMS",
   MyItems = "MY_ITEMS",
   Expense = "EXPENSE",
-  Heirarchy = "HEIRARCHY",
+  Hierarchy = "HIERARCHY",
 }
 
 export enum BaseNodeImplementation {
@@ -2731,11 +2731,12 @@ export enum UserRole {
   User = "USER",
 }
 
-export type BacklogItemParent = FlowNode | BacklogItem;
+export type BacklogItemParent = FlowNode | BacklogItem | Project;
 
 export type BacklogItemParentEventPayload =
   | FlowNodeEventPayload
-  | BacklogItemEventPayload;
+  | BacklogItemEventPayload
+  | ProjectEventPayload;
 
 export type CommentParent =
   | FlowNode
@@ -18587,16 +18588,19 @@ export type BacklogItemParentBacklogItemUpdateFieldInput = {
 export type BacklogItemParentConnectInput = {
   FlowNode?: InputMaybe<BacklogItemParentFlowNodeConnectFieldInput>;
   BacklogItem?: InputMaybe<BacklogItemParentBacklogItemConnectFieldInput>;
+  Project?: InputMaybe<BacklogItemParentProjectConnectFieldInput>;
 };
 
 export type BacklogItemParentConnectionWhere = {
   FlowNode?: InputMaybe<BacklogItemParentFlowNodeConnectionWhere>;
   BacklogItem?: InputMaybe<BacklogItemParentBacklogItemConnectionWhere>;
+  Project?: InputMaybe<BacklogItemParentProjectConnectionWhere>;
 };
 
 export type BacklogItemParentCreateInput = {
   FlowNode?: InputMaybe<BacklogItemParentFlowNodeFieldInput>;
   BacklogItem?: InputMaybe<BacklogItemParentBacklogItemFieldInput>;
+  Project?: InputMaybe<BacklogItemParentProjectFieldInput>;
 };
 
 export type BacklogItemParentFlowNodeConnectFieldInput = {
@@ -18626,19 +18630,49 @@ export type BacklogItemParentFlowNodeUpdateFieldInput = {
   connect?: InputMaybe<BacklogItemParentFlowNodeConnectFieldInput>;
 };
 
+export type BacklogItemParentProjectConnectFieldInput = {
+  where?: InputMaybe<ProjectConnectWhere>;
+  connect?: InputMaybe<ProjectConnectInput>;
+};
+
+export type BacklogItemParentProjectConnectionWhere = {
+  AND?: InputMaybe<Array<BacklogItemParentProjectConnectionWhere>>;
+  OR?: InputMaybe<Array<BacklogItemParentProjectConnectionWhere>>;
+  NOT?: InputMaybe<BacklogItemParentProjectConnectionWhere>;
+  node?: InputMaybe<ProjectWhere>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  node_NOT?: InputMaybe<ProjectWhere>;
+};
+
+export type BacklogItemParentProjectFieldInput = {
+  connect?: InputMaybe<BacklogItemParentProjectConnectFieldInput>;
+};
+
+export type BacklogItemParentProjectSubscriptionWhere = {
+  node?: InputMaybe<ProjectSubscriptionWhere>;
+};
+
+export type BacklogItemParentProjectUpdateFieldInput = {
+  where?: InputMaybe<BacklogItemParentProjectConnectionWhere>;
+  connect?: InputMaybe<BacklogItemParentProjectConnectFieldInput>;
+};
+
 export type BacklogItemParentRelationshipSubscriptionWhere = {
   FlowNode?: InputMaybe<BacklogItemParentFlowNodeSubscriptionWhere>;
   BacklogItem?: InputMaybe<BacklogItemParentBacklogItemSubscriptionWhere>;
+  Project?: InputMaybe<BacklogItemParentProjectSubscriptionWhere>;
 };
 
 export type BacklogItemParentUpdateInput = {
   FlowNode?: InputMaybe<BacklogItemParentFlowNodeUpdateFieldInput>;
   BacklogItem?: InputMaybe<BacklogItemParentBacklogItemUpdateFieldInput>;
+  Project?: InputMaybe<BacklogItemParentProjectUpdateFieldInput>;
 };
 
 export type BacklogItemParentWhere = {
   FlowNode?: InputMaybe<FlowNodeWhere>;
   BacklogItem?: InputMaybe<BacklogItemWhere>;
+  Project?: InputMaybe<ProjectWhere>;
 };
 
 export type BacklogItemPredecessorsAggregateInput = {
@@ -27739,6 +27773,11 @@ export type FileBacklogItemConnectionWhere = {
   node_NOT?: InputMaybe<BacklogItemWhere>;
 };
 
+export type FileBacklogItemDisconnectFieldInput = {
+  where?: InputMaybe<FileBacklogItemConnectionWhere>;
+  disconnect?: InputMaybe<BacklogItemDisconnectInput>;
+};
+
 export type FileBacklogItemFieldInput = {
   connect?: InputMaybe<FileBacklogItemConnectFieldInput>;
 };
@@ -28183,6 +28222,7 @@ export type FileBacklogItemRelationshipSubscriptionWhere = {
 export type FileBacklogItemUpdateFieldInput = {
   where?: InputMaybe<FileBacklogItemConnectionWhere>;
   connect?: InputMaybe<FileBacklogItemConnectFieldInput>;
+  disconnect?: InputMaybe<FileBacklogItemDisconnectFieldInput>;
 };
 
 export type FileConnectInput = {
@@ -28560,6 +28600,7 @@ export type FileCreateInput = {
 };
 
 export type FileDisconnectInput = {
+  backlogItem?: InputMaybe<FileBacklogItemDisconnectFieldInput>;
   parent?: InputMaybe<FileParentDisconnectInput>;
 };
 
