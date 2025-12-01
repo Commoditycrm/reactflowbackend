@@ -1353,34 +1353,32 @@ const typeDefs = gql`
         statement: """
         WITH this
 
-        CALL(this) {
+        CALL {
           WITH this
+          // NODE-LEVEL ITEMS (direct files)
           MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
+          MATCH (n)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          RETURN bi
 
           UNION
 
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WITH this
+          // NODE-LEVEL ITEMS (folder → file)
+          MATCH path=(this)-[:HAS_CHILD_FOLDER]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
-        }
-        WITH DISTINCT n
-        CALL(this,n) {
-          // ----- NODE-LEVEL ITEMS -----
-          WITH this, n
           MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
           RETURN bi
 
           UNION
 
-          // ----- PROJECT-LEVEL ITEMS -----
           WITH this
-          MATCH (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          // PROJECT-LEVEL ITEMS
+          MATCH (this)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
           RETURN bi
         }
-        WITH DISTINCT bi, this, f, me, tab, cfg
+        WITH DISTINCT bi
         WHERE bi.deletedAt IS NULL
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
