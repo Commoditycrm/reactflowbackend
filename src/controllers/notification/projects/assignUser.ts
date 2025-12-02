@@ -2,10 +2,13 @@ import { Request, Response } from "express";
 import logger from "../../../logger";
 import { EmailService } from "../../../services";
 import { EnvLoader } from "../../../util/EnvLoader";
+
 const emailServices = EmailService.getInstance();
 const addProjectTemplateId = EnvLoader.getOrThrow("ASSIGN_PROJECT_TEMPLATE_ID");
-const addProject = async (req: Request, res: Response) => {
+
+const assignUser = async (req: Request, res: Response) => {
   const { orgName, toName, projectName, toEmail, addedByName, path } = req.body;
+
   if (
     !orgName ||
     !toName ||
@@ -14,15 +17,24 @@ const addProject = async (req: Request, res: Response) => {
     !addedByName ||
     !path
   ) {
-    logger.warn("Validation error", { ...req.body });
+    logger.warn("Assign Project Email: Validation failed.", { body: req.body });
     return res.status(400).json({
       error: "Validation Error",
-      message: "Invalid or incomplete request data.",
+      message:
+        "orgName, toName, projectName, toEmail, addedByName and path are required.",
     });
   }
-  logger.info("processing assing user into the project email", { toEmail });
+
+  logger.info("Assign Project Email: Processing request.", {
+    toEmail,
+    orgName,
+    projectName,
+  });
+
   try {
-    const link = `${EnvLoader.getOrThrow("CLIENT_URL")}/${path}?redirect=true`;
+    const baseUrl = EnvLoader.getOrThrow("CLIENT_URL");
+    const link = `${baseUrl}/${path}?redirect=true`;
+
     await emailServices.sendTemplate({
       to: toEmail,
       templateId: addProjectTemplateId,
@@ -34,18 +46,24 @@ const addProject = async (req: Request, res: Response) => {
         projectLink: link,
       },
     });
-    logger.info("Successfully sent assign user into project email to:", {
+
+    logger.info("Assign Project Email: Successfully sent.", {
       toEmail,
-      link,
+      projectLink: link,
     });
+
     return res.status(200).json({
-      message: "Sent assig user into the project email",
+      message: "Assign Project email sent successfully.",
       status: true,
     });
   } catch (error) {
-    logger.error("Field to add user into the project:", { toEmail, error });
+    logger.error("Assign Project Email: Failed to send.", {
+      toEmail,
+      error,
+    });
+
     return res.status(500).json({ status: false, error });
   }
 };
 
-export default addProject;
+export default assignUser;
