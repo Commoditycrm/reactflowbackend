@@ -1,7 +1,7 @@
 import { Router } from "express";
-import addProject from "../controllers/notification/projects/addProject";
+import assignUser from "../controllers/notification/projects/assignUser";
 
 const projectRouter = Router();
-projectRouter.post("/assignUser", addProject);
+projectRouter.post("/assign_user", assignUser);
 
 export default projectRouter;
