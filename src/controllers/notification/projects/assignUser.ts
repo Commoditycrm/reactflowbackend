@@ -7,7 +7,15 @@ const emailServices = EmailService.getInstance();
 const addProjectTemplateId = EnvLoader.getOrThrow("ASSIGN_PROJECT_TEMPLATE_ID");
 
 const assignUser = async (req: Request, res: Response) => {
-  const { orgName, toName, projectName, toEmail, addedByName, path } = req.body;
+  const {
+    orgName,
+    toName,
+    projectName,
+    toEmail,
+    addedByName,
+    path,
+    ownerEmail,
+  } = req.body;
 
   if (
     !orgName ||
@@ -15,13 +23,21 @@ const assignUser = async (req: Request, res: Response) => {
     !projectName ||
     !toEmail ||
     !addedByName ||
-    !path
+    !path ||
+    !ownerEmail
   ) {
     logger.warn("Assign Project Email: Validation failed.", { body: req.body });
     return res.status(400).json({
       error: "Validation Error",
       message:
-        "orgName, toName, projectName, toEmail, addedByName and path are required.",
+        "orgName, toName, projectName, toEmail,ownerEmail, addedByName and path are required.",
+    });
+  }
+
+  if (toEmail === ownerEmail) {
+    logger.info("CC skipped because recipient and owner are the same.", {
+      ownerEmail,
+      toEmail,
     });
   }
 
@@ -38,6 +54,7 @@ const assignUser = async (req: Request, res: Response) => {
     await emailServices.sendTemplate({
       to: toEmail,
       templateId: addProjectTemplateId,
+      // cc: toEmail !== ownerEmail ? [ownerEmail] : [],
       dynamicTemplateData: {
         orgName,
         addedByName,
