@@ -34,7 +34,7 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logError("send", err, data);
-      return false;
+      throw err;
     }
   }
 
