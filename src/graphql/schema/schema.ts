@@ -4101,48 +4101,57 @@ const typeDefs = gql`
       )
     getOrgMembers(
       limit: Int! = 10
-      offset: Int! = 10
+      offset: Int! = 0
       orgId: ID!
+      emailContains: String
     ): [OrgMembersResponse!]!
       @cypher(
         statement: """
-        MATCH(org:Organization {id:$orgId})
-        CALL(org) {
+        MATCH (org:Organization {id: $orgId})
+        CALL (org) {
           WITH org
-          MATCH(org)<-[:INVITE_FOR]-(invitees:Invite)
+          MATCH (org)<-[:INVITE_FOR]-(invitees:Invite)
           RETURN invitees {
             .id,
             .name,
             .createdAt,
             .email,
-            source:"INVITE",
+            source: "INVITE",
             isOwner: false
           } AS results
+
           UNION
-          MATCH(org)<-[:MEMBER_OF]-(users:User)
+
+          MATCH (org)<-[:MEMBER_OF]-(users:User)
           RETURN users {
             .id,
             .name,
             .createdAt,
             .role,
             .email,
-            source:"USER",
+            source: "USER",
             isOwner: false
           } AS results
+
           UNION
-          MATCH(org)<-[:OWNS]-(owner:User)
+
+          MATCH (org)<-[:OWNS]-(owner:User)
           RETURN owner {
             .id,
             .name,
             .createdAt,
             .role,
             .email,
-            source:"USER",
+            source: "USER",
             isOwner: true
           } AS results
         }
 
-        WITH DISTINCT results AS orgMembers
+        WITH DISTINCT results AS orgMembers,
+             trim(coalesce($emailContains, "")) AS ec
+
+        WHERE ec = ""
+           OR toLower(orgMembers.email) CONTAINS toLower(ec)
 
         RETURN orgMembers
         ORDER BY orgMembers.isOwner DESC, orgMembers.createdAt DESC
@@ -4151,7 +4160,7 @@ const typeDefs = gql`
         columnName: "orgMembers"
       )
 
-    orgMembersCount(orgId: ID!): Int!
+    orgMembersCount(orgId: ID!, emailContains: String): Int!
       @cypher(
         statement: """
         MATCH(org:Organization {id:$orgId})
@@ -4163,8 +4172,10 @@ const typeDefs = gql`
          MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
          RETURN users AS results
         }
-        WITH COUNT(DISTINCT results) AS orgMembersCount
-        RETURN orgMembersCount
+        WITH DISTINCT results
+        WHERE $emailContains IS NULL
+        OR toLower(results.email) CONTAINS toLower($emailContains)
+        RETURN COUNT(results) AS orgMembersCount
         """
         columnName: "orgMembersCount"
       )
