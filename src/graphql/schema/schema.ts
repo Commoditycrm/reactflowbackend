@@ -4104,10 +4104,12 @@ const typeDefs = gql`
       offset: Int! = 0
       orgId: ID!
       emailContains: String
+      nameContains:String
     ): [OrgMembersResponse!]!
       @cypher(
         statement: """
         MATCH (org:Organization {id: $orgId})
+
         CALL (org) {
           WITH org
           MATCH (org)<-[:INVITE_FOR]-(invitees:Invite)
@@ -4148,10 +4150,13 @@ const typeDefs = gql`
         }
 
         WITH DISTINCT results AS orgMembers,
-             trim(coalesce($emailContains, "")) AS ec
+             trim(coalesce($emailContains, "")) AS ec,
+             trim(coalesce($nameContains, "")) AS nc
 
-        WHERE ec = ""
-           OR toLower(orgMembers.email) CONTAINS toLower(ec)
+        WHERE
+           (ec = "" AND nc = "")
+           OR (ec <> "" AND toLower(orgMembers.email) CONTAINS toLower(ec))
+           OR (nc <> "" AND toLower(orgMembers.name) CONTAINS toLower(nc))
 
         RETURN orgMembers
         ORDER BY orgMembers.isOwner DESC, orgMembers.createdAt DESC
@@ -4160,25 +4165,37 @@ const typeDefs = gql`
         columnName: "orgMembers"
       )
 
-    orgMembersCount(orgId: ID!, emailContains: String): Int!
+    orgMembersCount(
+      orgId: ID!
+      emailContains: String
+      nameContains: String
+    ): Int!
       @cypher(
         statement: """
-        MATCH(org:Organization {id:$orgId})
-        CALL(org) {
-         WITH org
-         MATCH(org)<-[:INVITE_FOR]-(invitees:Invite)
-         RETURN invitees AS results
-         UNION
-         MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
-         RETURN users AS results
+        MATCH (org:Organization {id: $orgId})
+        CALL (org) {
+          WITH org
+          MATCH (org)<-[:INVITE_FOR]-(invitees:Invite)
+          RETURN invitees AS results
+          UNION
+          MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
+          RETURN users AS results
         }
-        WITH DISTINCT results
-        WHERE $emailContains IS NULL
-        OR toLower(results.email) CONTAINS toLower($emailContains)
+
+        WITH DISTINCT results,
+             trim(coalesce($emailContains, "")) AS ec,
+             trim(coalesce($nameContains, "")) AS nc
+
+        WHERE
+           (ec = "" AND nc = "")
+           OR (ec <> "" AND toLower(results.email) CONTAINS toLower(ec))
+           OR (nc <> "" AND toLower(results.name) CONTAINS toLower(nc))
+
         RETURN COUNT(results) AS orgMembersCount
         """
         columnName: "orgMembersCount"
       )
+
     getFirebaseStorage(orgId: String!): FirebaseStorage!
   }
 `;
