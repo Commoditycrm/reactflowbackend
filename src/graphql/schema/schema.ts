@@ -1358,28 +1358,30 @@ const typeDefs = gql`
           // NODE-LEVEL ITEMS (direct files)
           MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          MATCH (n)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
           RETURN bi
 
           UNION
 
           WITH this
           // NODE-LEVEL ITEMS (folder → file)
-          MATCH path=(this)-[:HAS_CHILD_FOLDER]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
           MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
           RETURN bi
 
           UNION
 
           WITH this
-          // PROJECT-LEVEL ITEMS
-          MATCH (this)-[:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          // PROJECT-LEVEL ITEMS (all levels 1-5)
+          MATCH (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
           RETURN bi
         }
         WITH DISTINCT bi
-        WHERE bi.deletedAt IS NULL
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
         WITH count(DISTINCT bi) AS totalItems,
@@ -1488,17 +1490,18 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,cfg,f,
+        WITH DISTINCT bi, tab, me, cfg, f,
           EXISTS {
             MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
           } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
+          } AS isExpense,
+          (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab IN ['WORK_ITEMS', 'HIERARCHY'] AND NOT isExpense)
+          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
           OR (tab = 'HIERARCHY')
@@ -1529,6 +1532,7 @@ const typeDefs = gql`
         WHERE
          tab IS NULL
          OR hasStatusFilter
+         OR tab = 'HIERARCHY'
          OR NOT coalesce(cfg.enabled,false)
          OR NOT (
             EXISTS {
@@ -1544,6 +1548,7 @@ const typeDefs = gql`
         """
         columnName: "backlogItems"
       )
+
     backlogItemsCount(filters: BacklogItemFilterInput): Int!
       @cypher(
         statement: """
@@ -1614,17 +1619,18 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me,f,cfg,
+        WITH DISTINCT bi, tab, me, f, cfg,
           EXISTS {
             MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
           } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense,(size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
+          } AS isExpense,
+          (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
         WHERE tab IS NULL
-          OR (tab IN ['WORK_ITEMS', 'HIERARCHY'] AND NOT isExpense)
+          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
           OR (tab = 'HIERARCHY')
@@ -1656,6 +1662,7 @@ const typeDefs = gql`
         WHERE
          tab IS NULL
          OR hasStatusFilter
+         OR tab = 'HIERARCHY'
          OR NOT coalesce(cfg.enabled,false)
          OR NOT (
             EXISTS {
@@ -1664,7 +1671,6 @@ const typeDefs = gql`
           }
           AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
         )
-
 
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
@@ -2392,11 +2398,7 @@ const typeDefs = gql`
                     }
                   }
                 }
-                {
-                  createdBy:{
-                    externalId:"$jwt.sub"
-                  }
-                }
+                { createdBy: { externalId: "$jwt.sub" } }
                 # need to validate by project level
                 {
                   backlogItem: {
@@ -3850,8 +3852,9 @@ const typeDefs = gql`
         """
         columnName: "node"
       )
-    recycleBinDataCount:Int! @cypher(
-      statement:"""
+    recycleBinDataCount: Int!
+      @cypher(
+        statement: """
           MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
 
           OPTIONAL MATCH (x)--(org)
@@ -3864,9 +3867,9 @@ const typeDefs = gql`
             AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"])
         WITH node
         RETURN COUNT(node) AS recycleBinDataCount
-      """
-      columnName:"recycleBinDataCount"
-    )
+        """
+        columnName: "recycleBinDataCount"
+      )
     countAllSoftDeletedItems: [DeletedItemCont!]!
     generateTask(prompt: String!): [OpenAIResponse!]!
     backlogItemsSearchWithUid(
