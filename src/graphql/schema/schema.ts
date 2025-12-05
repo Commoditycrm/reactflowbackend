@@ -2456,6 +2456,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: []
       )
+    groupNodes: [GroupNode!]!
+      @relationship(
+        type: "HAS_GROUP_NODE"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
     backlogItem: BacklogItem
       @relationship(
         type: "HAS_FILE_ITEM"
@@ -2517,7 +2524,7 @@ const typeDefs = gql`
     updatedAt: DateTime
   }
 
-  type FlowNode implements TimestampedCreatable & Timestamped & SoftDeletable
+  type FlowNode implements TimestampedCreatable & Timestamped & SoftDeletable & BaseNode
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
@@ -2863,7 +2870,7 @@ const typeDefs = gql`
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
     color: String
-    layoutType: NodeLayoutType @default(value: HORIZONTAL)
+    layoutType: NodeLayoutType # "vertical", "horizontal", "free"
     deletedAt: DateTime
     file: File!
       @relationship(
