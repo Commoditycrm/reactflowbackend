@@ -1200,7 +1200,7 @@ const typeDefs = gql`
     riskLevelIds: [ID!]
     titleContains: [String!]
     tableType: BacklogTable
-    occuredOn: DateTime
+    occurredOn: DateTime
     paidOn: DateTime
   }
 
@@ -1478,12 +1478,29 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
-          AND (
-           tab <> 'EXPENSE'
-           OR
-          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)) OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)) OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
-          ))
+        AND (
+          tab <> 'EXPENSE'
+          OR (
+              // No date filters => allow all expense items
+              (f.occurredOn IS NULL AND f.paidOn IS NULL)
+              OR
+              (
+                 // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
+                 (
+                    bi.occuredOn IS NOT NULL
+                    AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+                    AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
+                  )
+                  OR
+                  // 2) paidOn is inside [f.occurredOn, f.paidOn]
+                  (
+                    bi.paidOn IS NOT NULL
+                    AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+                    AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
+                  )
+                )
+          )
+        )
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
          tab IS NULL
@@ -1568,12 +1585,30 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
-         AND (
-           tab <> 'EXPENSE'
-           OR
-          ((f.occurredOn IS NULL OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) >= date(f.occurredOn)) OR (bi.occurredOn IS NOT NULL AND date(bi.occurredOn) <= date(f.occurredOn)))
-           AND (f.paidOn IS NULL OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) >= date(f.paidOn)) OR (bi.paidOn IS NOT NULL AND date(bi.paidOn) <= date(f.paidOn)))
-          ))
+AND (
+  tab <> 'EXPENSE'
+  OR (
+    // No date filters => allow all expense items
+    (f.occurredOn IS NULL AND f.paidOn IS NULL)
+    OR
+    (
+      // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
+      (
+        bi.occuredOn IS NOT NULL
+        AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+        AND (f.paidOn IS NULL    OR date(bi.occuredOn) <= date(f.paidOn))
+      )
+      OR
+      // 2) paidOn is inside [f.occurredOn, f.paidOn]
+      (
+        bi.paidOn IS NOT NULL
+        AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+        AND (f.paidOn IS NULL    OR date(bi.paidOn) <= date(f.paidOn))
+      )
+    )
+  )
+)
+
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
          tab IS NULL
@@ -4104,7 +4139,7 @@ const typeDefs = gql`
       offset: Int! = 0
       orgId: ID!
       emailContains: String
-      nameContains:String
+      nameContains: String
     ): [OrgMembersResponse!]!
       @cypher(
         statement: """
