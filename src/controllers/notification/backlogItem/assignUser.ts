@@ -2,9 +2,12 @@ import { Request, Response } from "express";
 import logger from "../../../logger";
 import { EnvLoader } from "../../../util/EnvLoader";
 import { EmailService } from "../../../services";
+import { WhatsAppService } from "../../../services/WhatsAppServices";
 
 const emailServices = EmailService.getInstance();
+const waService = WhatsAppService.getInstance();
 const templateId = EnvLoader.getOrThrow("ASSIGN_WORK_ITEM_TEMPLATE_ID");
+const contentSid = EnvLoader.getOrThrow("TWILIO_WA_TASK_ASSIGNED_SID");
 
 const assignUserToItem = async (req: Request, res: Response) => {
   const {
@@ -15,6 +18,7 @@ const assignUserToItem = async (req: Request, res: Response) => {
     toEmail,
     assignedByName,
     projectName,
+    phoneNumber,
   } = req.body;
   const workItemType = req.params?.backlogItemType;
   if (
@@ -36,7 +40,8 @@ const assignUserToItem = async (req: Request, res: Response) => {
     });
   }
   const baseUrl = EnvLoader.getOrThrow("CLIENT_URL");
-  const link = `${baseUrl}/path?redirect=true`;
+  const link = `${baseUrl}/${path}?redirect=true`;
+  const wsUrl = `${path}?redirect=true`;
   const templateData = {
     link,
     appLink: baseUrl,
@@ -49,6 +54,7 @@ const assignUserToItem = async (req: Request, res: Response) => {
     templateId,
     workItemName,
   });
+
   try {
     await emailServices.sendTemplate({
       to: toEmail,
@@ -60,6 +66,18 @@ const assignUserToItem = async (req: Request, res: Response) => {
     logger.info(`Assign ${workItemType} Email: Successfully sent.`, {
       toEmail,
       projectLink: link,
+    });
+
+    await waService.sendTemplate({
+      to: phoneNumber,
+      contentSid,
+      variables: {
+        "1": workItemName,
+        "2": assignedByName,
+        "3": projectName,
+        "4": workItemName,
+        "6": wsUrl,
+      },
     });
 
     return res.status(202).json({
