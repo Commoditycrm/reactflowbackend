@@ -85,6 +85,7 @@ const createBacklogItemWithUID = async (
           type {
             id
             name
+            defaultName
           }
           status {
            id
