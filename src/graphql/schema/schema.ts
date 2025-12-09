@@ -2870,7 +2870,7 @@ const typeDefs = gql`
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
     color: String
-    layoutType: NodeLayoutType # "vertical", "horizontal", "free"
+    layoutType: NodeLayoutType @default(value:HORIZONTAL)
     deletedAt: DateTime
     file: File!
       @relationship(
