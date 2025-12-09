@@ -63,7 +63,7 @@ export class WhatsAppService {
       return result;
     } catch (err: any) {
       logger?.error(`WA text FAILED to ${to}:`, { err });
-      throw err;
+      // throw err;
     }
   }
 
@@ -86,7 +86,7 @@ export class WhatsAppService {
       return result;
     } catch (err: any) {
       logger?.error(`WA media FAILED to ${to}:`,{err});
-      throw err;
+      // throw err;
     }
   }
 
@@ -114,7 +114,7 @@ export class WhatsAppService {
       logger?.error(
         `WA template FAILED to ${to}: contentSid=${contentSid} | ${err.message}`
       );
-      throw err;
+      // throw err;
     }
   }
 }
