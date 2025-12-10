@@ -2619,6 +2619,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    parentGroup: GroupNode
+      @relationship(
+        type: "BELONGS_TO_GROUP"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
     linkedTo: [FlowNode!]!
       @relationship(
         type: "LINKED_TO"
