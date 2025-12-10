@@ -173,6 +173,8 @@ const typeDefs = gql`
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+    triggerLastModified: Boolean
+      @populatedBy(callback: "updateOrgLastModified", operations: [UPDATE])
   }
 
   type Counter
@@ -303,6 +305,11 @@ const typeDefs = gql`
       )
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   type BacklogItemType implements Timestamped
@@ -503,6 +510,11 @@ const typeDefs = gql`
 
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   type Organization implements TimestampedCreatable & Timestamped & SoftDeletable
@@ -807,6 +819,11 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT]
         aggregate: false
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
       )
   }
 
@@ -1803,6 +1820,11 @@ const typeDefs = gql`
     description: String
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
     uniqueDuration: String!
       @populatedBy(
         operations: [CREATE, UPDATE]
@@ -1907,6 +1929,8 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    triggerLastModified: Boolean
+      @populatedBy(callback: "updateOrgLastModified", operations: [UPDATE])
   }
 
   type AutoHideCompletedTasks
@@ -1978,6 +2002,8 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
+    triggerLastModified: Boolean
+      @populatedBy(callback: "updateOrgLastModified", operations: [UPDATE])
   }
 
   union FolderParent = Project | Folder
@@ -2824,6 +2850,11 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   union BacklogItemParent = FlowNode | BacklogItem
@@ -3170,6 +3201,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    
   }
 
   union CommentParent =
