@@ -3085,12 +3085,6 @@ const typeDefs = gql`
         nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
       )
-    resources: [Resource!]!
-      @relationship(
-        type: "HAS_RESOURCE"
-        direction: OUT
-        nestedOperations: [CONNECT, DISCONNECT]
-      )
     triggerLastModified: Boolean
       @populatedBy(
         callback: "updateOrgLastModified"
