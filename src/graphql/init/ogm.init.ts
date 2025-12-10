@@ -37,7 +37,7 @@ export class OGMConnection {
     if (isDevelopment() && EnvLoader.get("GENERATE_OGM_TYPES")) {
       await generate({
         ogm: this.ogm,
-        outFile: path.resolve(__dirname,'../../@types/ogm.types.ts'),
+        outFile: path.resolve(__dirname,'../../interfaces/ogm.types.ts'),
       });
     }
 
