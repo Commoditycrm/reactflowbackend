@@ -1585,29 +1585,29 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
-AND (
-  tab <> 'EXPENSE'
-  OR (
-    // No date filters => allow all expense items
-    (f.occurredOn IS NULL AND f.paidOn IS NULL)
-    OR
-    (
-      // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
-      (
-        bi.occuredOn IS NOT NULL
-        AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
-        AND (f.paidOn IS NULL    OR date(bi.occuredOn) <= date(f.paidOn))
-      )
-      OR
-      // 2) paidOn is inside [f.occurredOn, f.paidOn]
-      (
-        bi.paidOn IS NOT NULL
-        AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
-        AND (f.paidOn IS NULL    OR date(bi.paidOn) <= date(f.paidOn))
-      )
-    )
-  )
-)
+        AND (
+        tab <> 'EXPENSE'
+        OR (
+          // No date filters => allow all expense items
+          (f.occurredOn IS NULL AND f.paidOn IS NULL)
+          OR
+            (
+              // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
+              (
+                bi.occuredOn IS NOT NULL
+                AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+                AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
+              )
+              OR
+              // 2) paidOn is inside [f.occurredOn, f.paidOn]
+              (
+                bi.paidOn IS NOT NULL
+                AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+                AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
+              )
+            )
+          )
+        )
 
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
@@ -2409,6 +2409,17 @@ AND (
     bidirectional: Boolean
   }
 
+  interface BaseNode {
+    id: ID!
+    name: String!
+    posX: Float!
+    posY: Float!
+    width: Float!
+    height: Float!
+    createdAt: DateTime!
+    updatedAt: DateTime
+  }
+
   type FlowNode implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
@@ -2644,6 +2655,144 @@ AND (
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+  }
+
+  enum NodeLayoutType {
+    VERTICAL
+    FREE
+    HORIZONTAL
+  }
+
+  type GroupNode implements BaseNode & TimestampedCreatable & Timestamped & SoftDeletable
+    @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
+      validate: [
+        {
+          when: [AFTER]
+          operations: [UPDATE, DELETE, READ]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  file: {
+                    parentConnection: {
+                      Project: {
+                        node: {
+                          OR: [
+                            {
+                              organization: {
+                                createdBy: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            { createdBy: { externalId: "$jwt.sub" } }
+                            { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                            {
+                              organization: {
+                                memberUsers: {
+                                  externalId: "$jwt.sub"
+                                  role: "ADMIN"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+                {
+                  file: {
+                    parentConnection: {
+                      Folder: {
+                        node: {
+                          OR: [
+                            {
+                              project: {
+                                organization: {
+                                  createdBy: { externalId: "$jwt.sub" }
+                                }
+                              }
+                            }
+                            {
+                              project: { createdBy: { externalId: "$jwt.sub" } }
+                            }
+                            {
+                              project: {
+                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            {
+                              project: {
+                                organization: {
+                                  memberUsers_SINGLE: {
+                                    externalId: "$jwt.sub"
+                                    role: "ADMIN"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    )
+    @query(read: true, aggregate: false) {
+    id: ID! @id
+    name: String!
+    posX: Float!
+    posY: Float!
+    width: Float!
+    height: Float!
+    createdAt: DateTime!
+      @timestamp(operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
+    updatedAt: DateTime
+      @timestamp(operations: [UPDATE])
+      @settable(onCreate: false, onUpdate: true)
+    color: String
+    layoutType: NodeLayoutType @default(value: HORIZONTAL)
+    deletedAt: DateTime
+    file: File!
+      @relationship(
+        type: "HAS_GROUP_NODE"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+
+    children: [FlowNode!]!
+      @relationship(
+        type: "BELONGS_TO_GROUP"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+
+    createdBy: User!
+      @relationship(
+        type: "CREATED_GROUP_NODE"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+      @settable(onCreate: true, onUpdate: false)
+
+    # Callbacks
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   type Link implements TimestampedCreatable & Timestamped
