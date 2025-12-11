@@ -2453,6 +2453,7 @@ const typeDefs = gql`
       ]
       validate: [
         {
+          when:[AFTER]
           operations: [UPDATE, DELETE, READ]
           where: {
             node: {
@@ -2525,11 +2526,6 @@ const typeDefs = gql`
               ]
             }
           }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
         {
           when: [AFTER]
@@ -3561,6 +3557,18 @@ const typeDefs = gql`
     riskLevelIds: [ID!]
   }
 
+  input GroupNodePositionInput {
+    id: ID!
+    posX: Float!
+    posY: Float!
+  }
+
+  input FlowNodePositionInput {
+    id: ID!
+    posX: Float!
+    posY: Float!
+  }
+
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
@@ -3578,6 +3586,23 @@ const typeDefs = gql`
       startDate: String!
       orgId: ID!
     ): [Project!]!
+
+    updateGroupPosition(
+      graupNode: GroupNodePositionInput!
+      flowNodes: [FlowNodePositionInput!]!
+    ): [GroupNode!]!
+      @cypher(
+        statement: """
+        MATCH(g:GroupNode {id:$graupNode.id})
+        SET g.posX = $graupNode.posX , g.posY = $graupNode.posY
+        UNWIND $flowNodes AS fnInput
+        MATCH (n:FlowNode {id: fnInput.id})
+        SET n.posX = fnInput.posX,
+          n.posY = fnInput.posY
+        RETURN g AS groupNode
+        """
+        columnName: "groupNode"
+      )
 
     finishInviteSignup(
       email: String!
