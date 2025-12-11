@@ -2234,7 +2234,7 @@ const typeDefs = gql`
                           { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
                           {
                             organization: {
-                              memberUsers_SINGLE: {
+                              memberUsers_SOME: {
                                 externalId: "$jwt.sub"
                                 role: "ADMIN"
                               }
@@ -2453,7 +2453,6 @@ const typeDefs = gql`
       ]
       validate: [
         {
-          when: [AFTER]
           operations: [UPDATE, DELETE, READ]
           where: {
             node: {
@@ -2526,6 +2525,11 @@ const typeDefs = gql`
               ]
             }
           }
+        }
+        {
+          operations: [READ]
+          when: [BEFORE]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
         {
           when: [AFTER]
