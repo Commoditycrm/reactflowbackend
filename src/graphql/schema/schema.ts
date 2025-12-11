@@ -3595,6 +3595,7 @@ const typeDefs = gql`
         statement: """
         MATCH(g:GroupNode {id:$graupNode.id})
         SET g.posX = $graupNode.posX , g.posY = $graupNode.posY
+        WITH g
         UNWIND $flowNodes AS fnInput
         MATCH (n:FlowNode {id: fnInput.id})
         SET n.posX = fnInput.posX,
