@@ -1330,7 +1330,7 @@ const typeDefs = gql`
                   organization: {
                     memberUsers_SINGLE: {
                       externalId: "$jwt.sub"
-                      role: "ADMIN"
+                      role_IN: ["ADMIN", "SUPER_USER"]
                     }
                   }
                 }
@@ -2474,7 +2474,7 @@ const typeDefs = gql`
                             { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
                             {
                               organization: {
-                                memberUsers: {
+                                memberUsers_SOME: {
                                   externalId: "$jwt.sub"
                                   role: "ADMIN"
                                 }
@@ -3195,7 +3195,6 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    
   }
 
   union CommentParent =
