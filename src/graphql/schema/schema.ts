@@ -600,30 +600,6 @@ const typeDefs = gql`
       @settable(onCreate: true, onUpdate: false)
     messageCounter: Int!
       @populatedBy(callback: "messageCounterSetter", operations: [CREATE])
-
-    status: [Status!]!
-      @relationship(
-        type: "HAS_STATUS"
-        direction: OUT
-        aggregate: false
-        nestedOperations: [CREATE]
-      )
-      @settable(onCreate: true, onUpdate: false)
-    backlogItemType: [BacklogItemType!]!
-      @relationship(
-        type: "HAS_BACKLOGITEM_TYPE"
-        direction: OUT
-        aggregate: false
-        nestedOperations: [CREATE]
-      )
-      @settable(onCreate: true, onUpdate: false)
-    riskLevels: [RiskLevel!]!
-      @relationship(
-        type: "HAS_RISK_LEVEL"
-        direction: OUT
-        aggregate: false
-        nestedOperations: []
-      )
     memberUsers: [User!]!
       @relationship(
         type: "MEMBER_OF"
