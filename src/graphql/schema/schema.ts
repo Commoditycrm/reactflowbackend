@@ -1183,6 +1183,7 @@ const typeDefs = gql`
     WORK_ITEMS
     MY_ITEMS
     EXPENSE
+    HIERARCHY
   }
 
   input BacklogItemFilterInput {
@@ -1427,10 +1428,27 @@ const typeDefs = gql`
         WITH DISTINCT n, this, f, me, tab
 
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-        WHERE bi.deletedAt IS NULL
+        CALL {
+          WITH n, this, tab
+          WITH n, this, tab,
+            CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
-          AND (
+          MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          RETURN bi
+
+          UNION
+
+          WITH this, tab
+          WITH this, tab,
+            CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
+
+          MATCH (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          RETURN bi
+        }
+        WITH DISTINCT bi, this, f, me, tab, cfg
+          WHERE (
             size(coalesce(f.assignedUserIds,[])) = 0
             OR ANY(id IN f.assignedUserIds WHERE
               (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
@@ -1471,6 +1489,7 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+          OR (tab = 'HIERARCHY')
         AND (
           tab <> 'EXPENSE'
           OR (
@@ -1534,10 +1553,28 @@ const typeDefs = gql`
         }
         WITH DISTINCT n, this, f, me, tab
         OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-        WHERE bi.deletedAt IS NULL
+        CALL {
+          WITH n, this, tab
+          WITH n, this, tab,
+            CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
-          AND (
+          MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          RETURN bi
+
+          UNION
+
+          WITH this, tab
+          WITH this, tab,
+            CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
+
+          MATCH (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          RETURN bi
+        }
+         WITH DISTINCT bi, this, f, me, tab, cfg
+
+          WHERE (
             size(coalesce(f.assignedUserIds,[])) = 0
             OR ANY(id IN f.assignedUserIds WHERE
               (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
@@ -1578,6 +1615,7 @@ const typeDefs = gql`
           OR (tab = 'WORK_ITEMS' AND NOT isExpense)
           OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
           OR (tab = 'EXPENSE'    AND isExpense)
+          OR (tab = 'HIERARCHY')
         AND (
         tab <> 'EXPENSE'
         OR (
@@ -2367,6 +2405,13 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+      )
+    backlogItem: BacklogItem
+      @relationship(
+        type: "HAS_FILE_ITEM"
+        direction: IN
+        nestedOperations: [CONNECT, DISCONNECT]
+        aggregate: false
       )
     parent: FileParent!
       @relationship(
