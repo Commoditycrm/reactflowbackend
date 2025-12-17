@@ -1525,7 +1525,7 @@ const typeDefs = gql`
                     AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
                     AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
                   )
-                )
+            )
           )
         )
         WITH bi, tab, f, cfg, hasStatusFilter
