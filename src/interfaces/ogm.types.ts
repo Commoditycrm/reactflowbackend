@@ -186,6 +186,11 @@ export type Query = {
   orgMembersResponses: Array<OrgMembersResponse>;
   orgMembersResponsesConnection: OrgMembersResponsesConnection;
   orgMembersResponsesAggregate: OrgMembersResponseAggregateSelection;
+  recycleBinDataResults: Array<RecycleBinDataResult>;
+  recycleBinDataResultsConnection: RecycleBinDataResultsConnection;
+  recycleBinDataResultsAggregate: RecycleBinDataResultAggregateSelection;
+  recycleBinData: Array<RecycleBinDataResult>;
+  recycleBinDataCount: Scalars["Int"]["output"];
   backlogItemsSearchWithUid: Array<BacklogItem>;
   fullTextSearchOnBacklogItems: Array<BacklogItem>;
   countBacklogItemsGroupedByRisk: Array<ItemCountGroupedRiskLevel>;
@@ -989,6 +994,27 @@ export type QueryOrgMembersResponsesAggregateArgs = {
   where?: InputMaybe<OrgMembersResponseWhere>;
 };
 
+export type QueryRecycleBinDataResultsArgs = {
+  where?: InputMaybe<RecycleBinDataResultWhere>;
+  options?: InputMaybe<RecycleBinDataResultOptions>;
+};
+
+export type QueryRecycleBinDataResultsConnectionArgs = {
+  first?: InputMaybe<Scalars["Int"]["input"]>;
+  after?: InputMaybe<Scalars["String"]["input"]>;
+  where?: InputMaybe<RecycleBinDataResultWhere>;
+  sort?: InputMaybe<Array<InputMaybe<RecycleBinDataResultSort>>>;
+};
+
+export type QueryRecycleBinDataResultsAggregateArgs = {
+  where?: InputMaybe<RecycleBinDataResultWhere>;
+};
+
+export type QueryRecycleBinDataArgs = {
+  offset?: Scalars["Int"]["input"];
+  limit?: InputMaybe<Scalars["Int"]["input"]>;
+};
+
 export type QueryBacklogItemsSearchWithUidArgs = {
   query: Scalars["String"]["input"];
   limit?: InputMaybe<Scalars["Int"]["input"]>;
@@ -1192,6 +1218,9 @@ export type Mutation = {
   createOrgMembersResponses: CreateOrgMembersResponsesMutationResponse;
   deleteOrgMembersResponses: DeleteInfo;
   updateOrgMembersResponses: UpdateOrgMembersResponsesMutationResponse;
+  createRecycleBinDataResults: CreateRecycleBinDataResultsMutationResponse;
+  deleteRecycleBinDataResults: DeleteInfo;
+  updateRecycleBinDataResults: UpdateRecycleBinDataResultsMutationResponse;
   updateGroupPosition: Array<GroupNode>;
   customizationDataCreation: CustomizationDataCreationResult;
 };
@@ -1784,6 +1813,19 @@ export type MutationUpdateOrgMembersResponsesArgs = {
   update?: InputMaybe<OrgMembersResponseUpdateInput>;
 };
 
+export type MutationCreateRecycleBinDataResultsArgs = {
+  input: Array<RecycleBinDataResultCreateInput>;
+};
+
+export type MutationDeleteRecycleBinDataResultsArgs = {
+  where?: InputMaybe<RecycleBinDataResultWhere>;
+};
+
+export type MutationUpdateRecycleBinDataResultsArgs = {
+  where?: InputMaybe<RecycleBinDataResultWhere>;
+  update?: InputMaybe<RecycleBinDataResultUpdateInput>;
+};
+
 export type MutationUpdateGroupPositionArgs = {
   graupNode: GroupNodePositionInput;
   flowNodes: Array<FlowNodePositionInput>;
@@ -1961,6 +2003,9 @@ export type Subscription = {
   orgMembersResponseCreated: OrgMembersResponseCreatedEvent;
   orgMembersResponseUpdated: OrgMembersResponseUpdatedEvent;
   orgMembersResponseDeleted: OrgMembersResponseDeletedEvent;
+  recycleBinDataResultCreated: RecycleBinDataResultCreatedEvent;
+  recycleBinDataResultUpdated: RecycleBinDataResultUpdatedEvent;
+  recycleBinDataResultDeleted: RecycleBinDataResultDeletedEvent;
 };
 
 export type SubscriptionUserCreatedArgs = {
@@ -2615,6 +2660,18 @@ export type SubscriptionOrgMembersResponseDeletedArgs = {
   where?: InputMaybe<OrgMembersResponseSubscriptionWhere>;
 };
 
+export type SubscriptionRecycleBinDataResultCreatedArgs = {
+  where?: InputMaybe<RecycleBinDataResultSubscriptionWhere>;
+};
+
+export type SubscriptionRecycleBinDataResultUpdatedArgs = {
+  where?: InputMaybe<RecycleBinDataResultSubscriptionWhere>;
+};
+
+export type SubscriptionRecycleBinDataResultDeletedArgs = {
+  where?: InputMaybe<RecycleBinDataResultSubscriptionWhere>;
+};
+
 export enum BacklogTable {
   WorkItems = "WORK_ITEMS",
   MyItems = "MY_ITEMS",
@@ -2643,13 +2700,18 @@ export enum ExternalFileType {
   Other = "OTHER",
 }
 
+export enum FolderType {
+  Epic = "EPIC",
+  Story = "STORY",
+  Feature = "FEATURE",
+  Folder = "FOLDER",
+}
+
 export enum NodeLayoutType {
   Vertical = "VERTICAL",
   Free = "FREE",
   Horizontal = "HORIZONTAL",
 }
-
-
 
 export enum ProjectTerminologyType {
   Folder = "Folder",
@@ -6144,6 +6206,12 @@ export type CreateProjectTerminologiesMutationResponse = {
   __typename?: "CreateProjectTerminologiesMutationResponse";
   info: CreateInfo;
   projectTerminologies: Array<ProjectTerminology>;
+};
+
+export type CreateRecycleBinDataResultsMutationResponse = {
+  __typename?: "CreateRecycleBinDataResultsMutationResponse";
+  info: CreateInfo;
+  recycleBinDataResults: Array<RecycleBinDataResult>;
 };
 
 export type CreateRiskLevelItemCountsMutationResponse = {
@@ -10406,6 +10474,69 @@ export type ProjectWhatsappNotificationWhatsappNotificationsAggregationSelection
     count: Scalars["Int"]["output"];
   };
 
+export type RecycleBinDataResult = {
+  __typename?: "RecycleBinDataResult";
+  id: Scalars["ID"]["output"];
+  name: Scalars["String"]["output"];
+  deletedAt: Scalars["DateTime"]["output"];
+  type: Scalars["String"]["output"];
+  createdByName: Scalars["String"]["output"];
+};
+
+export type RecycleBinDataResultAggregateSelection = {
+  __typename?: "RecycleBinDataResultAggregateSelection";
+  count: Scalars["Int"]["output"];
+  id: IdAggregateSelection;
+  name: StringAggregateSelection;
+  deletedAt: DateTimeAggregateSelection;
+  type: StringAggregateSelection;
+  createdByName: StringAggregateSelection;
+};
+
+export type RecycleBinDataResultCreatedEvent = {
+  __typename?: "RecycleBinDataResultCreatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  createdRecycleBinDataResult: RecycleBinDataResultEventPayload;
+};
+
+export type RecycleBinDataResultDeletedEvent = {
+  __typename?: "RecycleBinDataResultDeletedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  deletedRecycleBinDataResult: RecycleBinDataResultEventPayload;
+};
+
+export type RecycleBinDataResultEdge = {
+  __typename?: "RecycleBinDataResultEdge";
+  cursor: Scalars["String"]["output"];
+  node: RecycleBinDataResult;
+};
+
+export type RecycleBinDataResultEventPayload = {
+  __typename?: "RecycleBinDataResultEventPayload";
+  id: Scalars["ID"]["output"];
+  name: Scalars["String"]["output"];
+  deletedAt: Scalars["DateTime"]["output"];
+  type: Scalars["String"]["output"];
+  createdByName: Scalars["String"]["output"];
+};
+
+export type RecycleBinDataResultsConnection = {
+  __typename?: "RecycleBinDataResultsConnection";
+  totalCount: Scalars["Int"]["output"];
+  pageInfo: PageInfo;
+  edges: Array<RecycleBinDataResultEdge>;
+};
+
+export type RecycleBinDataResultUpdatedEvent = {
+  __typename?: "RecycleBinDataResultUpdatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  previousState: RecycleBinDataResultEventPayload;
+  updatedRecycleBinDataResult: RecycleBinDataResultEventPayload;
+};
+
 export type ResourceAddressConnection = {
   __typename?: "ResourceAddressConnection";
   edges: Array<ResourceAddressRelationship>;
@@ -11436,6 +11567,12 @@ export type UpdateProjectTerminologiesMutationResponse = {
   __typename?: "UpdateProjectTerminologiesMutationResponse";
   info: UpdateInfo;
   projectTerminologies: Array<ProjectTerminology>;
+};
+
+export type UpdateRecycleBinDataResultsMutationResponse = {
+  __typename?: "UpdateRecycleBinDataResultsMutationResponse";
+  info: UpdateInfo;
+  recycleBinDataResults: Array<RecycleBinDataResult>;
 };
 
 export type UpdateRiskLevelItemCountsMutationResponse = {
@@ -22475,124 +22612,6 @@ export type BacklogItemWhere = {
   /** Return BacklogItems where some of the related BacklogItemSuccessorsConnections match this filter */
   successorsConnection_SOME?: InputMaybe<BacklogItemSuccessorsConnectionWhere>;
   successorsAggregate?: InputMaybe<BacklogItemSuccessorsAggregateInput>;
-};
-
-export type BaseNodeOptions = {
-  limit?: InputMaybe<Scalars["Int"]["input"]>;
-  offset?: InputMaybe<Scalars["Int"]["input"]>;
-  /** Specify one or more BaseNodeSort objects to sort BaseNodes by. The sorts will be applied in the order in which they are arranged in the array. */
-  sort?: InputMaybe<Array<InputMaybe<BaseNodeSort>>>;
-};
-
-/** Fields to sort BaseNodes by. The order in which sorts are applied is not guaranteed when specifying many fields in one BaseNodeSort object. */
-export type BaseNodeSort = {
-  id?: InputMaybe<SortDirection>;
-  name?: InputMaybe<SortDirection>;
-  posX?: InputMaybe<SortDirection>;
-  posY?: InputMaybe<SortDirection>;
-  width?: InputMaybe<SortDirection>;
-  height?: InputMaybe<SortDirection>;
-  createdAt?: InputMaybe<SortDirection>;
-  updatedAt?: InputMaybe<SortDirection>;
-};
-
-export type BaseNodeWhere = {
-  id?: InputMaybe<Scalars["ID"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  id_NOT?: InputMaybe<Scalars["ID"]["input"]>;
-  id_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  id_NOT_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
-  id_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
-  id_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
-  id_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  id_NOT_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  id_NOT_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  id_NOT_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
-  name?: InputMaybe<Scalars["String"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  name_NOT?: InputMaybe<Scalars["String"]["input"]>;
-  name_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  name_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
-  name_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
-  name_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  name_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  name_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  name_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  name_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  posX?: InputMaybe<Scalars["Float"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  posX_NOT?: InputMaybe<Scalars["Float"]["input"]>;
-  posX_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  posX_NOT_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  posX_LT?: InputMaybe<Scalars["Float"]["input"]>;
-  posX_LTE?: InputMaybe<Scalars["Float"]["input"]>;
-  posX_GT?: InputMaybe<Scalars["Float"]["input"]>;
-  posX_GTE?: InputMaybe<Scalars["Float"]["input"]>;
-  posY?: InputMaybe<Scalars["Float"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  posY_NOT?: InputMaybe<Scalars["Float"]["input"]>;
-  posY_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  posY_NOT_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  posY_LT?: InputMaybe<Scalars["Float"]["input"]>;
-  posY_LTE?: InputMaybe<Scalars["Float"]["input"]>;
-  posY_GT?: InputMaybe<Scalars["Float"]["input"]>;
-  posY_GTE?: InputMaybe<Scalars["Float"]["input"]>;
-  width?: InputMaybe<Scalars["Float"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  width_NOT?: InputMaybe<Scalars["Float"]["input"]>;
-  width_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  width_NOT_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  width_LT?: InputMaybe<Scalars["Float"]["input"]>;
-  width_LTE?: InputMaybe<Scalars["Float"]["input"]>;
-  width_GT?: InputMaybe<Scalars["Float"]["input"]>;
-  width_GTE?: InputMaybe<Scalars["Float"]["input"]>;
-  height?: InputMaybe<Scalars["Float"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  height_NOT?: InputMaybe<Scalars["Float"]["input"]>;
-  height_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  height_NOT_IN?: InputMaybe<Array<Scalars["Float"]["input"]>>;
-  height_LT?: InputMaybe<Scalars["Float"]["input"]>;
-  height_LTE?: InputMaybe<Scalars["Float"]["input"]>;
-  height_GT?: InputMaybe<Scalars["Float"]["input"]>;
-  height_GTE?: InputMaybe<Scalars["Float"]["input"]>;
-  createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  createdAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  createdAt_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  createdAt_NOT_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
-  createdAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  createdAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
-  createdAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  createdAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
-  updatedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  updatedAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  updatedAt_IN?: InputMaybe<Array<InputMaybe<Scalars["DateTime"]["input"]>>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  updatedAt_NOT_IN?: InputMaybe<
-    Array<InputMaybe<Scalars["DateTime"]["input"]>>
-  >;
-  updatedAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  updatedAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
-  updatedAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
-  updatedAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
-  OR?: InputMaybe<Array<BaseNodeWhere>>;
-  AND?: InputMaybe<Array<BaseNodeWhere>>;
-  NOT?: InputMaybe<BaseNodeWhere>;
-  typename_IN?: InputMaybe<Array<BaseNodeImplementation>>;
 };
 
 export type BaseNodeOptions = {
@@ -45547,6 +45566,190 @@ export type QueryOptions = {
   limit?: InputMaybe<Scalars["Int"]["input"]>;
 };
 
+export type RecycleBinDataResultCreateInput = {
+  id: Scalars["ID"]["input"];
+  name: Scalars["String"]["input"];
+  deletedAt: Scalars["DateTime"]["input"];
+  type: Scalars["String"]["input"];
+  createdByName: Scalars["String"]["input"];
+};
+
+export type RecycleBinDataResultOptions = {
+  limit?: InputMaybe<Scalars["Int"]["input"]>;
+  offset?: InputMaybe<Scalars["Int"]["input"]>;
+  /** Specify one or more RecycleBinDataResultSort objects to sort RecycleBinDataResults by. The sorts will be applied in the order in which they are arranged in the array. */
+  sort?: InputMaybe<Array<RecycleBinDataResultSort>>;
+};
+
+/** Fields to sort RecycleBinDataResults by. The order in which sorts are applied is not guaranteed when specifying many fields in one RecycleBinDataResultSort object. */
+export type RecycleBinDataResultSort = {
+  id?: InputMaybe<SortDirection>;
+  name?: InputMaybe<SortDirection>;
+  deletedAt?: InputMaybe<SortDirection>;
+  type?: InputMaybe<SortDirection>;
+  createdByName?: InputMaybe<SortDirection>;
+};
+
+export type RecycleBinDataResultSubscriptionWhere = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT?: InputMaybe<Scalars["ID"]["input"]>;
+  id_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  id_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  id_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  id_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  name_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  name_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  name_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  name_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  deletedAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  deletedAt_NOT_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  deletedAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  type?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  type_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  type_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  type_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  type_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  createdByName_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<RecycleBinDataResultSubscriptionWhere>>;
+  AND?: InputMaybe<Array<RecycleBinDataResultSubscriptionWhere>>;
+  NOT?: InputMaybe<RecycleBinDataResultSubscriptionWhere>;
+};
+
+export type RecycleBinDataResultUpdateInput = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  type?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type RecycleBinDataResultWhere = {
+  id?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT?: InputMaybe<Scalars["ID"]["input"]>;
+  id_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_IN?: InputMaybe<Array<Scalars["ID"]["input"]>>;
+  id_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  id_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  id_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_CONTAINS?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_STARTS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  id_NOT_ENDS_WITH?: InputMaybe<Scalars["ID"]["input"]>;
+  name?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  name_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  name_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  name_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  name_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  name_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  deletedAt_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  deletedAt_NOT_IN?: InputMaybe<Array<Scalars["DateTime"]["input"]>>;
+  deletedAt_LT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_LTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_GT?: InputMaybe<Scalars["DateTime"]["input"]>;
+  deletedAt_GTE?: InputMaybe<Scalars["DateTime"]["input"]>;
+  type?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  type_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  type_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  type_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  type_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  type_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_IN?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  createdByName_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  createdByName_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_CONTAINS?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdByName_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<RecycleBinDataResultWhere>>;
+  AND?: InputMaybe<Array<RecycleBinDataResultWhere>>;
+  NOT?: InputMaybe<RecycleBinDataResultWhere>;
+};
+
 export type ResourceAddressAggregateInput = {
   count?: InputMaybe<Scalars["Int"]["input"]>;
   count_LT?: InputMaybe<Scalars["Int"]["input"]>;
@@ -53557,6 +53760,56 @@ export declare class OrgMembersResponseModel {
   }): Promise<OrgMembersResponseAggregateSelection>;
 }
 
+export interface RecycleBinDataResultAggregateSelectionInput {
+  count?: boolean;
+  id?: boolean;
+  name?: boolean;
+  deletedAt?: boolean;
+  type?: boolean;
+  createdByName?: boolean;
+}
+
+export declare class RecycleBinDataResultModel {
+  public find(args?: {
+    where?: RecycleBinDataResultWhere;
+
+    options?: RecycleBinDataResultOptions;
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<RecycleBinDataResult[]>;
+  public create(args: {
+    input: RecycleBinDataResultCreateInput[];
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<CreateRecycleBinDataResultsMutationResponse>;
+  public update(args: {
+    where?: RecycleBinDataResultWhere;
+    update?: RecycleBinDataResultUpdateInput;
+
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<UpdateRecycleBinDataResultsMutationResponse>;
+  public delete(args: {
+    where?: RecycleBinDataResultWhere;
+
+    context?: any;
+    rootValue?: any;
+  }): Promise<{ nodesDeleted: number; relationshipsDeleted: number }>;
+  public aggregate(args: {
+    where?: RecycleBinDataResultWhere;
+
+    aggregate: RecycleBinDataResultAggregateSelectionInput;
+    context?: any;
+    rootValue?: any;
+  }): Promise<RecycleBinDataResultAggregateSelection>;
+}
+
 export interface ModelMap {
   User: UserModel;
   Counter: CounterModel;
@@ -53596,4 +53849,5 @@ export interface ModelMap {
   FirebaseStorage: FirebaseStorageModel;
   CustomizationDataCreationResult: CustomizationDataCreationResultModel;
   OrgMembersResponse: OrgMembersResponseModel;
+  RecycleBinDataResult: RecycleBinDataResultModel;
 }
