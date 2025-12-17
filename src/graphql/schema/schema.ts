@@ -2429,7 +2429,7 @@ const typeDefs = gql`
       ]
       validate: [
         {
-          when:[AFTER]
+          when: [AFTER]
           operations: [UPDATE, DELETE, READ]
           where: {
             node: {
@@ -3545,6 +3545,16 @@ const typeDefs = gql`
     posY: Float!
   }
 
+  type RecycleBinDataResult
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID!
+    name: String!
+    deletedAt: DateTime!
+    type: String!
+    createdByName: String!
+  }
+
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
@@ -3712,6 +3722,58 @@ const typeDefs = gql`
       offset: Int = 0
       where: ProjectWhere
     ): [Project!]!
+    recycleBinData(offset: Int! = 0, limit: Int = 10): [RecycleBinDataResult!]!
+      @cypher(
+        statement: """
+          MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
+
+          OPTIONAL MATCH (x)--(org)
+          OPTIONAL MATCH (x)--(y)
+          WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes
+
+          UNWIND allNodes AS node
+          WITH DISTINCT node
+          WHERE node.deletedAt IS NOT NULL
+            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"])
+          OPTIONAL MATCH (creator:User)-[
+            :CREATED_FOLDER
+            |CREATED_FILE
+            |CREATED_SPRINT
+            |CREATED_FLOW_NODE
+            |CREATED_PROJECT
+          ]->(node)
+
+        WITH node, creator
+        ORDER BY node.deletedAt DESC
+        SKIP $offset LIMIT $limit
+
+        RETURN {
+          id: node.id,
+          name: coalesce(node.name,node.label),
+          deletedAt: node.deletedAt,
+          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"]]),
+          createdByName: creator.name
+        } AS node
+        """
+        columnName: "node"
+      )
+    recycleBinDataCount:Int! @cypher(
+      statement:"""
+          MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
+
+          OPTIONAL MATCH (x)--(org)
+          OPTIONAL MATCH (x)--(y)
+          WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes
+
+          UNWIND allNodes AS node
+          WITH DISTINCT node
+          WHERE node.deletedAt IS NOT NULL
+            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"])
+        WITH node
+        RETURN COUNT(node) AS recycleBinDataCount
+      """
+      columnName:"recycleBinDataCount"
+    )
     countAllSoftDeletedItems: [DeletedItemCont!]!
     generateTask(prompt: String!): [OpenAIResponse!]!
     backlogItemsSearchWithUid(
