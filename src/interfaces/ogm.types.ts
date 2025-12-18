@@ -2700,13 +2700,6 @@ export enum ExternalFileType {
   Other = "OTHER",
 }
 
-export enum FolderType {
-  Epic = "EPIC",
-  Story = "STORY",
-  Feature = "FEATURE",
-  Folder = "FOLDER",
-}
-
 export enum NodeLayoutType {
   Vertical = "VERTICAL",
   Free = "FREE",
@@ -7534,7 +7527,6 @@ export type Folder = SoftDeletable &
     id: Scalars["ID"]["output"];
     name: Scalars["String"]["output"];
     description?: Maybe<Scalars["String"]["output"]>;
-    type: FolderType;
     startDate?: Maybe<Scalars["DateTime"]["output"]>;
     endDate?: Maybe<Scalars["DateTime"]["output"]>;
     triggerLastModified?: Maybe<Scalars["Boolean"]["output"]>;
@@ -7696,7 +7688,6 @@ export type FolderEventPayload = {
   id: Scalars["ID"]["output"];
   name: Scalars["String"]["output"];
   description?: Maybe<Scalars["String"]["output"]>;
-  type: FolderType;
   startDate?: Maybe<Scalars["DateTime"]["output"]>;
   endDate?: Maybe<Scalars["DateTime"]["output"]>;
   triggerLastModified?: Maybe<Scalars["Boolean"]["output"]>;
@@ -9084,6 +9075,7 @@ export type OpenAiResponse = {
   id: Scalars["ID"]["output"];
   content: Scalars["String"]["output"];
   description: Scalars["String"]["output"];
+  type?: Maybe<BacklogItemType>;
 };
 
 export type OpenAiResponseAggregateSelection = {
@@ -33150,7 +33142,6 @@ export type FolderCreatedByUpdateFieldInput = {
 export type FolderCreateInput = {
   name: Scalars["String"]["input"];
   description?: InputMaybe<Scalars["String"]["input"]>;
-  type: FolderType;
   deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   updatedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   parent?: InputMaybe<FolderParentCreateInput>;
@@ -33936,7 +33927,6 @@ export type FolderSort = {
   id?: InputMaybe<SortDirection>;
   name?: InputMaybe<SortDirection>;
   description?: InputMaybe<SortDirection>;
-  type?: InputMaybe<SortDirection>;
   startDate?: InputMaybe<SortDirection>;
   endDate?: InputMaybe<SortDirection>;
   triggerLastModified?: InputMaybe<SortDirection>;
@@ -33993,12 +33983,6 @@ export type FolderSubscriptionWhere = {
   description_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   description_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  type?: InputMaybe<FolderType>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  type_NOT?: InputMaybe<FolderType>;
-  type_IN?: InputMaybe<Array<FolderType>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  type_NOT_IN?: InputMaybe<Array<FolderType>>;
   triggerLastModified?: InputMaybe<Scalars["Boolean"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   triggerLastModified_NOT?: InputMaybe<Scalars["Boolean"]["input"]>;
@@ -34044,7 +34028,6 @@ export type FolderSubscriptionWhere = {
 export type FolderUpdateInput = {
   name?: InputMaybe<Scalars["String"]["input"]>;
   description?: InputMaybe<Scalars["String"]["input"]>;
-  type?: InputMaybe<FolderType>;
   deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   parent?: InputMaybe<FolderParentUpdateInput>;
@@ -34100,12 +34083,6 @@ export type FolderWhere = {
   description_NOT_STARTS_WITH?: InputMaybe<Scalars["String"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   description_NOT_ENDS_WITH?: InputMaybe<Scalars["String"]["input"]>;
-  type?: InputMaybe<FolderType>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  type_NOT?: InputMaybe<FolderType>;
-  type_IN?: InputMaybe<Array<FolderType>>;
-  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
-  type_NOT_IN?: InputMaybe<Array<FolderType>>;
   startDate?: InputMaybe<Scalars["DateTime"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   startDate_NOT?: InputMaybe<Scalars["DateTime"]["input"]>;

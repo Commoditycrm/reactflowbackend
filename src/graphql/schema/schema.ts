@@ -2040,12 +2040,7 @@ const typeDefs = gql`
 
   union FolderParent = Project | Folder
 
-  enum FolderType {
-    EPIC
-    STORY
-    FEATURE
-    FOLDER
-  }
+  
 
   type Folder implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
@@ -2169,7 +2164,6 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
-    type: FolderType!
     startDate: DateTime
       @cypher(
         statement: """
