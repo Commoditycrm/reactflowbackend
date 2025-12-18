@@ -3527,6 +3527,7 @@ const typeDefs = gql`
     id: ID!
     content: String!
     description: String!
+    type:BacklogItemType
   }
 
   type SearchResult
