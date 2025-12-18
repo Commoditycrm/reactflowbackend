@@ -5,8 +5,16 @@ import { v4 as uuidv4 } from "uuid";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { SprintWhere, User, UserRole } from "../../interfaces";
+import {
+  BacklogItemType,
+  GeneratedTask,
+  OpenAiResponse,
+  SprintWhere,
+  User,
+  UserRole,
+} from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
+import { Neo4JConnection } from "../../database/connection";
 export const getModelWhereClause = (
   modelName: string,
   loggedInUser: User
@@ -329,12 +337,52 @@ const generateTask = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
   _context: Record<string, any>
-): Promise<{ id: string; content: string; description: string }[]> => {
-  const openai = new OpenAI({
-    apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY"),
-  });
+): Promise<GeneratedTask[]> => {
+  const openai = new OpenAI({ apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY") });
+  const uid = _context?.jwt?.uid;
+
+  const session = (await Neo4JConnection.getInstance()).driver.session();
 
   try {
+
+    const result = await session.executeRead((tx) =>
+      tx.run(
+        `
+        MATCH (u:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization)
+        MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType)
+        RETURN t { .* } AS type
+        `,
+        { uid }
+      )
+    );
+
+    if (result.records.length === 0) {
+      throw new GraphQLError("UNAUTHORIZED", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    }
+
+    const orgTypes = result.records.map((r) => r.get("type")) as BacklogItemType[];
+
+    const promptLower = prompt.toLowerCase();
+
+    const matchedType =
+      orgTypes
+        .map((t) => ({
+          ...t,
+          _matchName: (t.defaultName ?? t.name ?? "").trim(),
+        }))
+        .filter((t) => t._matchName.length > 0)
+        .sort((a, b) => b._matchName.length - a._matchName.length) // prefer longer matches
+        .find((t) => promptLower.includes(t._matchName.toLowerCase())) ?? null;
+
+    const matchedTypeData: BacklogItemType | null = matchedType
+      ? (() => {
+          const { _matchName, ...rest } = matchedType;
+          return rest;
+        })()
+      : null;
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -349,7 +397,7 @@ const generateTask = async (
     });
 
     const tasksRaw = completion.choices[0]?.message?.content || "";
-    // Split the tasks by lines, parse task and description
+
     const tasks = tasksRaw
       .split("\n")
       .map((line) => {
@@ -357,15 +405,13 @@ const generateTask = async (
         return match
           ? {
               id: uuidv4(),
-              content: match?.[1]?.trim() ?? "",
-              description: match?.[2]?.trim() ?? "",
+              content: match[1]?.trim() ?? "",
+              description: match[2]?.trim() ?? "",
+              type: matchedTypeData, // ✅ full type object
             }
           : null;
       })
-      .filter(
-        (task): task is { id: string; content: string; description: string } =>
-          task !== null
-      );
+      .filter((t): t is GeneratedTask => t !== null);
 
     return tasks.length > 0
       ? tasks
@@ -373,13 +419,15 @@ const generateTask = async (
           {
             id: "1",
             content: "No tasks could be generated",
-            description:
-              "Please refine the prompt to generate meaningful tasks.",
+            description: "Please refine the prompt to generate meaningful tasks.",
+            type: matchedTypeData,
           },
         ];
   } catch (error: any) {
     logger?.error(error);
     throw new Error("Failed to fetch response from OpenAI.");
+  } finally {
+    await session.close();
   }
 };
 

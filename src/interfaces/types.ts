@@ -1,3 +1,5 @@
+import { BacklogItemType } from "./ogm.types";
+
 export interface SendEmailProps {
   to: string;
   type: string;
@@ -16,3 +18,11 @@ export type InviteUserProps = SendEmailProps & {
   inviterName: string;
   orgName: string;
 };
+
+export type GeneratedTask = {
+  id: string;
+  content: string;
+  description: string;
+  type:BacklogItemType | null
+};
+
