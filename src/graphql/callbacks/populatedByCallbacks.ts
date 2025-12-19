@@ -331,6 +331,15 @@ const resourceNameSetter = (
     : `${firstName} ${lastName}`;
 };
 
+const fileLockSetter = (
+  _parent: Record<string, any>,
+  _args: Record<string, any>,
+  _context: Record<string, any>
+) => {
+  const fileId = _parent?.file?.connect?.where?.node?.id;
+  return fileId;
+};
+
 export const populatedCallBacks = {
   counterStarter,
   emailExtractor,
@@ -349,4 +358,5 @@ export const populatedCallBacks = {
   messageCounterSetter,
   uniqueEventExtractor,
   resourceNameSetter,
+  fileLockSetter,
 };
