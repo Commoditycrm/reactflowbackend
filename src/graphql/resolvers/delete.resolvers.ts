@@ -180,89 +180,6 @@ const disableUser = async (
   }
 };
 
-const emptyRecycleBin = async (
-  _source: Record<string, any>,
-  _parent: Record<string, any>,
-  _context: Record<string, any>
-) => {
-  const currentUserId = _context?.jwt?.sub;
-  const ogm = await OGMConnection.getInstance();
-  const UserModel = ogm.model("User");
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-
-  const models = [
-    "Folder",
-    "File",
-    "BacklogItem",
-    "FlowNode",
-    "Sprint",
-    "Project",
-  ];
-
-  let totalNodesDeleted = 0;
-  let totalRelationshipsDeleted = 0;
-  try {
-    const [currentUser] = await UserModel.find<User[]>({
-      where: { externalId: currentUserId },
-      selectionSet: `{ id role externalId ownedOrganization { id } memberOfOrganizations { id } }`,
-    });
-    const allowedRoles = [UserRole.CompanyAdmin, UserRole.SystemAdmin];
-    if (!allowedRoles.includes(currentUser?.role as UserRole)) {
-      throw new GraphQLError("Unauthorized access. Insufficient permissions.", {
-        extensions: {
-          code: ApolloServerErrorCode.GRAPHQL_VALIDATION_FAILED,
-        },
-      });
-    }
-    for (const modelName of models) {
-      const Model = ogm.model(modelName);
-
-      if (!currentUser) {
-        throw new GraphQLError("Current user not found.", {
-          extensions: {
-            code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-          },
-        });
-      }
-
-      const whereClause = {
-        NOT: { deletedAt: null },
-        ...getModelWhereClause(modelName, currentUser),
-      };
-
-      const result = await Model.delete({
-        where: whereClause,
-        context: _context,
-      });
-      totalNodesDeleted += result?.nodesDeleted || 0;
-      totalRelationshipsDeleted += result?.relationshipsDeleted || 0;
-    }
-
-    logger?.info("Recycle bin emptied successfully by admin", {
-      nodesDeleted: totalNodesDeleted,
-      relationshipsDeleted: totalRelationshipsDeleted,
-    });
-
-    return {
-      nodesDeleted: totalNodesDeleted,
-      relationshipsDeleted: totalRelationshipsDeleted,
-    };
-  } catch (error) {
-    logger?.error("Error while emptying recycle bin", error);
-    if (error instanceof GraphQLError) throw error;
-    throw new GraphQLError(
-      "An unexpected error occurred while emptying the recycle bin.",
-      {
-        extensions: {
-          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
-        },
-      }
-    );
-  } finally {
-    await session.close();
-  }
-};
-
 const deleteFirebaseUser = async (
   _source: Record<string, any>,
   { userId }: { userId: string },
@@ -365,7 +282,6 @@ const deleteOrg = async (
 export const deleteOperationMutations = {
   deleteUser,
   disableUser,
-  emptyRecycleBin,
   deleteFirebaseUser,
   deleteOrg,
 };
