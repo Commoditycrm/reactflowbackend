@@ -2275,7 +2275,8 @@ const typeDefs = gql`
         direction: IN
         nestedOperations: [CONNECT]
       )
-    uniqueFileLock: String! @unique
+    uniqueFileLock: String!
+      @unique
       @populatedBy(callback: "fileLockSetter", operations: [CREATE])
   }
 
@@ -2973,37 +2974,37 @@ const typeDefs = gql`
       ]
 
       validate: [
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-                {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
-                      }
-                    }
-                  }
-                }
-                { project: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-                { project: { isTemplate: true } }
-              ]
-            }
-          }
-        }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           project: {
+        #             organization: { createdBy: { externalId: "$jwt.sub" } }
+        #           }
+        #         }
+        #         {
+        #           project: {
+        #             organization: {
+        #               memberUsers_SINGLE: {
+        #                 externalId: "$jwt.sub"
+        #                 role: "ADMIN"
+        #               }
+        #             }
+        #           }
+        #         }
+        #         { project: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+        #         }
+        #         { createdBy: { externalId: "$jwt.sub" } }
+        #         { project: { isTemplate: true } }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           operations: [DELETE]
           where: {
@@ -3066,11 +3067,11 @@ const typeDefs = gql`
           }
         }
         # system admin auhorization
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     )
     @fulltext(
@@ -3824,7 +3825,35 @@ const typeDefs = gql`
         """
         columnName: "result"
       )
-    emptyRecycleBin: DeleteInfo!
+    emptyRecycleBin(batchSize: Int! = 100): Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization)<-[:OWNS]-(me:User {externalId:$jwt.sub})
+
+        CALL apoc.periodic.iterate(
+          '
+            MATCH (org:Organization)<-[:OWNS]-(me:User {externalId:$jwt.sub})
+            OPTIONAL MATCH (x)--(org)
+            OPTIONAL MATCH (x)--(y)
+            WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes
+            UNWIND allNodes AS node
+            WITH DISTINCT node
+            WHERE node.deletedAt IS NOT NULL
+              AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+            RETURN node
+          ',
+          '
+            DETACH DELETE node
+          ',
+          {batchSize: $batchSize, parallel: false, params: {jwt: $jwt}}
+        )
+        YIELD updateStatistics
+
+        RETURN coalesce(updateStatistics.nodesDeleted, 0) AS result
+        """
+        columnName: "result"
+      )
+
     deleteOrg(orgId: String): Boolean!
   }
 
