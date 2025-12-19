@@ -3819,7 +3819,7 @@ const typeDefs = gql`
       offset: Int = 0
       where: ProjectWhere
     ): [Project!]!
-    recycleBinData(offset: Int! = 0, limit: Int = 10): [RecycleBinDataResult!]!
+    recycleBinData(offset: Int! = 0, limit: Int = 10,userId:ID!): [RecycleBinDataResult!]!
       @cypher(
         statement: """
           MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
@@ -3831,13 +3831,14 @@ const typeDefs = gql`
           UNWIND allNodes AS node
           WITH DISTINCT node
           WHERE node.deletedAt IS NOT NULL
-            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"])
+            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
           OPTIONAL MATCH (creator:User)-[
             :CREATED_FOLDER
             |CREATED_FILE
             |CREATED_SPRINT
             |CREATED_FLOW_NODE
             |CREATED_PROJECT
+            |CREATED_ITEM
           ]->(node)
 
         WITH node, creator
@@ -3848,7 +3849,7 @@ const typeDefs = gql`
           id: node.id,
           name: coalesce(node.name,node.label),
           deletedAt: node.deletedAt,
-          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"]]),
+          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project", "BacklogItem" ]]),
           createdByName: creator.name
         } AS node
         """
@@ -3866,7 +3867,7 @@ const typeDefs = gql`
           UNWIND allNodes AS node
           WITH DISTINCT node
           WHERE node.deletedAt IS NOT NULL
-            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project"])
+            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
         WITH node
         RETURN COUNT(node) AS recycleBinDataCount
         """
