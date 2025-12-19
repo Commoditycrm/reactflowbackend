@@ -1710,6 +1710,22 @@ const typeDefs = gql`
         columnName: "file"
       )
 
+    getAllFolders(
+      limit: Int! = 10
+      offset: Int! = 0
+      searchQuery: String
+    ): [Folder!]!
+      @cypher(
+        statement: """
+        WITH this, $searchQuery AS sq
+        MATCH path = (this)-[:HAS_CHILD_FOLDER]->(folders:Folder)
+        WHERE folders.deletedAt IS NULL AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          AND (sq IS NULL OR trim(sq)="" OR toLower(folders.name) CONTAINS toLower(sq))
+        RETURN folders ORDER BY folders.createdAt DESC SKIP $offset LIMIT $limit
+        """
+        columnName: "folders"
+      )
+
     organization: Organization!
       @relationship(
         type: "HAS_PROJECTS"
@@ -2039,8 +2055,6 @@ const typeDefs = gql`
   }
 
   union FolderParent = Project | Folder
-
-  
 
   type Folder implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
@@ -2864,7 +2878,7 @@ const typeDefs = gql`
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
     color: String
-    layoutType: NodeLayoutType @default(value:HORIZONTAL)
+    layoutType: NodeLayoutType @default(value: HORIZONTAL)
     deletedAt: DateTime
     file: File!
       @relationship(
@@ -3521,7 +3535,7 @@ const typeDefs = gql`
     id: ID!
     content: String!
     description: String!
-    type:BacklogItemType
+    type: BacklogItemType
   }
 
   type SearchResult
@@ -3819,7 +3833,11 @@ const typeDefs = gql`
       offset: Int = 0
       where: ProjectWhere
     ): [Project!]!
-    recycleBinData(offset: Int! = 0, limit: Int = 10,userId:ID!): [RecycleBinDataResult!]!
+    recycleBinData(
+      offset: Int! = 0
+      limit: Int = 10
+      userId: ID!
+    ): [RecycleBinDataResult!]!
       @cypher(
         statement: """
           MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
