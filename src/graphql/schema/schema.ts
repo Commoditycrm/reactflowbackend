@@ -2257,6 +2257,28 @@ const typeDefs = gql`
       @settable(onCreate: false, onUpdate: true)
   }
 
+  type FileLock @query(aggregate: false) {
+    id: ID! @id
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    lockedAt: DateTime
+    locked: Boolean! @default(value: true)
+    lockedBy: User!
+      @relationship(
+        type: "LOCKED_BY"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    file: File!
+      @relationship(
+        type: "HAS_LOCK"
+        direction: IN
+        nestedOperations: [CONNECT]
+      )
+    uniqueFileLock: String! @unique
+      @populatedBy(callback: "fileLockSetter", operations: [CREATE])
+  }
+
   union FileParent = Project | Folder
 
   type File implements TimestampedCreatable & Timestamped & SoftDeletable
