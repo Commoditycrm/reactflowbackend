@@ -7,6 +7,9 @@ import {
   CLONE_SUB_FOLDERS,
   CLONE_SUB_ITEM,
   CONNECT_DEPENDENCY_CQL,
+  COPY_FILE_CQL,
+  COPY_FILE_LINKS_CQL,
+  COPY_FILE_NODES_CQL,
   CREATE_INVITE_USER_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
   getUpdateDependentTaskDatesCQL,
@@ -232,6 +235,46 @@ const createProjectWithTemplate = async (
   }
 };
 
+const cloneCanvas = async (
+  _source: Record<string, any>,
+  {
+    fileId,
+    parentId,
+  }: {
+    fileId: string;
+    parentId: string;
+  },
+  _context: Record<string, any>
+) => {
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
+  const uid = _context?.jwt?.uid;
+  try {
+    await tx.run(COPY_FILE_CQL, { parentId, fileId, userId: uid });
+    await tx.run(COPY_FILE_NODES_CQL, { fileId, userId: uid });
+    await tx.run(COPY_FILE_LINKS_CQL, { fileId });
+    const result = await tx.run(
+      `MATCH (newFile:File {refId:$fileId}) RETURN newFile`,
+      { fileId }
+    );
+    const files =
+      result.records.map((record) => record.get("newFile").properties) || [];
+    await tx.run(REMOVE_REFID_EXISTING_NODE);
+    await tx.commit();
+    return files
+  } catch (error) {
+    await tx.rollback()
+    logger?.error("Batch failure:", error);
+    throw new GraphQLError(`${error}`, {
+      extensions: {
+        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+      },
+    });
+  } finally {
+    await session.close();
+  }
+};
+
 const finishInviteSignup = async (
   _source: Record<string, any>,
   {
@@ -367,4 +410,5 @@ export const createOperationMutations = {
   createProjectWithTemplate,
   finishInviteSignup,
   finishInviteSignupInOrgPage,
+  cloneCanvas,
 };
