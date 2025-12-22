@@ -725,3 +725,103 @@ export const CREATE_INVITE_USER_CQL = `
   DETACH DELETE invite
   RETURN user
 `;
+
+//clon canvas
+export const COPY_FILE_CQL = `
+CALL apoc.periodic.iterate(
+"
+  MATCH (sourceFile:File {id:$fileId})
+  MATCH (user:User {externalId:$userId})
+  MATCH(parent:Folder|Project {id:$parentId})
+  RETURN sourceFile, user,parent
+"
+,
+"
+ MERGE (newFile:File {refId: sourceFile.id}) 
+  ON CREATE SET 
+    newFile.createdAt = datetime(),
+    newFile.name = 'clone'+' '+ sourceFile.name,
+    newFile.id = randomUUID()
+MERGE (user)-[:CREATED_FILE]->(newFile)
+MERGE(parent)-[:HAS_CHILD_FILE]->(newFile)
+",{
+ batchSize: 1,
+    parallel: false,
+    params: {
+      fileId:$fileId,
+      parentId:$parentId,
+      userId:$userId
+    }
+  }
+)
+`;
+
+export const COPY_FILE_NODES_CQL = `
+CALL apoc.periodic.iterate(
+    "
+     MATCH(newFile:File {refId:$fileId})
+     MATCH (originalFile:File {id:$fileId})
+     MATCH (originalFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode)
+     WHERE sourceFlowNode.deletedAt IS NULL
+     RETURN newFile, sourceFlowNode",
+    
+    // Processing query for FlowNodes
+    "WITH newFile, sourceFlowNode
+     MATCH (user:User {externalId: $userId})
+     MERGE (newFlowNode:FlowNode {refId: sourceFlowNode.id})
+     ON CREATE SET
+         newFlowNode.id = randomUUID(),
+         newFlowNode.name = sourceFlowNode.name,
+         newFlowNode.description = sourceFlowNode.description,
+         newFlowNode.color = sourceFlowNode.color,
+         newFlowNode.shape = sourceFlowNode.shape,
+         newFlowNode.posX = sourceFlowNode.posX,
+         newFlowNode.posY = sourceFlowNode.posY,
+         newFlowNode.width = sourceFlowNode.width,
+         newFlowNode.height = sourceFlowNode.height,
+         newFlowNode.type = sourceFlowNode.type,
+         newFlowNode.createdAt = datetime()
+     WITH newFlowNode,newFile,user
+     CALL apoc.lock.nodes([newFlowNode])
+     MERGE (newFile)-[:HAS_FLOW_NODE]->(newFlowNode)
+     MERGE (user)-[:CREATED_FLOW_NODE]->(newFlowNode)",
+    {
+        batchSize: 35,
+        parallel: true,
+        retries: 3,
+        params: { fileId: $fileId,userId:$userId }
+    }
+)`;
+
+export const COPY_FILE_LINKS_CQL = `
+CALL apoc.periodic.iterate(
+"
+MATCH (newFile:File {refId: $fileId})
+MATCH (newFile)-[:HAS_FLOW_NODE]->(newFlowNode:FlowNode)
+MATCH (originalFile:File {id: newFile.refId})
+MATCH (originalFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode {id: newFlowNode.refId})
+MATCH (sourceFlowNode)-[linkTo:LINKED_TO]->(targetFlowNode:FlowNode)
+WHERE targetFlowNode.deletedAt IS NULL
+MATCH (newFile)-[:HAS_FLOW_NODE]->(newTargetNode:FlowNode {refId: targetFlowNode.id})
+RETURN DISTINCT newFlowNode, newTargetNode, linkTo
+",
+"
+WITH newFlowNode, newTargetNode, linkTo
+MERGE (newFlowNode)-[newLink:LINKED_TO]->(newTargetNode)
+ON CREATE SET
+  newLink.color = linkTo.color,
+  newLink.animated = linkTo.animated,
+  newLink.bidirectional = linkTo.bidirectional,
+  newLink.label = linkTo.label,
+  newLink.id = randomUUID(),
+  newLink.sourceHandle = linkTo.sourceHandle,
+  newLink.targetHandle = linkTo.targetHandle,
+  newLink.source = newFlowNode.id
+",
+{
+  batchSize: 35,
+  parallel: true,
+  retries: 3,
+  params: { fileId: $fileId }
+});
+`;

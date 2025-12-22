@@ -3706,6 +3706,7 @@ const typeDefs = gql`
       startDate: String!
       orgId: ID!
     ): [Project!]!
+    cloneCanvas(fileId: ID!, parentId: ID!): [File!]!
 
     updateGroupPosition(
       graupNode: GroupNodePositionInput!
