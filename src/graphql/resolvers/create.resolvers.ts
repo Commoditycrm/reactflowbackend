@@ -8,6 +8,8 @@ import {
   CLONE_SUB_ITEM,
   CONNECT_DEPENDENCY_CQL,
   COPY_FILE_CQL,
+  COPY_FILE_GROUP_CHILD_CONNECTION_CQL,
+  COPY_FILE_GROUP_NODE_CQL,
   COPY_FILE_LINKS_CQL,
   COPY_FILE_NODES_CQL,
   CREATE_INVITE_USER_CQL,
@@ -240,19 +242,48 @@ const cloneCanvas = async (
   {
     fileId,
     parentId,
+    name,
   }: {
     fileId: string;
     parentId: string;
+    name: string;
   },
   _context: Record<string, any>
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
   const uid = _context?.jwt?.uid;
+  const email = _context?.jwt?.email;
+  logger.info("Start cloning file", { fileId, parentId, email });
   try {
-    await tx.run(COPY_FILE_CQL, { parentId, fileId, userId: uid });
+    const response = await tx.run(
+      `
+      MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(user:User {externalId: $externalId})
+      WHERE user.role IN ["COMPANY_ADMIN","ADMIN","SUPER_USER"]
+      RETURN user
+    `,
+      {
+        externalId: uid,
+      }
+    );
+
+    if (response.records.length === 0) {
+      throw new GraphQLError(`UNAUTHORIZED`, {
+        extensions: {
+          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+        },
+      });
+    }
+    await tx.run(COPY_FILE_CQL, { parentId, fileId, userId: uid, name });
+    logger.info("Clonned file completed");
     await tx.run(COPY_FILE_NODES_CQL, { fileId, userId: uid });
+    logger.info("Clonned flowNodes completed");
+    await tx.run(COPY_FILE_GROUP_NODE_CQL, { fileId, userId: uid });
+    logger.info("Clonned groupnodes completed");
+    await tx.run(COPY_FILE_GROUP_CHILD_CONNECTION_CQL, { fileId });
+    logger.info("connected child and parent node completed");
     await tx.run(COPY_FILE_LINKS_CQL, { fileId });
+    logger.info("edges created successfully");
     const result = await tx.run(
       `MATCH (newFile:File {refId:$fileId}) RETURN newFile`,
       { fileId }
@@ -261,9 +292,10 @@ const cloneCanvas = async (
       result.records.map((record) => record.get("newFile").properties) || [];
     await tx.run(REMOVE_REFID_EXISTING_NODE);
     await tx.commit();
-    return files
+    logger.info("File clonned done.");
+    return files;
   } catch (error) {
-    await tx.rollback()
+    await tx.rollback();
     logger?.error("Batch failure:", error);
     throw new GraphQLError(`${error}`, {
       extensions: {

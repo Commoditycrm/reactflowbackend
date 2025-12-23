@@ -740,7 +740,7 @@ CALL apoc.periodic.iterate(
  MERGE (newFile:File {refId: sourceFile.id}) 
   ON CREATE SET 
     newFile.createdAt = datetime(),
-    newFile.name = 'clone'+' '+ sourceFile.name,
+    newFile.name = $name,
     newFile.id = randomUUID()
 MERGE (user)-[:CREATED_FILE]->(newFile)
 MERGE(parent)-[:HAS_CHILD_FILE]->(newFile)
@@ -750,7 +750,8 @@ MERGE(parent)-[:HAS_CHILD_FILE]->(newFile)
     params: {
       fileId:$fileId,
       parentId:$parentId,
-      userId:$userId
+      userId:$userId,
+      name:$name
     }
   }
 )
@@ -792,6 +793,64 @@ CALL apoc.periodic.iterate(
         params: { fileId: $fileId,userId:$userId }
     }
 )`;
+
+export const COPY_FILE_GROUP_NODE_CQL = `
+CALL apoc.periodic.iterate(
+    "
+     MATCH(newFile:File {refId:$fileId})
+     MATCH (originalFile:File {id:$fileId})
+     MATCH (originalFile)-[:HAS_GROUP_NODE]->(groupNode:GroupNode)
+     WHERE groupNode.deletedAt IS NULL
+     RETURN newFile, groupNode",
+    
+    "WITH newFile, groupNode
+     MATCH (user:User {externalId: $userId})
+     MERGE (newGroupNode:GroupNode {refId: groupNode.id})
+     ON CREATE SET
+         newGroupNode.id = randomUUID(),
+         newGroupNode.name = groupNode.name,
+         newGroupNode.color = groupNode.color,
+         newGroupNode.posX = groupNode.posX,
+         newGroupNode.posY = groupNode.posY,
+         newGroupNode.width = groupNode.width,
+         newGroupNode.height = groupNode.height,
+         newGroupNode.layoutType = groupNode.layoutType,
+         newGroupNode.createdAt = datetime()
+     WITH newGroupNode,newFile,user
+     CALL apoc.lock.nodes([newGroupNode])
+     MERGE (newFile)-[:HAS_GROUP_NODE]->(newGroupNode)
+     MERGE (user)-[:CREATED_GROUP_NODE]->(newGroupNode)",
+    {
+        batchSize: 35,
+        parallel: true,
+        retries: 3,
+        params: { fileId: $fileId,userId:$userId }
+    }
+)`;
+
+export const COPY_FILE_GROUP_CHILD_CONNECTION_CQL = `
+CALL apoc.periodic.iterate(
+"
+  MATCH (originalFile:File {id:$fileId})-[:HAS_GROUP_NODE]->(groupNode:GroupNode)
+  MATCH (originalFile)-[:HAS_FLOW_NODE]->(flowNodes:FlowNode)
+  RETURN groupNode,flowNodes
+",
+"
+  WITH groupNode,flowNodes
+  MATCH (newGroupNode:GroupNode {refId: groupNode.id})
+  MATCH (child:FlowNode {refId:flowNodes.id})
+  MERGE (child)-[:BELONGS_TO_GROUP]->(newGroupNode)
+",
+{
+  batchSize: 200,
+  parallel: true,
+  retries: 3,
+  params: {
+    fileId: $fileId
+  }
+}
+);
+`;
 
 export const COPY_FILE_LINKS_CQL = `
 CALL apoc.periodic.iterate(
