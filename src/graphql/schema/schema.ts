@@ -1740,6 +1740,13 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
+    dependencies: [Project!]!
+      @relationship(
+        type: "HAS_DEPENDENCIES"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
+        aggregate: false
+      )
 
     sprints: [Sprint!]!
       @relationship(
