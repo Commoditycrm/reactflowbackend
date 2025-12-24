@@ -2061,118 +2061,118 @@ const typeDefs = gql`
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
-      # validate: [
-      #   {
-      #     when: [AFTER]
-      #     operations: [READ]
-      #     where: {
-      #       OR: [
-      #         {
-      #           node: {
-      #             project: {
-      #               organization: { createdBy: { externalId: "$jwt.sub" } }
-      #             }
-      #           }
-      #         }
-      #         { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
-      #         {
-      #           node: {
-      #             project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-      #           }
-      #         }
-      #         {
-      #           node: {
-      #             project: {
-      #               organization: {
-      #                 memberUsers_SINGLE: {
-      #                   externalId: "$jwt.sub"
-      #                   role: "ADMIN"
-      #                 }
-      #               }
-      #             }
-      #           }
-      #         }
-      #       ]
-      #     }
-      #   }
-      #   {
-      #     when: [AFTER]
-      #     operations: [UPDATE, CREATE]
-      #     where: {
-      #       OR: [
-      #         {
-      #           AND: [
-      #             { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-      #             { node: { project: { isTemplate: true } } }
-      #           ]
-      #         }
-      #         {
-      #           AND: [
-      #             { node: { project: { isTemplate: false } } }
-      #             {
-      #               node: {
-      #                 OR: [
-      #                   {
-      #                     project: {
-      #                       assignedUsers_SINGLE: {
-      #                         externalId: "$jwt.sub"
-      #                         role: "SUPER_USER"
-      #                       }
-      #                     }
-      #                   }
-      #                   { project: { createdBy: { externalId: "$jwt.sub" } } }
-      #                   {
-      #                     project: {
-      #                       organization: {
-      #                         createdBy: { externalId: "$jwt.sub" }
-      #                       }
-      #                     }
-      #                   }
-      #                   {
-      #                     project: {
-      #                       organization: {
-      #                         memberUsers_SINGLE: {
-      #                           externalId: "$jwt.sub"
-      #                           role: "ADMIN"
-      #                         }
-      #                       }
-      #                     }
-      #                   }
-      #                 ]
-      #               }
-      #             }
-      #           ]
-      #         }
-      #       ]
-      #     }
-      #   }
-      #   {
-      #     when: [BEFORE]
-      #     operations: [DELETE]
-      #     where: {
-      #       node: {
-      #         OR: [
-      #           { createdBy: { externalId: "$jwt.sub" } }
-      #           {
-      #             project: {
-      #               organization: { createdBy: { externalId: "$jwt.sub" } }
-      #             }
-      #           }
-      #           {
-      #             project: {
-      #               organization: {
-      #                 memberUsers_SINGLE: {
-      #                   externalId: "$jwt.sub"
-      #                   role: "ADMIN"
-      #                 }
-      #               }
-      #             }
-      #           }
-      #         ]
-      #       }
-      #     }
-      #   }
-      # ]
+      validate: [
+        {
+          when: [AFTER]
+          operations: [READ]
+          where: {
+            OR: [
+              {
+                node: {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              }
+              { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
+              {
+                node: {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+              }
+              {
+                node: {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [UPDATE, CREATE]
+          where: {
+            OR: [
+              {
+                AND: [
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  { node: { project: { isTemplate: true } } }
+                ]
+              }
+              {
+                AND: [
+                  { node: { project: { isTemplate: false } } }
+                  {
+                    node: {
+                      OR: [
+                        {
+                          project: {
+                            assignedUsers_SINGLE: {
+                              externalId: "$jwt.sub"
+                              role: "SUPER_USER"
+                            }
+                          }
+                        }
+                        { project: { createdBy: { externalId: "$jwt.sub" } } }
+                        {
+                          project: {
+                            organization: {
+                              createdBy: { externalId: "$jwt.sub" }
+                            }
+                          }
+                        }
+                        {
+                          project: {
+                            organization: {
+                              memberUsers_SINGLE: {
+                                externalId: "$jwt.sub"
+                                role: "ADMIN"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        {
+          when: [BEFORE]
+          operations: [DELETE]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
     )
     @query(read: true, aggregate: false) {
     id: ID! @id
@@ -2636,79 +2636,79 @@ const typeDefs = gql`
             }
           }
         }
-        # {
-        #   when: [AFTER]
-        #   operations: [CREATE]
-        #   where: {
-        #     node: {
-        #       OR: [
-        #         {
-        #           file: {
-        #             parentConnection: {
-        #               Project: {
-        #                 node: {
-        #                   OR: [
-        #                     {
-        #                       organization: {
-        #                         createdBy: { externalId: "$jwt.sub" }
-        #                       }
-        #                     }
-        #                     { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-        #                     {
-        #                       organization: {
-        #                         memberUsers_SINGLE: {
-        #                           externalId: "$jwt.sub"
-        #                           role: "ADMIN"
-        #                         }
-        #                       }
-        #                     }
-        #                   ]
-        #                 }
-        #               }
-        #             }
-        #           }
-        #         }
-        #         {
-        #           file: {
-        #             parentConnection: {
-        #               Folder: {
-        #                 node: {
-        #                   OR: [
-        #                     {
-        #                       project: {
-        #                         organization: {
-        #                           createdBy: { externalId: "$jwt.sub" }
-        #                         }
-        #                       }
-        #                     }
-        #                     {
-        #                       project: { createdBy: { externalId: "$jwt.sub" } }
-        #                     }
-        #                     {
-        #                       project: {
-        #                         assignedUsers_SINGLE: { externalId: "$jwt.sub" }
-        #                       }
-        #                     }
-        #                     {
-        #                       project: {
-        #                         organization: {
-        #                           memberUsers_SINGLE: {
-        #                             externalId: "$jwt.sub"
-        #                             role: "ADMIN"
-        #                           }
-        #                         }
-        #                       }
-        #                     }
-        #                   ]
-        #                 }
-        #               }
-        #             }
-        #           }
-        #         }
-        #       ]
-        #     }
-        #   }
-        # }
+        {
+          when: [AFTER]
+          operations: [CREATE]
+          where: {
+            node: {
+              OR: [
+                {
+                  file: {
+                    parentConnection: {
+                      Project: {
+                        node: {
+                          OR: [
+                            {
+                              organization: {
+                                createdBy: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                            {
+                              organization: {
+                                memberUsers_SINGLE: {
+                                  externalId: "$jwt.sub"
+                                  role: "ADMIN"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+                {
+                  file: {
+                    parentConnection: {
+                      Folder: {
+                        node: {
+                          OR: [
+                            {
+                              project: {
+                                organization: {
+                                  createdBy: { externalId: "$jwt.sub" }
+                                }
+                              }
+                            }
+                            {
+                              project: { createdBy: { externalId: "$jwt.sub" } }
+                            }
+                            {
+                              project: {
+                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            {
+                              project: {
+                                organization: {
+                                  memberUsers_SINGLE: {
+                                    externalId: "$jwt.sub"
+                                    role: "ADMIN"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
       ]
     )
     @query(read: true, aggregate: false) {
