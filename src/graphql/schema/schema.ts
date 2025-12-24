@@ -1746,6 +1746,7 @@ const typeDefs = gql`
         direction: OUT
         nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
+        queryDirection: DEFAULT_UNDIRECTED 
       )
 
     sprints: [Sprint!]!
