@@ -375,11 +375,11 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     ) {
     id: ID! @id
@@ -473,11 +473,11 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     ) {
     id: ID! @id
