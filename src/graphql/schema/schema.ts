@@ -267,11 +267,11 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     ) {
     id: ID! @id
@@ -1204,78 +1204,78 @@ const typeDefs = gql`
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
       validate: [
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            OR: [
-              {
-                node: {
-                  organization: { createdBy: { externalId: "$jwt.sub" } }
-                }
-              }
-              {
-                node: {
-                  organization: {
-                    memberUsers_SINGLE: {
-                      externalId: "$jwt.sub"
-                      role: "ADMIN"
-                    }
-                  }
-                }
-              }
-              { node: { createdBy: { externalId: "$jwt.sub" } } }
-              { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
-              {
-                node: {
-                  organization: { invites_SINGLE: { email: "$jwt.sub" } }
-                }
-              }
-              { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-              { node: { isTemplate: true } }
-            ]
-          }
-        }
-        {
-          when: [AFTER]
-          operations: [CREATE]
-          where: {
-            OR: [
-              {
-                AND: [
-                  { node: { isTemplate: true } }
-                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-                ]
-              }
-              {
-                AND: [
-                  { node: { isTemplate: false } }
-                  {
-                    OR: [
-                      {
-                        node: {
-                          organization: {
-                            createdBy: { externalId: "$jwt.sub" }
-                          }
-                        }
-                      }
-                      {
-                        node: {
-                          organization: {
-                            memberUsers_SINGLE: {
-                              externalId: "$jwt.sub"
-                              role_IN: ["ADMIN", "SUPER_USER"]
-                            }
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: {
+        #     OR: [
+        #       {
+        #         node: {
+        #           organization: { createdBy: { externalId: "$jwt.sub" } }
+        #         }
+        #       }
+        #       {
+        #         node: {
+        #           organization: {
+        #             memberUsers_SINGLE: {
+        #               externalId: "$jwt.sub"
+        #               role: "ADMIN"
+        #             }
+        #           }
+        #         }
+        #       }
+        #       { node: { createdBy: { externalId: "$jwt.sub" } } }
+        #       { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
+        #       {
+        #         node: {
+        #           organization: { invites_SINGLE: { email: "$jwt.sub" } }
+        #         }
+        #       }
+        #       { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        #       { node: { isTemplate: true } }
+        #     ]
+        #   }
+        # }
+        # {
+        #   when: [AFTER]
+        #   operations: [CREATE]
+        #   where: {
+        #     OR: [
+        #       {
+        #         AND: [
+        #           { node: { isTemplate: true } }
+        #           { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        #         ]
+        #       }
+        #       {
+        #         AND: [
+        #           { node: { isTemplate: false } }
+        #           {
+        #             OR: [
+        #               {
+        #                 node: {
+        #                   organization: {
+        #                     createdBy: { externalId: "$jwt.sub" }
+        #                   }
+        #                 }
+        #               }
+        #               {
+        #                 node: {
+        #                   organization: {
+        #                     memberUsers_SINGLE: {
+        #                       externalId: "$jwt.sub"
+        #                       role_IN: ["ADMIN", "SUPER_USER"]
+        #                     }
+        #                   }
+        #                 }
+        #               }
+        #             ]
+        #           }
+        #         ]
+        #       }
+        #     ]
+        #   }
+        # }
         {
           when: [BEFORE]
           operations: [DELETE, UPDATE]
@@ -1784,28 +1784,28 @@ const typeDefs = gql`
     @query(read: true, aggregate: false)
     @authorization(
       validate: [
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-                {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           project: {
+        #             organization: { createdBy: { externalId: "$jwt.sub" } }
+        #           }
+        #         }
+        #         {
+        #           project: {
+        #             organization: {
+        #               memberUsers_SINGLE: { externalId: "$jwt.sub" }
+        #             }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           when: [AFTER]
           operations: [CREATE]
@@ -1904,35 +1904,35 @@ const typeDefs = gql`
   type WhatsappNotification
     @authorization(
       validate: [
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                { project: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-                {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
-                      }
-                    }
-                  }
-                }
-                {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         { project: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           project: {
+        #             organization: { createdBy: { externalId: "$jwt.sub" } }
+        #           }
+        #         }
+        #         {
+        #           project: {
+        #             organization: {
+        #               memberUsers_SINGLE: {
+        #                 externalId: "$jwt.sub"
+        #                 role: "ADMIN"
+        #               }
+        #             }
+        #           }
+        #         }
+        #         {
+        #           project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           when: [AFTER]
           operations: [UPDATE]
@@ -1983,35 +1983,35 @@ const typeDefs = gql`
   type AutoHideCompletedTasks
     @authorization(
       validate: [
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-                { project: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-                {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   when: [BEFORE]
+        #   operations: [READ]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         {
+        #           project: {
+        #             organization: { createdBy: { externalId: "$jwt.sub" } }
+        #           }
+        #         }
+        #         { project: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+        #         }
+        #         {
+        #           project: {
+        #             organization: {
+        #               memberUsers_SINGLE: {
+        #                 externalId: "$jwt.sub"
+        #                 role: "ADMIN"
+        #               }
+        #             }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           when: [AFTER]
           operations: [UPDATE]
@@ -2061,39 +2061,39 @@ const typeDefs = gql`
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
       validate: [
-        {
-          when: [AFTER]
-          operations: [READ]
-          where: {
-            OR: [
-              {
-                node: {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-              }
-              { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
-              {
-                node: {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-              }
-              {
-                node: {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
-                      }
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
+        # {
+        #   when: [AFTER]
+        #   operations: [READ]
+        #   where: {
+        #     OR: [
+        #       {
+        #         node: {
+        #           project: {
+        #             organization: { createdBy: { externalId: "$jwt.sub" } }
+        #           }
+        #         }
+        #       }
+        #       { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
+        #       {
+        #         node: {
+        #           project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+        #         }
+        #       }
+        #       {
+        #         node: {
+        #           project: {
+        #             organization: {
+        #               memberUsers_SINGLE: {
+        #                 externalId: "$jwt.sub"
+        #                 role: "ADMIN"
+        #               }
+        #             }
+        #           }
+        #         }
+        #       }
+        #     ]
+        #   }
+        # }
         {
           when: [AFTER]
           operations: [UPDATE, CREATE]
@@ -2811,7 +2811,7 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [UPDATE, DELETE, READ]
+          operations: [UPDATE, DELETE]
           where: {
             node: {
               OR: [
