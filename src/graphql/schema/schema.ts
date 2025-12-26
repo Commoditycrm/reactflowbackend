@@ -1740,15 +1740,6 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
         aggregate: false
       )
-    dependencies: [Project!]!
-      @relationship(
-        type: "HAS_DEPENDENCIES"
-        direction: OUT
-        nestedOperations: [CONNECT, DISCONNECT]
-        aggregate: false
-        queryDirection: DEFAULT_UNDIRECTED 
-      )
-
     sprints: [Sprint!]!
       @relationship(
         type: "HAS_SPRINTS"
@@ -3695,6 +3686,8 @@ const typeDefs = gql`
     deletedAt: DateTime!
     type: String!
     createdByName: String!
+    createdByRole: UserRole!
+    createdByEmail: String!
   }
 
   type Mutation {
@@ -3928,7 +3921,9 @@ const typeDefs = gql`
           name: coalesce(node.name,node.label),
           deletedAt: node.deletedAt,
           type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project", "BacklogItem" ]]),
-          createdByName: creator.name
+          createdByName: creator.name,
+          createdByRole:creator.role,
+          createdByEmail:creator.email
         } AS node
         """
         columnName: "node"
