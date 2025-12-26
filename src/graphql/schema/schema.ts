@@ -227,22 +227,22 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           organization: {
+        #             memberUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           operations: [DELETE]
           when: [BEFORE]
@@ -433,22 +433,22 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           organization: {
+        #             memberUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           when: [BEFORE]
           operations: [DELETE]
