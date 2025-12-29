@@ -1426,27 +1426,26 @@ const typeDefs = gql`
         WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
         WITH this, f, me, coalesce(f.table, f.tableType) AS tab
 
-        CALL(this) {
-          WITH this
-          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
-
-          UNION
-
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
-        }
-        WITH DISTINCT n, this, f, me, tab
-
-        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         CALL {
-          WITH n, this, tab
-          WITH n, this, tab,
+          WITH this
+          OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        OPTIONAL MATCH (this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
+
+        CALL {
+          WITH this, tab, nodes
+          WITH this, tab, nodes,
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
+          UNWIND nodes AS n
           MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
           WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
           RETURN bi
@@ -1462,7 +1461,7 @@ const typeDefs = gql`
           RETURN bi
         }
         WITH DISTINCT bi, this, f, me, tab, cfg
-          WHERE (
+        WHERE (
             size(coalesce(f.assignedUserIds,[])) = 0
             OR ANY(id IN f.assignedUserIds WHERE
               (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
@@ -1491,9 +1490,7 @@ const typeDefs = gql`
           )
 
         WITH DISTINCT bi, tab, me, cfg, f,
-          EXISTS {
-            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-          } AS isMine,
+          EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1508,39 +1505,36 @@ const typeDefs = gql`
         AND (
           tab <> 'EXPENSE'
           OR (
-              // No date filters => allow all expense items
-              (f.occurredOn IS NULL AND f.paidOn IS NULL)
+            (f.occurredOn IS NULL AND f.paidOn IS NULL)
+            OR (
+              (
+                bi.occuredOn IS NOT NULL
+                AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+                AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
+              )
               OR
               (
-                 // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
-                 (
-                    bi.occuredOn IS NOT NULL
-                    AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
-                    AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
-                  )
-                  OR
-                  // 2) paidOn is inside [f.occurredOn, f.paidOn]
-                  (
-                    bi.paidOn IS NOT NULL
-                    AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
-                    AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
-                  )
+                bi.paidOn IS NOT NULL
+                AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+                AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
+              )
             )
           )
         )
+
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
-         tab IS NULL
-         OR hasStatusFilter
-         OR tab = 'HIERARCHY'
-         OR NOT coalesce(cfg.enabled,false)
-         OR NOT (
+          tab IS NULL
+          OR hasStatusFilter
+          OR tab = 'HIERARCHY'
+          OR NOT coalesce(cfg.enabled,false)
+          OR NOT (
             EXISTS {
-            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
-          }
-          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
-        )
+              MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+              WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+            }
+            AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+          )
 
         RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
@@ -1555,26 +1549,26 @@ const typeDefs = gql`
         WITH this, coalesce($filters,{}) AS f, $jwt.sub AS me
         WITH this, f, me, coalesce(f.table, f.tableType) AS tab
 
-        CALL(this) {
-          WITH this
-          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
-
-          UNION
-
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-           AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
-        }
-        WITH DISTINCT n, this, f, me, tab
-        OPTIONAL MATCH(this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
         CALL {
-          WITH n, this, tab
-          WITH n, this, tab,
+          WITH this
+          OPTIONAL MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        OPTIONAL MATCH (this)-[:HAS_AUTO_HIDE_CONFIG]->(cfg:AutoHideCompletedTasks)
+
+        CALL {
+          WITH this, tab, nodes
+          WITH this, tab, nodes,
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
+          UNWIND nodes AS n
           MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
           WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
           RETURN bi
@@ -1589,9 +1583,9 @@ const typeDefs = gql`
           WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
           RETURN bi
         }
-         WITH DISTINCT bi, this, f, me, tab, cfg
 
-          WHERE (
+        WITH DISTINCT bi, this, f, me, tab, cfg
+        WHERE (
             size(coalesce(f.assignedUserIds,[])) = 0
             OR ANY(id IN f.assignedUserIds WHERE
               (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
@@ -1619,10 +1613,8 @@ const typeDefs = gql`
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
 
-        WITH DISTINCT bi, tab, me, f, cfg,
-          EXISTS {
-            MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me})
-          } AS isMine,
+        WITH DISTINCT bi, tab, me, cfg, f,
+          EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
@@ -1635,20 +1627,16 @@ const typeDefs = gql`
           OR (tab = 'EXPENSE'    AND isExpense)
           OR (tab = 'HIERARCHY')
         AND (
-        tab <> 'EXPENSE'
-        OR (
-          // No date filters => allow all expense items
-          (f.occurredOn IS NULL AND f.paidOn IS NULL)
-          OR
-            (
-              // 1) occcurredOn is inside [f.occurredOn, f.paidOn]
+          tab <> 'EXPENSE'
+          OR (
+            (f.occurredOn IS NULL AND f.paidOn IS NULL)
+            OR (
               (
                 bi.occuredOn IS NOT NULL
                 AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
                 AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
               )
               OR
-              // 2) paidOn is inside [f.occurredOn, f.paidOn]
               (
                 bi.paidOn IS NOT NULL
                 AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
@@ -1660,22 +1648,23 @@ const typeDefs = gql`
 
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
-         tab IS NULL
-         OR hasStatusFilter
-         OR tab = 'HIERARCHY'
-         OR NOT coalesce(cfg.enabled,false)
-         OR NOT (
+          tab IS NULL
+          OR hasStatusFilter
+          OR tab = 'HIERARCHY'
+          OR NOT coalesce(cfg.enabled,false)
+          OR NOT (
             EXISTS {
-            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-            WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
-          }
-          AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
-        )
+              MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+              WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
+            }
+            AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
+          )
 
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
         columnName: "backlogItemsCount"
       )
+
     getAllFiles(
       limit: Int = 10
       offset: Int = 0
