@@ -1446,8 +1446,11 @@ const typeDefs = gql`
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
           UNWIND nodes AS n
-          MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          MATCH p = (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
+          AND size(r) <= maxDepth
+          AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
           RETURN bi
 
           UNION
@@ -1456,8 +1459,10 @@ const typeDefs = gql`
           WITH this, tab,
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
-          MATCH (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
+          AND size(r) <= maxDepth
+          AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
           RETURN bi
         }
         WITH DISTINCT bi, this, f, me, tab, cfg
@@ -1569,8 +1574,11 @@ const typeDefs = gql`
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
           UNWIND nodes AS n
-          MATCH (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          MATCH p = (n)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
+          AND size(r) <= maxDepth
+          AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
           RETURN bi
 
           UNION
@@ -1579,8 +1587,10 @@ const typeDefs = gql`
           WITH this, tab,
             CASE WHEN tab = 'HIERARCHY' THEN 1 ELSE 5 END AS maxDepth
 
-          MATCH (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-          WHERE bi.deletedAt IS NULL AND size(r) <= maxDepth
+          MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WHERE bi.deletedAt IS NULL
+          AND size(r) <= maxDepth
+          AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
           RETURN bi
         }
 
