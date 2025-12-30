@@ -95,61 +95,93 @@ const typeDefs = gql`
       @cypher(
         statement: """
         MATCH (p:Project {id: $projectId})
+        WHERE p.deletedAt IS NULL
 
-        CALL(p) {
+        CALL {
           WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN n
-          UNION
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN n
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
         }
 
-        WITH DISTINCT p, n, this
+        CALL {
+          WITH p, nodes
 
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
+
+        WITH DISTINCT bi, this
+        WHERE EXISTS {
+          MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+          WHERE u.externalId = this.externalId
+        }
+
         MATCH (bi)-[:HAS_STATUS]->(s:Status)
-        WHERE bi.deletedAt IS NULL
-          AND toLower(s.defaultName) <> 'completed'
-          AND (
-            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
-          )
+        WHERE toLower(coalesce(s.defaultName, s.name, "")) <> 'completed'
 
         RETURN COUNT(DISTINCT bi) AS pendingTask
         """
         columnName: "pendingTask"
       )
-
     completedTask(projectId: ID!): Int!
       @cypher(
         statement: """
         MATCH (p:Project {id: $projectId})
+        WHERE p.deletedAt IS NULL
 
         CALL {
           WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN n
-          UNION
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN n
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
         }
 
-        WITH DISTINCT p, n, this
+        CALL {
+          WITH p, nodes
 
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE bi.deletedAt IS NULL
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
+
+        WITH DISTINCT bi
+        WHERE EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
+
         MATCH (bi)-[:HAS_STATUS]->(s:Status)
         WHERE s.deletedAt IS NULL
-          AND s.defaultName = 'Completed'
-          AND (
-            EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
-          )
+          AND toLower(coalesce(s.defaultName, s.name, "")) = 'completed'
 
         RETURN COUNT(DISTINCT bi) AS completedTask
         """
@@ -335,22 +367,22 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
-                  }
-                }
-              ]
-            }
-          }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: {
+        #     node: {
+        #       OR: [
+        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+        #         {
+        #           organization: {
+        #             memberUsers_SINGLE: { externalId: "$jwt.sub" }
+        #           }
+        #         }
+        #       ]
+        #     }
+        #   }
+        # }
         {
           operations: [DELETE]
           when: [BEFORE]
