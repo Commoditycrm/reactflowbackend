@@ -2286,30 +2286,48 @@ const typeDefs = gql`
     startDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_CHILD_FOLDER*0..]->(folders:Folder)
-        WHERE folders.deletedAt IS NULL
-        MATCH(folders)-[:HAS_CHILD_FILE]->(file:File)
+        WITH this AS root
+
+        MATCH pathF = (root)-[:HAS_CHILD_FOLDER*0..5]->(f:Folder)
+        WHERE f.deletedAt IS NULL
+          AND ALL(x IN nodes(pathF) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+        MATCH (f)-[:HAS_CHILD_FILE]->(file:File)
         WHERE file.deletedAt IS NULL
-        MATCH(file)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
-        WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        WHERE backlogItem.deletedAt is NULL
-        RETURN min(backlogItem.startDate) AS startDate
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.startDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN min(bi.startDate) AS startDate
         """
         columnName: "startDate"
       )
     endDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_CHILD_FOLDER*0..]->(folders:Folder)
-        WHERE folders.deletedAt IS NULL
-        MATCH(folders)-[:HAS_CHILD_FILE]->(file:File)
+        WITH this AS root
+
+        MATCH pathF = (root)-[:HAS_CHILD_FOLDER*0..5]->(f:Folder)
+        WHERE f.deletedAt IS NULL
+          AND ALL(x IN nodes(pathF) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+        MATCH (f)-[:HAS_CHILD_FILE]->(file:File)
         WHERE file.deletedAt IS NULL
-        MATCH(file)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
-        WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        WHERE backlogItem.deletedAt is NULL
-        RETURN max(backlogItem.endDate) AS endDate
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.endDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN max(bi.endDate) AS endDate
         """
         columnName: "endDate"
       )
@@ -2568,20 +2586,35 @@ const typeDefs = gql`
     startDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_FLOW_NODE]->(flowNode:FlowNode)
-        WHERE flowNode.deletedAt IS NULL
-        MATCH(flowNode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        RETURN min(backlogItem.startDate) AS startDate
+        WITH this AS file
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.startDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN min(bi.startDate) AS startDate
         """
         columnName: "startDate"
       )
+
     endDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_FLOW_NODE]->(flownode:FlowNode)
-        WHERE flownode.deletedAt IS NULL
-        MATCH(flownode)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        RETURN max(backlogItem.endDate) AS endDate
+        WITH this AS file
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.endDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN max(bi.endDate) AS endDate
         """
         columnName: "endDate"
       )
@@ -2830,16 +2863,22 @@ const typeDefs = gql`
     startDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        RETURN min(backlogItem.startDate) AS startDate
+        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.startDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+        RETURN min(bi.startDate) AS startDate
         """
         columnName: "startDate"
       )
     endDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)-[:HAS_CHILD_ITEM]->(backlogItem:BacklogItem)
-        RETURN max(backlogItem.endDate) AS endDate
+        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.endDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+        RETURN max(bi.endDate) AS endDate
         """
         columnName: "endDate"
       )
