@@ -4101,41 +4101,57 @@ const typeDefs = gql`
       @cypher(
         statement: """
         MATCH (user:User { externalId: $jwt.sub })
-        WITH user, toInteger($query) AS q
+        WITH user,
+             CASE WHEN $query =~ '^[0-9]+$' THEN toInteger($query) ELSE NULL END AS q
+        WHERE q IS NOT NULL
+
         CALL {
           WITH user
-          MATCH (project:Project)
-          WHERE project.deletedAt IS NULL
+          MATCH (p:Project)
+          WHERE p.deletedAt IS NULL
             AND (
-              EXISTS { MATCH (project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(user) } OR
-              EXISTS { MATCH (project)<-[:CREATED_PROJECT]-(user) } OR
-              EXISTS { MATCH (project)-[:HAS_ASSIGNED_USER]->(user) }
+              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) } OR
+              EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) } OR
+              EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
             )
-          RETURN DISTINCT project
+          RETURN DISTINCT p
         }
 
-        CALL (project) {
-          WITH project
-          MATCH (project)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WITH DISTINCT p, q
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes, q
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.uid = q
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
 
           UNION
 
-          MATCH path=(project)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
+          WITH p, q
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.uid = q
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
         }
 
-        WITH DISTINCT project, n, q
-
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-        AND EXISTS { MATCH (bi)-[:ITEM_IN_PROJECT]->(project) }
-        AND (q IS NOT NULL AND bi.uid = q)
-
-        RETURN DISTINCT bi AS result
+        RETURN bi AS result
         SKIP $offset
         LIMIT $limit
         """
@@ -4154,11 +4170,11 @@ const typeDefs = gql`
           MATCH (p:Project)
           WHERE p.deletedAt IS NULL
             AND (
-              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS]-(user) } OR
+              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) } OR
               EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) } OR
               EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
             )
-          RETURN collect(p) AS projects
+          RETURN collect(DISTINCT p) AS projects
         }
         CALL {
           WITH $query AS q
@@ -4172,18 +4188,25 @@ const typeDefs = gql`
         WHERE EXISTS {
           MATCH (bi)-[:ITEM_IN_PROJECT]->(p:Project)
           WHERE p IN projects
-
-          AND (
-            EXISTS {
-              MATCH (p)-[:HAS_CHILD_FILE]->(:File)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi)
-            }
-            OR EXISTS {
-              MATCH (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)
-                -[:HAS_CHILD_FILE]->(:File)
-                -[:HAS_FLOW_NODE]->(:FlowNode)
-                -[:HAS_CHILD_ITEM*1..2]->(bi)
-            }
-          )
+            AND (
+              EXISTS {
+                MATCH (p)-[:HAS_CHILD_FILE]->(f:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+                WHERE f.deletedAt IS NULL AND n.deletedAt IS NULL
+                MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi)
+                WHERE ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+              }
+              OR EXISTS {
+                MATCH pathF = (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(f2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+                WHERE f2.deletedAt IS NULL AND n2.deletedAt IS NULL
+                  AND ALL(x IN nodes(pathF) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+                MATCH pathBI = (n2)-[:HAS_CHILD_ITEM*1..5]->(bi)
+                WHERE ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+              }
+              OR EXISTS {
+                MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi)
+                WHERE ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+              }
+            )
         }
         WITH bi, max(score) AS bestScore
         ORDER BY bestScore DESC
