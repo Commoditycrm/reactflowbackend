@@ -1365,63 +1365,138 @@ const typeDefs = gql`
     startDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)<-[:ITEM_IN_PROJECT]-(items:BacklogItem)
-        WHERE items.deletedAt IS NULL
-        RETURN min(items.startDate) AS startDate
+        WITH this AS p
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+        }
+
+        RETURN min(bi.startDate) AS startDate
         """
         columnName: "startDate"
       )
     endDate: DateTime
       @cypher(
         statement: """
-        MATCH(this)<-[:ITEM_IN_PROJECT]-(items:BacklogItem)
-        WHERE items.deletedAt IS NULL
-        RETURN max(items.endDate) AS endDate
+        WITH this AS p
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.endDate IS NOT NULL
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.endDate IS NOT NULL
+          RETURN DISTINCT bi
+        }
+
+        RETURN max(bi.endDate) AS endDate
         """
         columnName: "endDate"
       )
     progress: Float
       @cypher(
         statement: """
-        WITH this
+        WITH this AS p
 
         CALL {
-          WITH this
-          // NODE-LEVEL ITEMS (direct files)
-          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-          WHERE bi.deletedAt IS NULL
-          RETURN bi
 
-          UNION
-
-          WITH this
-          // NODE-LEVEL ITEMS (folder → file)
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          MATCH (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+
+          RETURN apoc.coll.toSet(
+            collect(DISTINCT n) + collect(DISTINCT n2)
+          ) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-          RETURN bi
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
 
           UNION
 
-          WITH this
-          // PROJECT-LEVEL ITEMS (all levels 1-5)
-          MATCH (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-          RETURN bi
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
         }
+
         WITH DISTINCT bi
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-        WITH count(DISTINCT bi) AS totalItems,
-          count(DISTINCT CASE WHEN toLower(s.defaultName) IN ['completed','done','closed'] THEN bi END) AS completedItems
+        WITH
+          count(bi) AS totalItems,
+          count(
+            CASE
+              WHEN toLower(coalesce(s.defaultName, s.name)) IN ['completed','done','closed']
+              THEN bi
+            END
+          ) AS completedItems
 
-        RETURN CASE
-          WHEN totalItems > 0
-            THEN toFloat(round(100.0 * completedItems / totalItems))
+        RETURN
+          CASE
+            WHEN totalItems > 0
+              THEN round(100.0 * completedItems / totalItems, 2)
             ELSE 0.0
           END AS progress
         """
