@@ -4206,36 +4206,52 @@ const typeDefs = gql`
     ): [BacklogItem!]!
       @cypher(
         statement: """
-        CALL() {
+        CALL {
           WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
           WHERE projectId IS NOT NULL
 
           MATCH (p:Project {id: projectId})
           WHERE p.deletedAt IS NULL
 
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-          WHERE rf.deletedAt IS NULL
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-          WHERE sf.deletedAt IS NULL
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          WITH p, f,
-            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-            collect(DISTINCT path) AS paths
-          WHERE size(files) > 0
-            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-          UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
+
+          CALL {
+            WITH p, nodes
+
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+
+            UNION
+
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
+
+          WITH p, f, bi
+          WHERE bi.endDate IS NOT NULL
             AND bi.endDate <= datetime()
             AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
             AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
 
-          WITH DISTINCT bi AS backlogItems
-          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
-          WHERE toLower(s.defaultName) <> 'completed'
-          RETURN backlogItems
+          MATCH (bi)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(coalesce(s.defaultName, s.name, "")) <> 'completed'
+          RETURN bi AS backlogItems
 
           UNION
 
@@ -4245,29 +4261,45 @@ const typeDefs = gql`
           MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
           WHERE p.deletedAt IS NULL AND u.role IN ["COMPANY_ADMIN","ADMIN"]
 
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-          WHERE rf.deletedAt IS NULL
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-          WHERE sf.deletedAt IS NULL
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          WITH p, f,
-            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-            collect(DISTINCT path) AS paths
-          WHERE size(files) > 0
-            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-          UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
+
+          CALL {
+            WITH p, nodes
+
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+
+            UNION
+
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
+
+          WITH p, f, bi
+          WHERE bi.endDate IS NOT NULL
             AND bi.endDate <= datetime()
             AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
             AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
 
-          WITH DISTINCT bi AS backlogItems
-          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
-          WHERE toLower(s.defaultName) <> 'completed'
-          RETURN backlogItems
+          MATCH (bi)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(coalesce(s.defaultName, s.name, "")) <> 'completed'
+          RETURN bi AS backlogItems
         }
 
         WITH DISTINCT backlogItems
@@ -4278,39 +4310,56 @@ const typeDefs = gql`
         """
         columnName: "backlogItems"
       )
+
     dueTaskCount(projectId: ID, filters: DueTaskFilter): Int!
       @cypher(
         statement: """
-          CALL () {
+        CALL {
           WITH $projectId AS projectId, $jwt.sub AS userId, coalesce($filters,{}) AS f
           WHERE projectId IS NOT NULL
 
           MATCH (p:Project {id: projectId})
           WHERE p.deletedAt IS NULL
 
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-          WHERE rf.deletedAt IS NULL
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-          WHERE sf.deletedAt IS NULL
-          WITH p, f,
-            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-            collect(DISTINCT path) AS paths
-          WHERE size(files) > 0
-            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-          UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
+
+          CALL {
+            WITH p, nodes
+
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+
+            UNION
+
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
+
+          WITH p, f, bi
+          WHERE bi.endDate IS NOT NULL
             AND bi.endDate <= datetime()
             AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
             AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
 
-          WITH DISTINCT bi AS backlogItems
-          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
-          WHERE toLower(s.defaultName) <> 'completed'
-          RETURN backlogItems
+          MATCH (bi)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(coalesce(s.defaultName, s.name, "")) <> 'completed'
+          RETURN bi AS backlogItems
 
           UNION
 
@@ -4320,29 +4369,45 @@ const typeDefs = gql`
           MATCH (p:Project)<-[:HAS_PROJECTS]-(org:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
           WHERE p.deletedAt IS NULL AND u.role IN ["COMPANY_ADMIN","ADMIN"]
 
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-          WHERE rf.deletedAt IS NULL
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-          WHERE sf.deletedAt IS NULL
-          WITH p, f,
-            coalesce(collect(DISTINCT rf), []) + coalesce(collect(DISTINCT sf), []) AS files,
-            collect(DISTINCT path) AS paths
-          WHERE size(files) > 0
-            AND (size(paths) = 0 OR ALL(pa IN paths WHERE ALL(n IN nodes(pa) WHERE NOT n:Folder OR n.deletedAt IS NULL)))
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-          UNWIND files AS file
-          OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(:FlowNode)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-          MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
+
+          CALL {
+            WITH p, nodes
+
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+
+            UNION
+
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
+
+          WITH p, f, bi
+          WHERE bi.endDate IS NOT NULL
             AND bi.endDate <= datetime()
             AND (coalesce(f.riskLevelIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel) WHERE rl.id IN f.riskLevelIds })
             AND (coalesce(f.assignedUserIds,[]) = [] OR EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User) WHERE u.id IN f.assignedUserIds })
 
-          WITH DISTINCT bi AS backlogItems
-          MATCH (backlogItems)-[:HAS_STATUS]->(s:Status)
-          WHERE toLower(s.defaultName) <> 'completed'
-          RETURN backlogItems
+          MATCH (bi)-[:HAS_STATUS]->(s:Status)
+          WHERE toLower(coalesce(s.defaultName, s.name, "")) <> 'completed'
+          RETURN bi AS backlogItems
         }
 
         RETURN count(DISTINCT backlogItems) AS backlogItemsCount
