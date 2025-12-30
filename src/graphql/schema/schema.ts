@@ -4057,37 +4057,57 @@ const typeDefs = gql`
         statement: """
         MATCH (p:Project {id: $projectId})<-[:HAS_PROJECTS]-(org:Organization)
         MATCH (org)-[:HAS_RISK_LEVEL]->(r:RiskLevel)
-        WITH p, collect(DISTINCT {name: r.name, color: r.color,id:r.id}) AS levels,
-          datetime($start) AS ds, datetime($end) AS de
+        WITH p,
+          collect(DISTINCT {name: r.name, color: r.color, id: r.id}) AS levels,
+          datetime($start) AS ds,
+          datetime($end) AS de
 
-        OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(rf:File)
-        WHERE rf.deletedAt IS NULL
-        OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..]->(fo:Folder)-[:HAS_CHILD_FILE]->(sf:File)
-        WHERE sf.deletedAt IS NULL
-          AND ALL(n IN nodes(path) WHERE NOT n:Folder OR n.deletedAt IS NULL)
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-        WITH p, levels, ds, de, collect(DISTINCT rf)+collect(DISTINCT sf) AS files
-        UNWIND files AS file
-        WITH DISTINCT file, p, levels, ds, de
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE n.deletedAt IS NULL
-        WITH p, levels, ds, de, collect(DISTINCT n) AS nodes
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
 
-        UNWIND nodes AS n
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)
-        MATCH (bi)-[:ITEM_IN_PROJECT]->(p)
-        WHERE bi.deletedAt IS NULL
+        WITH p, levels, ds, de, nodes
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
+
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
         OPTIONAL MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
 
         WITH levels, ds, de, bi,
-          (toLower(s.defaultName) CONTAINS 'completed') AS isCompleted,
+          (toLower(coalesce(s.defaultName, s.name, '')) CONTAINS 'completed') AS isCompleted,
           rl.name AS rlName,
-          CASE WHEN bi.updatedAt IS NOT NULL AND bi.updatedAt >= ds AND bi.updatedAt <= de
-            THEN date(bi.updatedAt).month END AS cm,
-          CASE WHEN bi.startDate IS NOT NULL AND bi.startDate >= ds AND bi.startDate <= de
-            THEN date(bi.startDate).month END AS pm
+          CASE
+            WHEN bi.updatedAt IS NOT NULL AND bi.updatedAt >= ds AND bi.updatedAt <= de
+            THEN date(bi.updatedAt).month
+          END AS cm,
+          CASE
+            WHEN bi.startDate IS NOT NULL AND bi.startDate >= ds AND bi.startDate <= de
+            THEN date(bi.startDate).month
+          END AS pm
 
         WITH levels,
           [x IN collect({risk: rlName, m: cm, c: isCompleted})
@@ -4103,8 +4123,8 @@ const typeDefs = gql`
           [m IN range(1,12) | size([x IN pList WHERE x.risk = lv.name AND x.m = m])]  AS pendingCounts
 
         WITH
-          [{riskLevel: lv.name, counts: completedCounts, color: lv.color,id:lv.id},
-          {riskLevel: 'pending-' + lv.name, counts: pendingCounts, color: lv.color,id:lv.id}] AS pair
+          [{riskLevel: lv.name, counts: completedCounts, color: lv.color, id: lv.id},
+           {riskLevel: 'pending-' + lv.name, counts: pendingCounts, color: lv.color, id: lv.id}] AS pair
         UNWIND pair AS finalResult
         RETURN finalResult
         """
@@ -4121,7 +4141,7 @@ const typeDefs = gql`
           (
             projectId IS NULL AND
             EXISTS {
-              MATCH(p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
+              MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(u:User {externalId: userId})
               WHERE u.role IN ["COMPANY_ADMIN","ADMIN"]
             }
           )
@@ -4133,21 +4153,35 @@ const typeDefs = gql`
 
         CALL {
           WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
-          UNION
-          WITH p
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
         }
 
-        WITH DISTINCT p, s, n
+        WITH p, s, nodes
 
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE bi.deletedAt IS NULL
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
 
         WITH s, collect(DISTINCT bi) AS items
 
