@@ -4524,27 +4524,47 @@ const typeDefs = gql`
         MATCH (p:Project {id: $projectId})
         CALL(p) {
           WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n AS nodes
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        WITH p, nodes, datetime($start) AS ds, datetime($end) AS de
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE b.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT b
 
           UNION
 
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n AS nodes
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE b.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT b
         }
-        WITH DISTINCT nodes , p
-        MATCH(nodes)-[:HAS_CHILD_ITEM*1..2]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE b.endDate IS NOT NULL AND b.updatedAt IS NOT NULL
-          AND b.deletedAt IS NULL
-          AND b.endDate >= datetime($start)
-          AND b.endDate <= datetime($end)
+
+        WITH p, ds, de, b
+        WHERE b.endDate IS NOT NULL
+          AND b.updatedAt IS NOT NULL
+          AND b.endDate >= ds
+          AND b.endDate <= de
+
         OPTIONAL MATCH (b)-[:HAS_STATUS]->(s:Status)
         WITH
           date(b.endDate).month AS month,
-          toLower(s.defaultName) AS currentStatus
+          toLower(coalesce(s.defaultName, s.name, "")) AS currentStatus
+
         WITH
           month,
           count(*) AS targeted,
@@ -4553,7 +4573,8 @@ const typeDefs = gql`
           ["Target", "Complete"] AS labels
         UNWIND range(0, 1) AS i
         WITH rawData, labels[i] AS label, i
-        CALL(rawData,label,i) {
+
+        CALL {
           WITH rawData, label, i
           RETURN {
             label: label,
@@ -4568,6 +4589,7 @@ const typeDefs = gql`
             ]
           } AS result
         }
+
         RETURN result
         """
         columnName: "result"
