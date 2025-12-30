@@ -4462,36 +4462,54 @@ const typeDefs = gql`
     ): [RiskLevelItemCount!]!
       @cypher(
         statement: """
-        WITH $projectId AS projectId,$statusIds AS statusIds
+        WITH $projectId AS projectId, $statusIds AS statusIds
         MATCH (p:Project {id: projectId})<-[:HAS_PROJECTS]-(org:Organization)
         MATCH (org)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
         CALL(p) {
           WITH p
-          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-          RETURN DISTINCT n
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        WITH p, org, rl, statusIds, nodes
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
 
           UNION
 
-          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN DISTINCT n
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
         }
-        WITH DISTINCT n, p, org, rl,statusIds
-        MATCH (n)-[:HAS_CHILD_ITEM*1..2]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE bi.deletedAt IS NULL
-          AND (
-            statusIds IS NULL OR size(statusIds) = 0 OR
-            EXISTS {
-              MATCH (bi)-[:HAS_STATUS]->(s:Status)<-[:HAS_STATUS]-(org)
-              USING INDEX s:Status(id)
-              WHERE s.id IN statusIds
-            }
-          )
+
+        WITH p, org, rl, statusIds, bi
+        WHERE
+          statusIds IS NULL OR size(statusIds) = 0 OR
+          EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(s:Status)<-[:HAS_STATUS]-(org)
+            USING INDEX s:Status(id)
+            WHERE s.id IN statusIds
+          }
+
         MATCH (bi)-[:HAS_RISK_LEVEL]->(rl)
-        WITH rl.name AS riskLevelName,rl.id AS riskId, COUNT(DISTINCT bi) AS count
-        RETURN { id: riskId, riskLevel: riskLevelName, count: count} AS riskLevelCounts
+
+        WITH rl.name AS riskLevelName, rl.id AS riskId, COUNT(DISTINCT bi) AS count
+        RETURN { id: riskId, riskLevel: riskLevelName, count: count } AS riskLevelCounts
         """
         columnName: "riskLevelCounts"
       )
