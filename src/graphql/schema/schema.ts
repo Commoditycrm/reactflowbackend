@@ -78,7 +78,7 @@ const typeDefs = gql`
       @settable(onCreate: true, onUpdate: false)
       @authorization(
         validate: [{ where: { node: { externalId: "$jwt.sub" } } }]
-      ) #Todo: READ externalId if he is cureentUser or COMPANY_ADMIN or SYSTEM_ADMIN
+      )
     email: String!
       @unique
       @populatedBy(callback: "emailExtractor", operations: [CREATE])
@@ -1522,6 +1522,17 @@ const typeDefs = gql`
         direction: OUT
         aggregate: true
         nestedOperations: []
+      )
+    ganttChartItems(limit: Int! = 10, offset: Int! = 0): [BacklogItem!]!
+      @cypher(
+        statement: """
+        WITH this
+        MATCH(this)-[r:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        RETURN DISTINCT bi AS backlogItems
+        ORDER BY bi.uid DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "backlogItems"
       )
     backlogItems(
       filters: BacklogItemFilterInput
