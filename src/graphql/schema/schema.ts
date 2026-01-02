@@ -3841,9 +3841,9 @@ const typeDefs = gql`
     name: String!
     deletedAt: DateTime!
     type: String!
-    createdByName: String!
-    createdByRole: UserRole!
-    createdByEmail: String!
+    createdByName: String
+    createdByRole: UserRole
+    createdByEmail: String
   }
 
   type Mutation {
@@ -4046,27 +4046,34 @@ const typeDefs = gql`
       offset: Int! = 0
       limit: Int = 10
       userId: ID!
+      username: String
     ): [RecycleBinDataResult!]!
       @cypher(
         statement: """
-          MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
+        WITH trim(coalesce($username, "")) AS name
+        MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User { externalId: $jwt.sub })
 
-          OPTIONAL MATCH (x)--(org)
-          OPTIONAL MATCH (x)--(y)
-          WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes
+        OPTIONAL MATCH (x)--(org)
+        OPTIONAL MATCH (x)--(y)
+        WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes, name
 
-          UNWIND allNodes AS node
-          WITH DISTINCT node
-          WHERE node.deletedAt IS NOT NULL
-            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
-          OPTIONAL MATCH (creator:User)-[
-            :CREATED_FOLDER
-            |CREATED_FILE
-            |CREATED_SPRINT
-            |CREATED_FLOW_NODE
-            |CREATED_PROJECT
-            |CREATED_ITEM
-          ]->(node)
+        UNWIND allNodes AS node
+        WITH DISTINCT node, name
+        WHERE node.deletedAt IS NOT NULL
+          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+
+        OPTIONAL MATCH (creator)-[
+          :CREATED_FOLDER
+          |CREATED_FILE
+          |CREATED_SPRINT
+          |CREATED_FLOW_NODE
+          |CREATED_PROJECT
+          |CREATED_ITEM
+        ]->(node)
+
+        WITH node, name, head(collect(creator)) AS creator
+        WHERE name = ""
+           OR (creator IS NOT NULL AND toLower(creator.name) CONTAINS toLower(name))
 
         WITH node, creator
         ORDER BY node.deletedAt DESC
@@ -4074,31 +4081,45 @@ const typeDefs = gql`
 
         RETURN {
           id: node.id,
-          name: coalesce(node.name,node.label),
+          name: coalesce(node.name, node.label),
           deletedAt: node.deletedAt,
-          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project", "BacklogItem" ]]),
+          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"]]),
           createdByName: creator.name,
-          createdByRole:creator.role,
-          createdByEmail:creator.email
+          createdByRole: creator.role,
+          createdByEmail: creator.email
         } AS node
         """
         columnName: "node"
       )
-    recycleBinDataCount: Int!
+    recycleBinDataCount(username: String): Int!
       @cypher(
         statement: """
-          MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User {externalId:$jwt.sub})
+        WITH trim(coalesce($username, "")) AS name
+        MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User { externalId: $jwt.sub })
 
-          OPTIONAL MATCH (x)--(org)
-          OPTIONAL MATCH (x)--(y)
-          WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes
+        OPTIONAL MATCH (x)--(org)
+        OPTIONAL MATCH (x)--(y)
+        WITH [n IN collect(x) + collect(y) WHERE n IS NOT NULL] AS allNodes, name
 
-          UNWIND allNodes AS node
-          WITH DISTINCT node
-          WHERE node.deletedAt IS NOT NULL
-            AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
-        WITH node
-        RETURN COUNT(node) AS recycleBinDataCount
+        UNWIND allNodes AS node
+        WITH DISTINCT node, name
+        WHERE node.deletedAt IS NOT NULL
+          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+
+        OPTIONAL MATCH (creator)-[
+          :CREATED_FOLDER
+          |CREATED_FILE
+          |CREATED_SPRINT
+          |CREATED_FLOW_NODE
+          |CREATED_PROJECT
+          |CREATED_ITEM
+        ]->(node)
+
+        WITH node, name, head(collect(creator)) AS creator
+        WHERE name = ""
+           OR (creator IS NOT NULL AND toLower(creator.name) CONTAINS toLower(name))
+
+        RETURN count(DISTINCT node) AS recycleBinDataCount
         """
         columnName: "recycleBinDataCount"
       )
