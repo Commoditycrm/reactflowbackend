@@ -2908,6 +2908,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    fileLinks: [File!]!
+      @relationship(
+        type: "LINK_TO_FILE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
+        aggregate: false
+      )
     parentGroup: GroupNode
       @relationship(
         type: "BELONGS_TO_GROUP"
@@ -3841,9 +3848,9 @@ const typeDefs = gql`
     name: String!
     deletedAt: DateTime!
     type: String!
-    createdByName: String
-    createdByRole: UserRole
-    createdByEmail: String
+    createdByName: String!
+    createdByRole: UserRole!
+    createdByEmail: String!
   }
 
   type Mutation {
