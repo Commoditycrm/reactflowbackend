@@ -1820,7 +1820,7 @@ const typeDefs = gql`
         WITH DISTINCT file,sq
         WHERE sq IS NULL OR trim(sq) = "" OR toLower(file.name) CONTAINS toLower(sq)
 
-        RETURN file
+        RETURN DISTINCT file
         ORDER BY file.createdAt DESC
         SKIP $offset LIMIT $limit
         """
@@ -1838,7 +1838,7 @@ const typeDefs = gql`
         MATCH path = (this)-[:HAS_CHILD_FOLDER]->(folders:Folder)
         WHERE folders.deletedAt IS NULL AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
           AND (sq IS NULL OR trim(sq)="" OR toLower(folders.name) CONTAINS toLower(sq))
-        RETURN folders ORDER BY folders.createdAt DESC SKIP $offset LIMIT $limit
+        RETURN DISTINCT folders ORDER BY folders.createdAt DESC SKIP $offset LIMIT $limit
         """
         columnName: "folders"
       )
