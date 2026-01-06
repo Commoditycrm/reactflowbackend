@@ -4053,11 +4053,11 @@ const typeDefs = gql`
       offset: Int! = 0
       limit: Int = 10
       userId: ID!
-      username: String
+      query: String
     ): [RecycleBinDataResult!]!
       @cypher(
         statement: """
-        WITH trim(coalesce($username, "")) AS name
+        WITH trim(coalesce($query, "")) AS name
         MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User { externalId: $jwt.sub })
 
         OPTIONAL MATCH (x)--(org)
@@ -4080,7 +4080,8 @@ const typeDefs = gql`
 
         WITH node, name, head(collect(creator)) AS creator
         WHERE name = ""
-           OR (creator IS NOT NULL AND toLower(creator.name) CONTAINS toLower(name))
+           OR (node IS NOT NULL AND toLower(node.name) CONTAINS toLower(name))
+           OR (node IS NOT NULL AND toLower(node.label) CONTAINS toLower(name))
 
         WITH node, creator
         ORDER BY node.deletedAt DESC
@@ -4098,10 +4099,11 @@ const typeDefs = gql`
         """
         columnName: "node"
       )
-    recycleBinDataCount(username: String): Int!
+
+    recycleBinDataCount(query: String): Int!
       @cypher(
         statement: """
-        WITH trim(coalesce($username, "")) AS name
+        WITH trim(coalesce($query, "")) AS name
         MATCH (org:Organization)<-[:OWNS|MEMBER_OF]-(me:User { externalId: $jwt.sub })
 
         OPTIONAL MATCH (x)--(org)
@@ -4113,23 +4115,16 @@ const typeDefs = gql`
         WHERE node.deletedAt IS NOT NULL
           AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
 
-        OPTIONAL MATCH (creator)-[
-          :CREATED_FOLDER
-          |CREATED_FILE
-          |CREATED_SPRINT
-          |CREATED_FLOW_NODE
-          |CREATED_PROJECT
-          |CREATED_ITEM
-        ]->(node)
-
-        WITH node, name, head(collect(creator)) AS creator
+        WITH node, name
         WHERE name = ""
-           OR (creator IS NOT NULL AND toLower(creator.name) CONTAINS toLower(name))
+           OR (node IS NOT NULL AND toLower(node.name) CONTAINS toLower(name))
+           OR (node IS NOT NULL AND toLower(node.label) CONTAINS toLower(name))
 
-        RETURN count(DISTINCT node) AS recycleBinDataCount
+        RETURN count(node) AS recycleBinDataCount
         """
         columnName: "recycleBinDataCount"
       )
+
     countAllSoftDeletedItems: [DeletedItemCont!]!
     generateTask(prompt: String!): [OpenAIResponse!]!
     backlogItemsSearchWithUid(
