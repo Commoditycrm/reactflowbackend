@@ -176,12 +176,14 @@ const typeDefs = gql`
           RETURN DISTINCT bi
         }
 
-        WITH DISTINCT bi
-        WHERE EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(this) }
+        WITH DISTINCT bi, this
+        WHERE EXISTS {
+          MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+          WHERE u.externalId = this.externalId
+        }
 
         MATCH (bi)-[:HAS_STATUS]->(s:Status)
-        WHERE s.deletedAt IS NULL
-          AND toLower(coalesce(s.defaultName, s.name, "")) = 'completed'
+        WHERE toLower(coalesce(s.defaultName, s.name, "")) = 'completed' AND bi.deletedAt IS NULL
 
         RETURN COUNT(DISTINCT bi) AS completedTask
         """
