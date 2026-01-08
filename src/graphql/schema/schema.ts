@@ -2643,7 +2643,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT, DISCONNECT]
       )
-    backlogItem: BacklogItem
+    backlogItem: [BacklogItem!]!
       @relationship(
         type: "HAS_FILE_ITEM"
         direction: IN
