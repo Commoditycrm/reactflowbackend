@@ -432,6 +432,7 @@ const typeDefs = gql`
     default: Boolean!
       @populatedBy(callback: "defaultKeySetter", operations: [CREATE])
     autoSelect: Boolean! @default(value: false)
+    selectable: Boolean! @default(value: false)
     uniqueBacklogType: String!
       @populatedBy(callback: "uniqueKeySetter", operations: [CREATE])
     organization: Organization!
@@ -3855,6 +3856,24 @@ const typeDefs = gql`
     createdByEmail: String!
   }
 
+  input SheetBacklogRowInput {
+    id: ID!
+    label: String!
+    rowNumber: Int!
+    statusLabel: String! # "In progress" | "Not started" | "Completed"
+    parentIdResolved: ID! # projectId OR parent ref id (like "100")
+    workItemType: String! # "Epic" | "Feature" | "Story" etc (from sheet)
+    sprints: [String!]! # ["Sprint 1", "Sprint 2"] (can be empty)
+  }
+
+  type ImportSheetResult {
+    createdCount: Int!
+    parentLinksCreated: Int!
+    sprintLinksCreated: Int!
+    skippedCount: Int!
+    errors: [String!]!
+  }
+
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
@@ -3873,6 +3892,11 @@ const typeDefs = gql`
       orgId: ID!
     ): [Project!]!
     cloneCanvas(fileId: ID!, parentId: ID!, name: String!): [File!]!
+    createSheetItems(
+      projectId: ID!
+      rows: [SheetBacklogRowInput!]!
+      batchSize: Int = 200
+    ): ImportSheetResult!
 
     updateGroupPosition(
       graupNode: GroupNodePositionInput!

@@ -192,6 +192,9 @@ export type Query = {
   recycleBinDataResults: Array<RecycleBinDataResult>;
   recycleBinDataResultsConnection: RecycleBinDataResultsConnection;
   recycleBinDataResultsAggregate: RecycleBinDataResultAggregateSelection;
+  importSheetResults: Array<ImportSheetResult>;
+  importSheetResultsConnection: ImportSheetResultsConnection;
+  importSheetResultsAggregate: ImportSheetResultAggregateSelection;
   recycleBinData: Array<RecycleBinDataResult>;
   recycleBinDataCount: Scalars["Int"]["output"];
   backlogItemsSearchWithUid: Array<BacklogItem>;
@@ -1029,15 +1032,31 @@ export type QueryRecycleBinDataResultsAggregateArgs = {
   where?: InputMaybe<RecycleBinDataResultWhere>;
 };
 
+export type QueryImportSheetResultsArgs = {
+  where?: InputMaybe<ImportSheetResultWhere>;
+  options?: InputMaybe<ImportSheetResultOptions>;
+};
+
+export type QueryImportSheetResultsConnectionArgs = {
+  first?: InputMaybe<Scalars["Int"]["input"]>;
+  after?: InputMaybe<Scalars["String"]["input"]>;
+  where?: InputMaybe<ImportSheetResultWhere>;
+  sort?: InputMaybe<Array<InputMaybe<ImportSheetResultSort>>>;
+};
+
+export type QueryImportSheetResultsAggregateArgs = {
+  where?: InputMaybe<ImportSheetResultWhere>;
+};
+
 export type QueryRecycleBinDataArgs = {
   offset?: Scalars["Int"]["input"];
   limit?: InputMaybe<Scalars["Int"]["input"]>;
   userId: Scalars["ID"]["input"];
-  username?: InputMaybe<Scalars["String"]["input"]>;
+  query?: InputMaybe<Scalars["String"]["input"]>;
 };
 
 export type QueryRecycleBinDataCountArgs = {
-  username?: InputMaybe<Scalars["String"]["input"]>;
+  query?: InputMaybe<Scalars["String"]["input"]>;
 };
 
 export type QueryBacklogItemsSearchWithUidArgs = {
@@ -1126,6 +1145,7 @@ export type Mutation = {
   disableUser: Scalars["Boolean"]["output"];
   createProjectWithTemplate: Array<Project>;
   cloneCanvas: Array<File>;
+  createSheetItems: ImportSheetResult;
   finishInviteSignup: Array<User>;
   finishInviteSignupInOrgPage: Array<User>;
   deleteOrg: Scalars["Boolean"]["output"];
@@ -1249,6 +1269,9 @@ export type Mutation = {
   createRecycleBinDataResults: CreateRecycleBinDataResultsMutationResponse;
   deleteRecycleBinDataResults: DeleteInfo;
   updateRecycleBinDataResults: UpdateRecycleBinDataResultsMutationResponse;
+  createImportSheetResults: CreateImportSheetResultsMutationResponse;
+  deleteImportSheetResults: DeleteInfo;
+  updateImportSheetResults: UpdateImportSheetResultsMutationResponse;
   updateGroupPosition: Array<GroupNode>;
   customizationDataCreation: CustomizationDataCreationResult;
   emptyRecycleBin: Scalars["Int"]["output"];
@@ -1296,6 +1319,12 @@ export type MutationCloneCanvasArgs = {
   fileId: Scalars["ID"]["input"];
   parentId: Scalars["ID"]["input"];
   name: Scalars["String"]["input"];
+};
+
+export type MutationCreateSheetItemsArgs = {
+  projectId: Scalars["ID"]["input"];
+  rows: Array<SheetBacklogRowInput>;
+  batchSize?: InputMaybe<Scalars["Int"]["input"]>;
 };
 
 export type MutationFinishInviteSignupArgs = {
@@ -1875,6 +1904,19 @@ export type MutationUpdateRecycleBinDataResultsArgs = {
   update?: InputMaybe<RecycleBinDataResultUpdateInput>;
 };
 
+export type MutationCreateImportSheetResultsArgs = {
+  input: Array<ImportSheetResultCreateInput>;
+};
+
+export type MutationDeleteImportSheetResultsArgs = {
+  where?: InputMaybe<ImportSheetResultWhere>;
+};
+
+export type MutationUpdateImportSheetResultsArgs = {
+  where?: InputMaybe<ImportSheetResultWhere>;
+  update?: InputMaybe<ImportSheetResultUpdateInput>;
+};
+
 export type MutationUpdateGroupPositionArgs = {
   graupNode: GroupNodePositionInput;
   flowNodes: Array<FlowNodePositionInput>;
@@ -2064,6 +2106,9 @@ export type Subscription = {
   recycleBinDataResultCreated: RecycleBinDataResultCreatedEvent;
   recycleBinDataResultUpdated: RecycleBinDataResultUpdatedEvent;
   recycleBinDataResultDeleted: RecycleBinDataResultDeletedEvent;
+  importSheetResultCreated: ImportSheetResultCreatedEvent;
+  importSheetResultUpdated: ImportSheetResultUpdatedEvent;
+  importSheetResultDeleted: ImportSheetResultDeletedEvent;
 };
 
 export type SubscriptionUserCreatedArgs = {
@@ -2748,6 +2793,18 @@ export type SubscriptionRecycleBinDataResultUpdatedArgs = {
 
 export type SubscriptionRecycleBinDataResultDeletedArgs = {
   where?: InputMaybe<RecycleBinDataResultSubscriptionWhere>;
+};
+
+export type SubscriptionImportSheetResultCreatedArgs = {
+  where?: InputMaybe<ImportSheetResultSubscriptionWhere>;
+};
+
+export type SubscriptionImportSheetResultUpdatedArgs = {
+  where?: InputMaybe<ImportSheetResultSubscriptionWhere>;
+};
+
+export type SubscriptionImportSheetResultDeletedArgs = {
+  where?: InputMaybe<ImportSheetResultSubscriptionWhere>;
 };
 
 export enum BacklogTable {
@@ -4965,6 +5022,7 @@ export type BacklogItemType = Timestamped & {
   defaultName: Scalars["String"]["output"];
   default: Scalars["Boolean"]["output"];
   autoSelect: Scalars["Boolean"]["output"];
+  selectable: Scalars["Boolean"]["output"];
   uniqueBacklogType: Scalars["String"]["output"];
   createdAt: Scalars["DateTime"]["output"];
   updatedAt?: Maybe<Scalars["DateTime"]["output"]>;
@@ -5047,6 +5105,7 @@ export type BacklogItemTypeEventPayload = {
   defaultName: Scalars["String"]["output"];
   default: Scalars["Boolean"]["output"];
   autoSelect: Scalars["Boolean"]["output"];
+  selectable: Scalars["Boolean"]["output"];
   uniqueBacklogType: Scalars["String"]["output"];
   createdAt: Scalars["DateTime"]["output"];
   updatedAt?: Maybe<Scalars["DateTime"]["output"]>;
@@ -6222,6 +6281,12 @@ export type CreateHumansMutationResponse = {
   humans: Array<Human>;
 };
 
+export type CreateImportSheetResultsMutationResponse = {
+  __typename?: "CreateImportSheetResultsMutationResponse";
+  info: CreateInfo;
+  importSheetResults: Array<ImportSheetResult>;
+};
+
 /** Information about the number of nodes and relationships created during a create mutation */
 export type CreateInfo = {
   __typename?: "CreateInfo";
@@ -6698,7 +6763,7 @@ export type File = SoftDeletable &
     groupNodes: Array<GroupNode>;
     groupNodesConnection: FileGroupNodesConnection;
     backlogItemAggregate?: Maybe<FileBacklogItemBacklogItemAggregationSelection>;
-    backlogItem?: Maybe<BacklogItem>;
+    backlogItem: Array<BacklogItem>;
     backlogItemConnection: FileBacklogItemConnection;
     parent: FileParent;
     parentConnection: FileParentConnection;
@@ -8808,6 +8873,68 @@ export type IdAggregateSelection = {
   __typename?: "IDAggregateSelection";
   shortest?: Maybe<Scalars["ID"]["output"]>;
   longest?: Maybe<Scalars["ID"]["output"]>;
+};
+
+export type ImportSheetResult = {
+  __typename?: "ImportSheetResult";
+  createdCount: Scalars["Int"]["output"];
+  parentLinksCreated: Scalars["Int"]["output"];
+  sprintLinksCreated: Scalars["Int"]["output"];
+  skippedCount: Scalars["Int"]["output"];
+  errors: Array<Scalars["String"]["output"]>;
+};
+
+export type ImportSheetResultAggregateSelection = {
+  __typename?: "ImportSheetResultAggregateSelection";
+  count: Scalars["Int"]["output"];
+  createdCount: IntAggregateSelection;
+  parentLinksCreated: IntAggregateSelection;
+  sprintLinksCreated: IntAggregateSelection;
+  skippedCount: IntAggregateSelection;
+};
+
+export type ImportSheetResultCreatedEvent = {
+  __typename?: "ImportSheetResultCreatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  createdImportSheetResult: ImportSheetResultEventPayload;
+};
+
+export type ImportSheetResultDeletedEvent = {
+  __typename?: "ImportSheetResultDeletedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  deletedImportSheetResult: ImportSheetResultEventPayload;
+};
+
+export type ImportSheetResultEdge = {
+  __typename?: "ImportSheetResultEdge";
+  cursor: Scalars["String"]["output"];
+  node: ImportSheetResult;
+};
+
+export type ImportSheetResultEventPayload = {
+  __typename?: "ImportSheetResultEventPayload";
+  createdCount: Scalars["Int"]["output"];
+  parentLinksCreated: Scalars["Int"]["output"];
+  sprintLinksCreated: Scalars["Int"]["output"];
+  skippedCount: Scalars["Int"]["output"];
+  errors: Array<Scalars["String"]["output"]>;
+};
+
+export type ImportSheetResultsConnection = {
+  __typename?: "ImportSheetResultsConnection";
+  totalCount: Scalars["Int"]["output"];
+  pageInfo: PageInfo;
+  edges: Array<ImportSheetResultEdge>;
+};
+
+export type ImportSheetResultUpdatedEvent = {
+  __typename?: "ImportSheetResultUpdatedEvent";
+  event: EventType;
+  timestamp: Scalars["Float"]["output"];
+  previousState: ImportSheetResultEventPayload;
+  updatedImportSheetResult: ImportSheetResultEventPayload;
 };
 
 export type IntAggregateSelection = {
@@ -11857,6 +11984,12 @@ export type UpdateHumansMutationResponse = {
   __typename?: "UpdateHumansMutationResponse";
   info: UpdateInfo;
   humans: Array<Human>;
+};
+
+export type UpdateImportSheetResultsMutationResponse = {
+  __typename?: "UpdateImportSheetResultsMutationResponse";
+  info: UpdateInfo;
+  importSheetResults: Array<ImportSheetResult>;
 };
 
 /** Information about the number of nodes and relationships created and deleted during an update mutation */
@@ -21766,6 +21899,7 @@ export type BacklogItemTypeConnectWhere = {
 export type BacklogItemTypeCreateInput = {
   name: Scalars["String"]["input"];
   autoSelect?: Scalars["Boolean"]["input"];
+  selectable?: Scalars["Boolean"]["input"];
   updatedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   organization?: InputMaybe<BacklogItemTypeOrganizationFieldInput>;
 };
@@ -22304,6 +22438,7 @@ export type BacklogItemTypeSort = {
   defaultName?: InputMaybe<SortDirection>;
   default?: InputMaybe<SortDirection>;
   autoSelect?: InputMaybe<SortDirection>;
+  selectable?: InputMaybe<SortDirection>;
   uniqueBacklogType?: InputMaybe<SortDirection>;
   createdAt?: InputMaybe<SortDirection>;
   updatedAt?: InputMaybe<SortDirection>;
@@ -22361,6 +22496,9 @@ export type BacklogItemTypeSubscriptionWhere = {
   autoSelect?: InputMaybe<Scalars["Boolean"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   autoSelect_NOT?: InputMaybe<Scalars["Boolean"]["input"]>;
+  selectable?: InputMaybe<Scalars["Boolean"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  selectable_NOT?: InputMaybe<Scalars["Boolean"]["input"]>;
   uniqueBacklogType?: InputMaybe<Scalars["String"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   uniqueBacklogType_NOT?: InputMaybe<Scalars["String"]["input"]>;
@@ -22414,6 +22552,7 @@ export type BacklogItemTypeUpdateInput = {
   defaultName?: InputMaybe<Scalars["String"]["input"]>;
   default?: InputMaybe<Scalars["Boolean"]["input"]>;
   autoSelect?: InputMaybe<Scalars["Boolean"]["input"]>;
+  selectable?: InputMaybe<Scalars["Boolean"]["input"]>;
   uniqueBacklogType?: InputMaybe<Scalars["String"]["input"]>;
   createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   organization?: InputMaybe<BacklogItemTypeOrganizationUpdateFieldInput>;
@@ -22471,6 +22610,9 @@ export type BacklogItemTypeWhere = {
   autoSelect?: InputMaybe<Scalars["Boolean"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   autoSelect_NOT?: InputMaybe<Scalars["Boolean"]["input"]>;
+  selectable?: InputMaybe<Scalars["Boolean"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  selectable_NOT?: InputMaybe<Scalars["Boolean"]["input"]>;
   uniqueBacklogType?: InputMaybe<Scalars["String"]["input"]>;
   /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
   uniqueBacklogType_NOT?: InputMaybe<Scalars["String"]["input"]>;
@@ -28314,7 +28456,7 @@ export type FileBacklogItemConnectFieldInput = {
   where?: InputMaybe<BacklogItemConnectWhere>;
   /** Whether or not to overwrite any matching relationship with the new properties. */
   overwrite?: Scalars["Boolean"]["input"];
-  connect?: InputMaybe<BacklogItemConnectInput>;
+  connect?: InputMaybe<Array<BacklogItemConnectInput>>;
 };
 
 export type FileBacklogItemConnectionSort = {
@@ -28336,7 +28478,7 @@ export type FileBacklogItemDisconnectFieldInput = {
 };
 
 export type FileBacklogItemFieldInput = {
-  connect?: InputMaybe<FileBacklogItemConnectFieldInput>;
+  connect?: InputMaybe<Array<FileBacklogItemConnectFieldInput>>;
 };
 
 export type FileBacklogItemNodeAggregationWhereInput = {
@@ -28778,13 +28920,13 @@ export type FileBacklogItemRelationshipSubscriptionWhere = {
 
 export type FileBacklogItemUpdateFieldInput = {
   where?: InputMaybe<FileBacklogItemConnectionWhere>;
-  connect?: InputMaybe<FileBacklogItemConnectFieldInput>;
-  disconnect?: InputMaybe<FileBacklogItemDisconnectFieldInput>;
+  connect?: InputMaybe<Array<FileBacklogItemConnectFieldInput>>;
+  disconnect?: InputMaybe<Array<FileBacklogItemDisconnectFieldInput>>;
 };
 
 export type FileConnectInput = {
   groupNodes?: InputMaybe<Array<FileGroupNodesConnectFieldInput>>;
-  backlogItem?: InputMaybe<FileBacklogItemConnectFieldInput>;
+  backlogItem?: InputMaybe<Array<FileBacklogItemConnectFieldInput>>;
   parent?: InputMaybe<FileParentConnectInput>;
   createdBy?: InputMaybe<FileCreatedByConnectFieldInput>;
 };
@@ -29160,7 +29302,7 @@ export type FileCreateInput = {
 
 export type FileDisconnectInput = {
   groupNodes?: InputMaybe<Array<FileGroupNodesDisconnectFieldInput>>;
-  backlogItem?: InputMaybe<FileBacklogItemDisconnectFieldInput>;
+  backlogItem?: InputMaybe<Array<FileBacklogItemDisconnectFieldInput>>;
   parent?: InputMaybe<FileParentDisconnectInput>;
 };
 
@@ -30969,7 +31111,7 @@ export type FileUpdateInput = {
   deletedAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   createdAt?: InputMaybe<Scalars["DateTime"]["input"]>;
   groupNodes?: InputMaybe<Array<FileGroupNodesUpdateFieldInput>>;
-  backlogItem?: InputMaybe<FileBacklogItemUpdateFieldInput>;
+  backlogItem?: InputMaybe<Array<FileBacklogItemUpdateFieldInput>>;
   parent?: InputMaybe<FileParentUpdateInput>;
   createdBy?: InputMaybe<FileCreatedByUpdateFieldInput>;
 };
@@ -31117,10 +31259,30 @@ export type FileWhere = {
   /** Return Files where some of the related FileGroupNodesConnections match this filter */
   groupNodesConnection_SOME?: InputMaybe<FileGroupNodesConnectionWhere>;
   groupNodesAggregate?: InputMaybe<FileGroupNodesAggregateInput>;
+  /** @deprecated Use `backlogItem_SOME` instead. */
   backlogItem?: InputMaybe<BacklogItemWhere>;
+  /** @deprecated Use `backlogItem_NONE` instead. */
   backlogItem_NOT?: InputMaybe<BacklogItemWhere>;
+  /** Return Files where all of the related BacklogItems match this filter */
+  backlogItem_ALL?: InputMaybe<BacklogItemWhere>;
+  /** Return Files where none of the related BacklogItems match this filter */
+  backlogItem_NONE?: InputMaybe<BacklogItemWhere>;
+  /** Return Files where one of the related BacklogItems match this filter */
+  backlogItem_SINGLE?: InputMaybe<BacklogItemWhere>;
+  /** Return Files where some of the related BacklogItems match this filter */
+  backlogItem_SOME?: InputMaybe<BacklogItemWhere>;
+  /** @deprecated Use `backlogItemConnection_SOME` instead. */
   backlogItemConnection?: InputMaybe<FileBacklogItemConnectionWhere>;
+  /** @deprecated Use `backlogItemConnection_NONE` instead. */
   backlogItemConnection_NOT?: InputMaybe<FileBacklogItemConnectionWhere>;
+  /** Return Files where all of the related FileBacklogItemConnections match this filter */
+  backlogItemConnection_ALL?: InputMaybe<FileBacklogItemConnectionWhere>;
+  /** Return Files where none of the related FileBacklogItemConnections match this filter */
+  backlogItemConnection_NONE?: InputMaybe<FileBacklogItemConnectionWhere>;
+  /** Return Files where one of the related FileBacklogItemConnections match this filter */
+  backlogItemConnection_SINGLE?: InputMaybe<FileBacklogItemConnectionWhere>;
+  /** Return Files where some of the related FileBacklogItemConnections match this filter */
+  backlogItemConnection_SOME?: InputMaybe<FileBacklogItemConnectionWhere>;
   backlogItemAggregate?: InputMaybe<FileBacklogItemAggregateInput>;
   parent?: InputMaybe<FileParentWhere>;
   parent_NOT?: InputMaybe<FileParentWhere>;
@@ -38584,6 +38746,151 @@ export type HumanWhere = {
   /** Return Humans where some of the related ResourceNotesConnections match this filter */
   notesConnection_SOME?: InputMaybe<ResourceNotesConnectionWhere>;
   notesAggregate?: InputMaybe<HumanNotesAggregateInput>;
+};
+
+export type ImportSheetResultCreateInput = {
+  createdCount: Scalars["Int"]["input"];
+  parentLinksCreated: Scalars["Int"]["input"];
+  sprintLinksCreated: Scalars["Int"]["input"];
+  skippedCount: Scalars["Int"]["input"];
+  errors: Array<Scalars["String"]["input"]>;
+};
+
+export type ImportSheetResultOptions = {
+  limit?: InputMaybe<Scalars["Int"]["input"]>;
+  offset?: InputMaybe<Scalars["Int"]["input"]>;
+  /** Specify one or more ImportSheetResultSort objects to sort ImportSheetResults by. The sorts will be applied in the order in which they are arranged in the array. */
+  sort?: InputMaybe<Array<ImportSheetResultSort>>;
+};
+
+/** Fields to sort ImportSheetResults by. The order in which sorts are applied is not guaranteed when specifying many fields in one ImportSheetResultSort object. */
+export type ImportSheetResultSort = {
+  createdCount?: InputMaybe<SortDirection>;
+  parentLinksCreated?: InputMaybe<SortDirection>;
+  sprintLinksCreated?: InputMaybe<SortDirection>;
+  skippedCount?: InputMaybe<SortDirection>;
+};
+
+export type ImportSheetResultSubscriptionWhere = {
+  createdCount?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdCount_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdCount_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  createdCount_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  parentLinksCreated_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  parentLinksCreated_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  parentLinksCreated_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  sprintLinksCreated_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  sprintLinksCreated_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  sprintLinksCreated_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  skippedCount_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  skippedCount_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  skippedCount_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  errors?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  errors_NOT?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  errors_INCLUDES?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  errors_NOT_INCLUDES?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<ImportSheetResultSubscriptionWhere>>;
+  AND?: InputMaybe<Array<ImportSheetResultSubscriptionWhere>>;
+  NOT?: InputMaybe<ImportSheetResultSubscriptionWhere>;
+};
+
+export type ImportSheetResultUpdateInput = {
+  createdCount?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_INCREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_DECREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_INCREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_DECREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_INCREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_DECREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_INCREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_DECREMENT?: InputMaybe<Scalars["Int"]["input"]>;
+  errors?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  errors_POP?: InputMaybe<Scalars["Int"]["input"]>;
+  errors_PUSH?: InputMaybe<Array<Scalars["String"]["input"]>>;
+};
+
+export type ImportSheetResultWhere = {
+  createdCount?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdCount_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  createdCount_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  createdCount_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  createdCount_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  parentLinksCreated_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  parentLinksCreated_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  parentLinksCreated_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  parentLinksCreated_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  sprintLinksCreated_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  sprintLinksCreated_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  sprintLinksCreated_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  sprintLinksCreated_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount?: InputMaybe<Scalars["Int"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  skippedCount_NOT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  skippedCount_NOT_IN?: InputMaybe<Array<Scalars["Int"]["input"]>>;
+  skippedCount_LT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_LTE?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_GT?: InputMaybe<Scalars["Int"]["input"]>;
+  skippedCount_GTE?: InputMaybe<Scalars["Int"]["input"]>;
+  errors?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  errors_NOT?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  errors_INCLUDES?: InputMaybe<Scalars["String"]["input"]>;
+  /** @deprecated Negation filters will be deprecated, use the NOT operator to achieve the same behavior */
+  errors_NOT_INCLUDES?: InputMaybe<Scalars["String"]["input"]>;
+  OR?: InputMaybe<Array<ImportSheetResultWhere>>;
+  AND?: InputMaybe<Array<ImportSheetResultWhere>>;
+  NOT?: InputMaybe<ImportSheetResultWhere>;
 };
 
 export type InviteConnectInput = {
@@ -49239,6 +49546,16 @@ export type SearchResultWhere = {
   NOT?: InputMaybe<SearchResultWhere>;
 };
 
+export type SheetBacklogRowInput = {
+  id: Scalars["ID"]["input"];
+  label: Scalars["String"]["input"];
+  rowNumber: Scalars["Int"]["input"];
+  statusLabel: Scalars["String"]["input"];
+  parentIdResolved: Scalars["ID"]["input"];
+  workItemType: Scalars["String"]["input"];
+  sprints: Array<Scalars["String"]["input"]>;
+};
+
 export type SoftDeletableOptions = {
   limit?: InputMaybe<Scalars["Int"]["input"]>;
   offset?: InputMaybe<Scalars["Int"]["input"]>;
@@ -55177,6 +55494,55 @@ export declare class RecycleBinDataResultModel {
   }): Promise<RecycleBinDataResultAggregateSelection>;
 }
 
+export interface ImportSheetResultAggregateSelectionInput {
+  count?: boolean;
+  createdCount?: boolean;
+  parentLinksCreated?: boolean;
+  sprintLinksCreated?: boolean;
+  skippedCount?: boolean;
+}
+
+export declare class ImportSheetResultModel {
+  public find(args?: {
+    where?: ImportSheetResultWhere;
+
+    options?: ImportSheetResultOptions;
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<ImportSheetResult[]>;
+  public create(args: {
+    input: ImportSheetResultCreateInput[];
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<CreateImportSheetResultsMutationResponse>;
+  public update(args: {
+    where?: ImportSheetResultWhere;
+    update?: ImportSheetResultUpdateInput;
+
+    selectionSet?: string | DocumentNode | SelectionSetNode;
+    args?: any;
+    context?: any;
+    rootValue?: any;
+  }): Promise<UpdateImportSheetResultsMutationResponse>;
+  public delete(args: {
+    where?: ImportSheetResultWhere;
+
+    context?: any;
+    rootValue?: any;
+  }): Promise<{ nodesDeleted: number; relationshipsDeleted: number }>;
+  public aggregate(args: {
+    where?: ImportSheetResultWhere;
+
+    aggregate: ImportSheetResultAggregateSelectionInput;
+    context?: any;
+    rootValue?: any;
+  }): Promise<ImportSheetResultAggregateSelection>;
+}
+
 export interface ModelMap {
   User: UserModel;
   Counter: CounterModel;
@@ -55218,4 +55584,5 @@ export interface ModelMap {
   CustomizationDataCreationResult: CustomizationDataCreationResultModel;
   OrgMembersResponse: OrgMembersResponseModel;
   RecycleBinDataResult: RecycleBinDataResultModel;
+  ImportSheetResult: ImportSheetResultModel;
 }

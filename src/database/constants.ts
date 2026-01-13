@@ -884,3 +884,132 @@ ON CREATE SET
   params: { fileId: $fileId }
 });
 `;
+
+export const IMPORT_BACKLOGITEMS_ROWS_CREATE = `
+CALL apoc.periodic.iterate(
+  "
+  UNWIND $rows AS row
+  RETURN row
+  ",
+  "
+  WITH row
+  MATCH (newRoot:Project {id:$projectId})
+  MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
+  MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
+  MATCH (user:User {externalId:$userId})
+
+  WITH row, newRoot, org, orgCounter, user,
+       coalesce(nullIf(trim(toString(row.workItemType)), ''), 'Epic') AS typeName,
+       coalesce(nullIf(trim(toString(row.statusLabel)), ''), 'Not started') AS statusName,
+       trim(toString(row.id)) AS refRaw,
+       trim(toString(row.parentIdResolved)) AS parentRaw,
+       row.sprints AS sprintsList,
+       trim(toString(row.label)) AS label
+
+  WITH row, newRoot, org, orgCounter, user, typeName, statusName, sprintsList, label,
+       CASE WHEN refRaw =~ '^[0-9]+\\.[0]+$' THEN toString(toInteger(refRaw)) ELSE refRaw END AS refId,
+       CASE WHEN parentRaw =~ '^[0-9]+\\.[0]+$' THEN toString(toInteger(parentRaw)) ELSE parentRaw END AS parentRef
+
+  CALL {
+    WITH org, typeName
+    OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType)
+    WHERE toLower(t.name) = toLower(typeName)
+    RETURN head(collect(t)) AS itemType
+  }
+
+  CALL {
+    WITH org
+    OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(r:RiskLevel)
+    WHERE toLower(r.name) CONTAINS 'low'
+    RETURN head(collect(r)) AS itemRiskLevel
+  }
+
+  CALL {
+    WITH org, statusName
+    OPTIONAL MATCH (org)-[:HAS_STATUS]->(s:Status)
+    WHERE toLower(s.name) = toLower(statusName) OR toLower(s.name) CONTAINS toLower(statusName)
+    RETURN head(collect(s)) AS status
+  }
+
+  WITH row, newRoot, org, orgCounter, user, itemType, itemRiskLevel, status,
+       refId, parentRef, sprintsList, label
+  WHERE refId <> '' AND label <> '' AND itemType IS NOT NULL AND itemRiskLevel IS NOT NULL AND status IS NOT NULL
+
+  CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue AS newUid
+
+  MERGE (bi:BacklogItem {refId: refId, projectId: newRoot.id})
+  ON CREATE SET
+    bi.id = randomUUID(),
+    bi.createdAt = datetime(),
+    bi.uid = newUid,
+    bi.uniqueUid = toString(toInteger(newUid)) + '-' + org.id,
+    bi.startDate = datetime(),
+    bi.endDate = datetime(),
+    bi.isRecurringTask = false,
+    bi.isTopLevelParentItem = false
+
+  SET bi.label = label
+
+  SET bi.parentRefId =
+    CASE
+      WHEN parentRef IS NULL OR trim(parentRef) = '' OR trim(parentRef) = $projectId THEN null
+      ELSE trim(parentRef)
+    END
+
+  SET bi.sprintsRef = CASE WHEN sprintsList IS NULL THEN [] ELSE sprintsList END
+
+  MERGE (bi)<-[:CREATED_ITEM]-(user)
+  MERGE (bi)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
+  MERGE (bi)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
+  MERGE (bi)-[:HAS_STATUS]->(status)
+  MERGE (bi)-[:ITEM_IN_PROJECT]->(newRoot)
+
+  FOREACH (_ IN CASE WHEN bi.parentRefId IS NULL THEN [1] ELSE [] END |
+    MERGE (newRoot)-[:HAS_CHILD_ITEM]->(bi)
+  )
+
+  RETURN 1
+  ",
+  {
+    batchSize: $batchSize,
+    parallel: true,
+    retries: 3,
+    params: { projectId: $projectId, userId: $userId, rows: $rows }
+  }
+)
+YIELD batches, total, failedBatches, failedOperations, errorMessages
+RETURN {batches:batches, total:total, failedBatches:failedBatches, failedOperations:failedOperations, errorMessages:errorMessages} AS result
+`;
+
+export const IMPORT_BACKLOGITEMS_ROWS_CONNECT_PARENTS = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (p:Project {id:$projectId})
+  MATCH (c:BacklogItem {projectId: p.id})
+  WHERE c.parentRefId IS NOT NULL AND trim(c.parentRefId) <> ''
+  RETURN p, c
+  ",
+  "
+  WITH p, c, trim(c.parentRefId) AS prefRaw
+  WITH p, c,
+       CASE WHEN prefRaw =~ '^[0-9]+\\.[0]+$' THEN toString(toInteger(prefRaw)) ELSE prefRaw END AS pref
+
+  MATCH (par:BacklogItem {refId: pref, projectId: p.id})
+
+  OPTIONAL MATCH (anyParent)-[r:HAS_CHILD_ITEM]->(c)
+  DELETE r
+
+  MERGE (par)-[:HAS_CHILD_ITEM]->(c)
+
+  RETURN 1
+  ",
+  {
+    batchSize: $batchSize,
+    parallel: false,
+    retries: 3,
+    params: { projectId: $projectId }
+  }
+)
+YIELD batches, total, failedBatches, failedOperations, errorMessages
+RETURN {batches:batches, total:total, failedBatches:failedBatches, failedOperations:failedOperations, errorMessages:errorMessages} AS result
+`;

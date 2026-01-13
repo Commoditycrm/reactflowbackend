@@ -15,6 +15,8 @@ import {
   CREATE_INVITE_USER_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
   getUpdateDependentTaskDatesCQL,
+  IMPORT_BACKLOGITEMS_ROWS_CONNECT_PARENTS,
+  IMPORT_BACKLOGITEMS_ROWS_CREATE,
   LINK_TO_FLOWNODE,
   REMOVE_REFID_EXISTING_NODE,
   UPDATE_INDEPENDENT_TASK_DATE_CQL,
@@ -173,7 +175,6 @@ const createProjectWithTemplate = async (
           return `${msg} (${safeCount})`;
         })
         .join("; ");
-      console.log(messages);
 
       throw new GraphQLError("Project creation failed: " + messages, {
         extensions: {
@@ -437,10 +438,103 @@ const finishInviteSignupInOrgPage = async (
   }
 };
 
+type ImportSheetResult = {
+  createdCount: number;
+  parentLinksCreated: number;
+  sprintLinksCreated: number;
+  skippedCount: number;
+  errors: string[];
+};
+
+export const createSheetItems = async (
+  _source: Record<string, any>,
+  args: { projectId: string; rows: Record<string, any>[]; batchSize?: number },
+  context: Record<string, any>
+): Promise<ImportSheetResult> => {
+  const projectId = args.projectId;
+  const rows = args.rows || [];
+  const batchSize = Math.min(Math.max(Number(args.batchSize || 200), 10), 1000);
+
+  const userId = context?.jwt?.uid || context?.jwt?.sub;
+  if (!userId) throw new Error("Missing user id in context.jwt (uid/sub)");
+  if (!projectId) throw new Error("projectId is required");
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("rows is required and must be non-empty array");
+  }
+
+  const cleanedRows = rows
+    .map((r) => ({
+      id: String(r.id ?? "").trim(),
+      label: String(r.label ?? "").trim(),
+      statusLabel: String(r.statusLabel ?? "Not started").trim(),
+      parentIdResolved:
+        String(r.parentIdResolved ?? projectId).trim() || projectId,
+      workItemType: String(r.workItemType ?? "Epic").trim(),
+      sprints: Array.isArray(r.sprints)
+        ? r.sprints.map((x) => String(x).trim()).filter(Boolean)
+        : [],
+    }))
+    .filter((r) => r.id && r.label);
+
+  const skippedCount = rows.length - cleanedRows.length;
+
+  const driver = (await Neo4JConnection.getInstance()).driver;
+  const session = driver.session();
+
+  try {
+    const errors: string[] = [];
+
+    // 1) Create
+    const createRes = await session.run(IMPORT_BACKLOGITEMS_ROWS_CREATE, {
+      projectId,
+      userId,
+      rows: cleanedRows,
+      batchSize,
+    });
+
+    const createResult = createRes.records?.[0]?.get("result") ?? null;
+
+    // NOTE: counters here often show 0 for apoc.periodic.iterate (it commits in inner tx)
+    // So prefer the apoc "total" field for how many rows processed.
+    const createdCount = Number(createResult?.total ?? 0);
+
+    if (createResult?.errorMessages?.length) {
+      errors.push(...createResult.errorMessages.map((e: any) => String(e)));
+    }
+
+    // 2) Connect parents
+    const parentsRes = await session.run(
+      IMPORT_BACKLOGITEMS_ROWS_CONNECT_PARENTS,
+      {
+        projectId,
+        batchSize,
+      }
+    );
+
+    const parentsResult = parentsRes.records?.[0]?.get("result") ?? null;
+    const parentLinksCreated = Number(parentsResult?.total ?? 0);
+
+    if (parentsResult?.errorMessages?.length) {
+      errors.push(...parentsResult.errorMessages.map((e: any) => String(e)));
+    }
+
+    return {
+      createdCount,
+      parentLinksCreated,
+      sprintLinksCreated: 0,
+      skippedCount,
+      errors,
+    };
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
   finishInviteSignup,
   finishInviteSignupInOrgPage,
   cloneCanvas,
+  createSheetItems,
 };
