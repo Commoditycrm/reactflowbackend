@@ -24,7 +24,7 @@ const createEventNotification = async (req: Request, res: Response) => {
     orgOwnerEmail,
     projectOwnerEmail,
     path,
-    phoneNumber, // Optional for WhatsApp
+    phoneNumber,
   } = req.body;
 
   // Validation
@@ -32,7 +32,6 @@ const createEventNotification = async (req: Request, res: Response) => {
     !userName ||
     !title ||
     !projectName ||
-    !description ||
     !orgName ||
     !startLocal ||
     !endLocal ||
