@@ -1447,7 +1447,7 @@ const typeDefs = gql`
         """
         columnName: "endDate"
       )
-    progress: Float
+    progress: Float!
       @cypher(
         statement: """
         WITH this AS p
@@ -1499,7 +1499,7 @@ const typeDefs = gql`
         RETURN
           CASE
             WHEN totalItems > 0
-              THEN round(100.0 * completedItems / totalItems, 2)
+              THEN toInteger(ceil(100.0 * completedItems / totalItems))
             ELSE 0.0
           END AS progress
         """
