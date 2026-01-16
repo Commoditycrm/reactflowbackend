@@ -3315,6 +3315,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: []
       )
+    file: [File!]!
+      @relationship(
+        type: "HAS_FILE_ITEM"
+        direction: OUT
+        nestedOperations: []
+        aggregate: false
+      )
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
