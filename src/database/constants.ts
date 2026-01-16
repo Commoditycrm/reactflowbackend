@@ -700,6 +700,97 @@ YIELD batches, total, failedBatches, errorMessages
 RETURN total AS deletedNodes, batches, failedBatches, errorMessages
 `;
 
+export const CLEANUP_DUMMY_PROJECTS_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:Project) WHERE NOT EXISTS(()-[:HAS_PROJECTS]->(n)) 
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
+export const CLEANUP_DUMMY_FOLDERS_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:Folder)
+  WHERE NOT EXISTS (()-[:HAS_CHILD_FOLDER]->(n))
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
+export const CLEANUP_DUMMY_FILES_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:File) WHERE NOT EXISTS(()-[:HAS_CHILD_FILE]->(n))
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
+export const CLEANUP_DUMMY_NODES_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:FlowNode) WHERE NOT EXISTS(()-[:HAS_FLOW_NODE]->(n))
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
+export const CLEANUP_DUMMY_ITEMS_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:BacklogItem) WHERE NOT EXISTS(()-[:HAS_CHILD_ITEM]->(n))
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
+export const CLEANUP_DUMMY_COMMENTS_CQL = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (n:Comment) WHERE NOT EXISTS(()-[:HAS_COMMENT]->(n))
+  RETURN n
+  ",
+  "
+  DETACH DELETE n
+  ",
+  { batchSize: 100, parallel: true }
+)
+YIELD  batches, total
+RETURN  batches, total
+`;
+
 export const CREATE_INVITE_USER_CQL = `
  MATCH (invite:Invite)
  WHERE
@@ -913,21 +1004,21 @@ CALL apoc.periodic.iterate(
   CALL {
     WITH org, typeName
     OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType)
-    WHERE toLower(t.name) = toLower(typeName)
+    WHERE toLower(t.defaultName) = toLower(typeName)
     RETURN head(collect(t)) AS itemType
   }
 
   CALL {
     WITH org
     OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(r:RiskLevel)
-    WHERE toLower(r.name) CONTAINS 'low'
+    WHERE toLower(r.defaultName) CONTAINS 'low'
     RETURN head(collect(r)) AS itemRiskLevel
   }
 
   CALL {
     WITH org, statusName
     OPTIONAL MATCH (org)-[:HAS_STATUS]->(s:Status)
-    WHERE toLower(s.name) = toLower(statusName) OR toLower(s.name) CONTAINS toLower(statusName)
+    WHERE toLower(s.defaultName) = toLower(statusName) OR toLower(s.defaultName) CONTAINS toLower(statusName)
     RETURN head(collect(s)) AS status
   }
 
@@ -1008,6 +1099,49 @@ CALL apoc.periodic.iterate(
     parallel: false,
     retries: 3,
     params: { projectId: $projectId }
+  }
+)
+YIELD batches, total, failedBatches, failedOperations, errorMessages
+RETURN {batches:batches, total:total, failedBatches:failedBatches, failedOperations:failedOperations, errorMessages:errorMessages} AS result
+`;
+
+export const IMPORT_BACKLOGITEMS_CREATE_SPRINTS_AND_CONNECT = `
+CALL apoc.periodic.iterate(
+  "
+  MATCH (p:Project {id:$projectId})
+  MATCH (u:User {externalId:$userId})
+  MATCH (bi:BacklogItem {projectId: p.id})
+  WHERE bi.sprintsRef IS NOT NULL AND size(bi.sprintsRef) > 0
+  RETURN p, u, bi
+  ",
+  "
+  WITH p, u, bi
+  UNWIND bi.sprintsRef AS sprintRaw
+  WITH p, u, bi, trim(toString(sprintRaw)) AS sprintName
+  WHERE sprintName <> ''
+
+  WITH p, u, bi, sprintName, (p.id + '-' + toLower(sprintName)) AS sprintKey
+
+  MERGE (s:Sprint {uniqueSprint: sprintKey})
+  ON CREATE SET
+    s.id = randomUUID(),
+    s.name = sprintName,
+    s.startDate = datetime(),
+    s.endDate = datetime()
+  ON MATCH SET
+    s.name = sprintName
+
+  MERGE (u)-[:CREATED_SPRINT]->(s)
+  MERGE (s)-[:HAS_SPRINTS]->(p)      
+  MERGE (bi)-[:HAS_SPRINTS]->(s)     
+
+  RETURN 1
+  ",
+  {
+    batchSize: $batchSize,
+    parallel: false,
+    retries: 3,
+    params: { projectId: $projectId, userId: $userId }
   }
 )
 YIELD batches, total, failedBatches, failedOperations, errorMessages

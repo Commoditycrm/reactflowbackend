@@ -26,7 +26,7 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { Integer } from "neo4j-driver";
-import { BacklogItem, User, UserRole } from "../../interfaces";
+import { BacklogItem, ImportSheetResult, UserRole } from "../../interfaces";
 import { FirebaseFunctions } from "../firebase/firebaseFunctions";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import retrySetClaims from "../../util/retrySetCustomClaims";
@@ -438,14 +438,6 @@ const finishInviteSignupInOrgPage = async (
   }
 };
 
-type ImportSheetResult = {
-  createdCount: number;
-  parentLinksCreated: number;
-  sprintLinksCreated: number;
-  skippedCount: number;
-  errors: string[];
-};
-
 export const createSheetItems = async (
   _source: Record<string, any>,
   args: { projectId: string; rows: Record<string, any>[]; batchSize?: number },
@@ -494,8 +486,6 @@ export const createSheetItems = async (
 
     const createResult = createRes.records?.[0]?.get("result") ?? null;
 
-    // NOTE: counters here often show 0 for apoc.periodic.iterate (it commits in inner tx)
-    // So prefer the apoc "total" field for how many rows processed.
     const createdCount = Number(createResult?.total ?? 0);
 
     if (createResult?.errorMessages?.length) {

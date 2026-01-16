@@ -26,3 +26,11 @@ export type GeneratedTask = {
   type:BacklogItemType | null
 };
 
+
+export type ImportSheetResult = {
+  createdCount: number;
+  parentLinksCreated: number;
+  sprintLinksCreated: number;
+  skippedCount: number;
+  errors: string[];
+};
