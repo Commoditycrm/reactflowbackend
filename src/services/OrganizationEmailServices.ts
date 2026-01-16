@@ -1,7 +1,7 @@
 import { MailDataRequired } from "@sendgrid/mail";
 import { EnvLoader } from "../util/EnvLoader";
 import { EmailService } from "../services/EmailService"; // adjust path if needed
-import { InviteUserProps, InviteWorkForceProps } from "../interfaces";
+import { InviteUserProps, InviteWorkForceProps } from "../interfaces/types";
 
 export class OrganizationEmailService {
   private emailService = EmailService.getInstance();
