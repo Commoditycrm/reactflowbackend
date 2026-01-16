@@ -3322,7 +3322,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: []
       )
-    file: [File!]!
+    files: [File!]!
       @relationship(
         type: "HAS_FILE_ITEM"
         direction: OUT
