@@ -3,7 +3,7 @@ name: Ensure Server Cron Jobs
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 0 * * 0" # Sun 00:00 UTC (optional)
+    - cron: "0 0 * * 0" 
 
 jobs:
   ensure-cron:

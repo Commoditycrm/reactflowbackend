@@ -32,7 +32,7 @@ const parseList = (raw: string) =>
 export function readAllSheetAsJson({ buffer, projectId }: ReadAllArgs) {
   const wb = XLSX.read(buffer, { type: "buffer" });
 
-  const sheetName = "All";
+  const sheetName = "Epic & Feature &User Story & Ta";
   const ws = wb.Sheets[sheetName];
   if (!ws) {
     throw new Error(`Sheet "${sheetName}" not found. Available: ${wb.SheetNames.join(", ")}`);
@@ -59,7 +59,7 @@ export function readAllSheetAsJson({ buffer, projectId }: ReadAllArgs) {
     const sprintRaw = pick(row, ["Sprints", "Tags"]) || "";
 
     return {
-      rowNumber: index + 2, // header is row 1 in Excel
+      rowNumber: index + 1, // header is row 1 in Excel
       workItemType,
       id,
       label,
