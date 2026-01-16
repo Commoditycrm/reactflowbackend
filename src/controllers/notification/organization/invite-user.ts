@@ -3,10 +3,10 @@ import { getFirebaseAdminAuth } from "../../../graphql/firebase/admin";
 import { OrganizationEmailService } from "../../../services";
 import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
-import { InviteUserProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
 import crypto from "crypto";
+import { InviteUserProps } from "../../../interfaces/types";
 
 const auth = getFirebaseAdminAuth().auth();
 const jwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
