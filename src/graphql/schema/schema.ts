@@ -442,7 +442,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    backlogItem: BacklogItem!
+    backlogItem: BacklogItem
       @relationship(
         type: "HAS_BACKLOGITEM_TYPE"
         direction: IN
