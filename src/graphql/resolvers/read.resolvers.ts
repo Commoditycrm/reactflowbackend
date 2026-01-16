@@ -7,7 +7,6 @@ import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import {
   BacklogItemType,
-  GeneratedTask,
   OpenAiResponse,
   SprintWhere,
   User,
@@ -15,6 +14,7 @@ import {
 } from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
 import { Neo4JConnection } from "../../database/connection";
+import { GeneratedTask } from "../../interfaces/types";
 export const getModelWhereClause = (
   modelName: string,
   loggedInUser: User

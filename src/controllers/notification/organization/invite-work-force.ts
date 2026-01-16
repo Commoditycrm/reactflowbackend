@@ -3,9 +3,9 @@ import { getFirebaseAdminAuth } from "../../../graphql/firebase/admin";
 import { OrganizationEmailService } from "../../../services";
 import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
-import { InviteWorkForceProps } from "../../../interfaces";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
+import { InviteWorkForceProps } from "../../../interfaces/types";
 
 const jwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
 const clientUrl = EnvLoader.getOrThrow("CLIENT_URL");
