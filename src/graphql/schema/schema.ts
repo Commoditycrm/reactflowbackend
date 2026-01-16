@@ -442,6 +442,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
+    backlogItem: BacklogItem!
+      @relationship(
+        type: "HAS_BACKLOGITEM_TYPE"
+        direction: IN
+        aggregate: false
+        nestedOperations: []
+      )
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
