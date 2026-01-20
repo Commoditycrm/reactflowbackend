@@ -442,13 +442,16 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    backlogItem: BacklogItem
-      @relationship(
-        type: "HAS_BACKLOGITEM_TYPE"
-        direction: IN
-        aggregate: false
-        nestedOperations: []
-      )
+    backlogItemItemCount(projectId:String): Int! @cypher(
+      statement:"""
+      WITH this
+      MATCH(this)<-[:HAS_BACKLOGITEM_TYPE]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project)
+      WHERE b.deletedAt IS NULL AND (p.id IS NULL OR p.id = $projectId)
+      RETURN COUNT(DISTINCT b) AS backlogItemItemCount
+      """
+      columnName:"backlogItemItemCount"
+    )
+     
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
