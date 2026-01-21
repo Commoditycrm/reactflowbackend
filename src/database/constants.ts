@@ -766,6 +766,9 @@ CALL apoc.periodic.iterate(
   "
   MATCH (n:BacklogItem) WHERE NOT EXISTS(()-[:HAS_CHILD_ITEM]->(n))
   RETURN n
+  UNION 
+  MATCH (n:BacklogItem) WHERE NOT EXISTS((n)-[:ITEM_IN_PROJECT]->())
+  RETURN n
   ",
   "
   DETACH DELETE n
