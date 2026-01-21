@@ -442,16 +442,17 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    backlogItemItemCount(projectId:String): Int! @cypher(
-      statement:"""
-      WITH this
-      MATCH(this)<-[:HAS_BACKLOGITEM_TYPE]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project)
-      WHERE b.deletedAt IS NULL AND (p.id IS NULL OR p.id = $projectId)
-      RETURN COUNT(DISTINCT b) AS backlogItemItemCount
-      """
-      columnName:"backlogItemItemCount"
-    )
-     
+    backlogItemItemCount(projectId: String): Int!
+      @cypher(
+        statement: """
+        WITH this
+        MATCH(this)<-[:HAS_BACKLOGITEM_TYPE]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project)
+        WHERE b.deletedAt IS NULL AND (p.id IS NULL OR p.id = $projectId)
+        RETURN COUNT(DISTINCT b) AS backlogItemItemCount
+        """
+        columnName: "backlogItemItemCount"
+      )
+
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
@@ -3664,6 +3665,51 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
+    backlogItemItemCount(project: ID): Int!
+      @cypher(
+        statement: """
+        WITH this AS sprint
+        MATCH (sprint)-[:HAS_SPRINTS]->(p:Project)
+        WHERE $project IS NULL OR p.id = $project
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS flowNodes
+        }
+
+        CALL {
+          // from flow nodes -> backlog items (only those in THIS sprint)
+          WITH p, sprint, flowNodes
+          UNWIND flowNodes AS fn
+          MATCH path=(fn)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sprint) }
+          RETURN DISTINCT bi
+
+          UNION
+
+          // from project -> backlog items (only those in THIS sprint)
+          WITH p, sprint
+          MATCH path=(p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND EXISTS { MATCH (bi)-[:HAS_SPRINTS]->(sprint) }
+          RETURN DISTINCT bi
+        }
+
+        RETURN count(DISTINCT bi) AS backlogItemItemCount
+        """
+        columnName: "backlogItemItemCount"
+      )
+
     project: Project!
       @relationship(
         type: "HAS_SPRINTS"
