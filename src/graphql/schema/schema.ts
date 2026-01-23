@@ -1537,11 +1537,20 @@ const typeDefs = gql`
         aggregate: true
         nestedOperations: []
       )
-    ganttChartItems(limit: Int! = 10, offset: Int! = 0): [BacklogItem!]!
+    ganttChartItems(
+      limit: Int! = 10
+      offset: Int! = 0
+      typeIds: [ID!]
+    ): [BacklogItem!]!
       @cypher(
         statement: """
-        WITH this
-        MATCH(this)-[r:HAS_CHILD_ITEM]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        WITH this,$typeIds AS typeIds
+        MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        WHERE bi.deletedAt IS NULL AND ALL (x IN nodes(p) WHERE NOT x:BacklogItem OR x.deleted IS NULL)
+        AND (
+          size(coalesce(typeIds,[]))=0
+          OR ANY(id IN typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+        )
         RETURN DISTINCT bi AS backlogItems
         ORDER BY bi.uid DESC
         SKIP $offset LIMIT $limit
