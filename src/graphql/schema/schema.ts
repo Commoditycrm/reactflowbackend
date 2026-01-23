@@ -4046,11 +4046,11 @@ const typeDefs = gql`
           WITH org, createdRiskLevelCount, count(*) AS createdStatusCount
 
           UNWIND [
-            { id: 1, name: "Epic" },
-            { id: 2, name: "Story" },
-            { id: 3, name: "Issue" },
-            { id: 4, name: "Task" },
-            { id: 5, name: "Expense" }
+            { id: 1, name: "Epic", selectable:true },
+            { id: 2, name: "Story",selectable:true },
+            { id: 3, name: "Issue",selectable:false },
+            { id: 4, name: "Task" ,selectable:false},
+            { id: 5, name: "Expense",selectable:false }
           ] AS type
           CREATE (newType:BacklogItemType {
             id: randomUUID(),
@@ -4060,6 +4060,7 @@ const typeDefs = gql`
             uniqueBacklogType: org.id + '-' + toLower(replace(type.name," ","")),
             createdAt: datetime(),
             default: true,
+            selectable:type.selectable,
             autoSelect: CASE WHEN type.name = 'Task' THEN true ELSE false END
           })
           MERGE (org)-[:HAS_BACKLOGITEM_TYPE]->(newType)
