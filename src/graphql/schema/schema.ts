@@ -1553,7 +1553,6 @@ const typeDefs = gql`
         )
         RETURN DISTINCT bi AS backlogItems
         ORDER BY bi.uid DESC
-        SKIP $offset LIMIT $limit
         """
         columnName: "backlogItems"
       )
