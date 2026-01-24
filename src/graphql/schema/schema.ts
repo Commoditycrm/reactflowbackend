@@ -3816,6 +3816,7 @@ const typeDefs = gql`
     color: String!
     count: Int!
     status: String!
+    defaultName:String!
     id: ID!
   }
 
@@ -4491,9 +4492,10 @@ const typeDefs = gql`
           size([x IN items WHERE EXISTS { MATCH (x)-[:HAS_STATUS]->(s) }]) AS cnt,
           s.name  AS status,
           s.color AS color,
-          s.id    AS sid
+          s.id    AS sid,
+          s.defaultName AS defaultName
 
-        RETURN { status: status, color: color, count: cnt, id: sid } AS result
+        RETURN { status: status, color: color, count: cnt, id: sid,defaultName:defaultName } AS result
         ORDER BY result.status
         """
         columnName: "result"
