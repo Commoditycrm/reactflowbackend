@@ -1541,18 +1541,24 @@ const typeDefs = gql`
       limit: Int! = 10
       offset: Int! = 0
       typeIds: [ID!]
+      statusIds: [ID!]
     ): [BacklogItem!]!
       @cypher(
         statement: """
-        WITH this,$typeIds AS typeIds
+        WITH this,$typeIds AS typeIds , $statusIds AS statusIds
         MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
         WHERE bi.deletedAt IS NULL AND ALL (x IN nodes(p) WHERE NOT x:BacklogItem OR x.deleted IS NULL)
         AND (
           size(coalesce(typeIds,[]))=0
           OR ANY(id IN typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
         )
+        AND (
+          size(coalesce(statusIds,[]))=0
+          OR ANY(id IN statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+        )
         RETURN DISTINCT bi AS backlogItems
-        ORDER BY bi.uid DESC
+        ORDER BY bi.startDate ASC
+        SKIP $offset LIMIT $limit
         """
         columnName: "backlogItems"
       )
@@ -3341,6 +3347,7 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
+    tags: [String!]! 
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
@@ -3816,7 +3823,7 @@ const typeDefs = gql`
     color: String!
     count: Int!
     status: String!
-    defaultName:String!
+    defaultName: String!
     id: ID!
   }
 
