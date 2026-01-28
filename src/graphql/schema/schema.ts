@@ -3347,7 +3347,7 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
-    tags: [String!]! 
+    # tags: [String!]! 
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
