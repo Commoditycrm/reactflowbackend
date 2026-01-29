@@ -84,6 +84,7 @@ const createBacklogItemWithUID = async (
           occuredOn
           paidOn
           startDate
+          endDate
           riskLevel{
           id
           name
