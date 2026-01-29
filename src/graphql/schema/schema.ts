@@ -2046,6 +2046,140 @@ const typeDefs = gql`
       )
   }
 
+type Tag implements TimestampedCreatable & Timestamped
+    @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
+      validate: [
+        {
+          when: [BEFORE]
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+              ]
+            }
+          }
+        }
+        {
+          when: [BEFORE]
+          operations: [DELETE, UPDATE]
+          where: {
+            OR: [
+              { node: { createdBy: { externalId: "$jwt.sub" } } }
+              {
+                node: {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              }
+              {
+                node: {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [CREATE]
+          where: {
+            node: {
+              OR: [
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: {
+                    assignedUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "SUPER_USER"
+                    }
+                  }
+                }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    )
+    @query(read: true, aggregate: false) {
+    id: ID! @id
+    name: String!
+    # uniqueSprint: String!
+    #   @unique
+    #   @settable(onCreate: false, onUpdate: false)
+    #   @populatedBy(callback: "uniqueSprint", operations: [CREATE])
+    createdBy: User!
+      @relationship(
+        type: "CREATED_SPRINT"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+      @settable(onCreate: true, onUpdate: false)
+    project: Project!
+      @relationship(
+        type: "HAS_Tags"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
+    deletedAt: DateTime
+    createdAt: DateTime!
+      @timestamp(operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+  }
+  
+
   type WhatsappNotification
     @authorization(
       validate: [
@@ -3347,7 +3481,7 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
-    # tags: [String!]! 
+    tags: [String!]! 
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
