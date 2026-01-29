@@ -2046,7 +2046,7 @@ const typeDefs = gql`
       )
   }
 
-type Tag implements TimestampedCreatable & Timestamped
+  type Tag implements TimestampedCreatable & Timestamped
     @authorization(
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
@@ -2178,7 +2178,6 @@ type Tag implements TimestampedCreatable & Timestamped
       @settable(onCreate: true, onUpdate: false)
     updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
-  
 
   type WhatsappNotification
     @authorization(
@@ -3453,6 +3452,13 @@ type Tag implements TimestampedCreatable & Timestamped
         aggregate: false
         nestedOperations: [DISCONNECT, CONNECT]
       )
+    tags: [Tag!]!
+      @relationship(
+        type: "HAS_Tags"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [DISCONNECT, CONNECT]
+      )
     attachedFiles: [ExternalFile!]!
       @relationship(
         type: "HAS_ATTACHED_FILE"
@@ -3481,7 +3487,6 @@ type Tag implements TimestampedCreatable & Timestamped
         nestedOperations: []
         aggregate: false
       )
-    tags: [String!]! 
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
