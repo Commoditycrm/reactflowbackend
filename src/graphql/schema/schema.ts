@@ -4936,6 +4936,91 @@ const typeDefs = gql`
         """
         columnName: "comments"
       )
+    customBacklogItem(
+      limit: Int! = 10
+      offset: Int = 0
+      filters: BacklogItemFilterInput
+      parentId: ID!
+      order: String! = "DESC"
+    ): [BacklogItem!]!
+      @cypher(
+        statement: """
+        WITH coalesce($filters,{}) AS f, $parentId AS parentId, toUpper($order) AS ord
+        MATCH (parent:BacklogItem|FlowNode {id: parentId})-[:HAS_CHILD_ITEM]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL AND (
+          size(coalesce(f.titleContains,[])) = 0
+          OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+        )
+        AND (
+          size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+            OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
+          )
+        )
+        AND (
+          size(coalesce(f.typeIds,[]))=0
+          OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+        )
+        AND (
+          size(coalesce(f.statusIds,[]))=0
+          OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+        )
+        AND (
+          size(coalesce(f.sprintIds,[]))=0
+          OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+        )
+        AND (
+          size(coalesce(f.riskLevelIds,[]))=0
+          OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+        )
+
+        WITH DISTINCT bi, ord
+        ORDER BY
+          CASE WHEN ord = "ASC"  THEN bi.uid END ASC,
+          CASE WHEN ord = "DESC" THEN bi.uid END DESC
+        SKIP $offset LIMIT $limit
+
+        RETURN bi AS backlogItems
+        """
+        columnName: "backlogItems"
+      )
+    backlogItemsCount(filters: BacklogItemFilterInput, parentId: ID!): Int!
+      @cypher(
+        statement: """
+        WITH coalesce($filters,{}) AS f,$parentId AS parentId
+        MATCH(parent:BacklogItem|FlowNode {id:parentId})-[:HAS_CHILD_ITEM]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL AND (
+            size(coalesce(f.titleContains,[]))=0
+            OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
+          AND (
+            size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+              OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
+            )
+          )
+          AND (
+            size(coalesce(f.typeIds,[]))=0
+            OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+          )
+          AND (
+            size(coalesce(f.statusIds,[]))=0
+            OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+          )
+          AND (
+            size(coalesce(f.sprintIds,[]))=0
+            OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+          )
+          AND (
+            size(coalesce(f.riskLevelIds,[]))=0
+            OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+          )
+        RETURN COUNT(DISTINCT bi) AS backlogItemsCount
+        """
+        columnName: "backlogItemsCount"
+      )
 
     commentsCount(projectId: ID, filters: CommentsFilter): Int!
       @cypher(
