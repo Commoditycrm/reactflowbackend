@@ -1237,6 +1237,7 @@ const typeDefs = gql`
     assignedUserIds: [ID!]
     statusIds: [ID!]
     sprintIds: [ID!]
+    tagIds: [ID!]
     riskLevelIds: [ID!]
     titleContains: [String!]
     tableType: BacklogTable
@@ -1639,6 +1640,10 @@ const typeDefs = gql`
             size(coalesce(f.titleContains,[]))=0
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
+          AND (
+            size(coalesce(f.tagIds,[]))=0
+            OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
+          )
 
         WITH DISTINCT bi, tab, me, cfg, f,
           EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
@@ -1767,6 +1772,10 @@ const typeDefs = gql`
           AND (
             size(coalesce(f.titleContains,[]))=0
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
+          AND (
+            size(coalesce(f.tagIds,[]))=0
+            OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
           )
 
         WITH DISTINCT bi, tab, me, cfg, f,
@@ -2162,7 +2171,7 @@ const typeDefs = gql`
       @settable(onCreate: true, onUpdate: false)
     project: Project!
       @relationship(
-        type: "HAS_Tags"
+        type: "HAS_TAGS"
         direction: OUT
         aggregate: false
         nestedOperations: [CONNECT]
@@ -3454,7 +3463,7 @@ const typeDefs = gql`
       )
     tags: [Tag!]!
       @relationship(
-        type: "HAS_Tags"
+        type: "HAS_TAGS"
         direction: OUT
         aggregate: false
         nestedOperations: [DISCONNECT, CONNECT]
