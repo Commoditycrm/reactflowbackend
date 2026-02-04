@@ -1237,6 +1237,7 @@ const typeDefs = gql`
     assignedUserIds: [ID!]
     statusIds: [ID!]
     sprintIds: [ID!]
+    tagIds: [ID!]
     riskLevelIds: [ID!]
     titleContains: [String!]
     tableType: BacklogTable
@@ -1639,6 +1640,10 @@ const typeDefs = gql`
             size(coalesce(f.titleContains,[]))=0
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
           )
+          AND (
+            size(coalesce(f.tagIds,[]))=0
+            OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
+          )
 
         WITH DISTINCT bi, tab, me, cfg, f,
           EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
@@ -1767,6 +1772,10 @@ const typeDefs = gql`
           AND (
             size(coalesce(f.titleContains,[]))=0
             OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
+          AND (
+            size(coalesce(f.tagIds,[]))=0
+            OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
           )
 
         WITH DISTINCT bi, tab, me, cfg, f,
@@ -2044,6 +2053,139 @@ const typeDefs = gql`
         nestedOperations: [CONNECT, DISCONNECT]
         aggregate: false
       )
+  }
+
+  type Tag implements TimestampedCreatable & Timestamped
+    @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
+      validate: [
+        {
+          when: [BEFORE]
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+                {
+                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                }
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+              ]
+            }
+          }
+        }
+        {
+          when: [BEFORE]
+          operations: [DELETE, UPDATE]
+          where: {
+            OR: [
+              { node: { createdBy: { externalId: "$jwt.sub" } } }
+              {
+                node: {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+              }
+              {
+                node: {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [CREATE]
+          where: {
+            node: {
+              OR: [
+                { project: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  project: {
+                    assignedUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "SUPER_USER"
+                    }
+                  }
+                }
+                {
+                  project: {
+                    organization: { createdBy: { externalId: "$jwt.sub" } }
+                  }
+                }
+                {
+                  project: {
+                    organization: {
+                      memberUsers_SINGLE: {
+                        externalId: "$jwt.sub"
+                        role: "ADMIN"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    )
+    @query(read: true, aggregate: false) {
+    id: ID! @id
+    name: String!
+    uniqueTag: String!
+      @unique
+      @settable(onCreate: false, onUpdate: false)
+      @populatedBy(callback: "uniqueSprint", operations: [CREATE])
+    createdBy: User!
+      @relationship(
+        type: "CREATED_SPRINT"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+      @settable(onCreate: true, onUpdate: false)
+    project: Project!
+      @relationship(
+        type: "HAS_TAGS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
+    deletedAt: DateTime
+    createdAt: DateTime!
+      @timestamp(operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
   type WhatsappNotification
@@ -3319,6 +3461,13 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [DISCONNECT, CONNECT]
       )
+    tags: [Tag!]!
+      @relationship(
+        type: "HAS_TAGS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [DISCONNECT, CONNECT]
+      )
     attachedFiles: [ExternalFile!]!
       @relationship(
         type: "HAS_ATTACHED_FILE"
@@ -3347,7 +3496,6 @@ const typeDefs = gql`
         nestedOperations: []
         aggregate: false
       )
-    # tags: [String!]! 
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
@@ -3928,6 +4076,13 @@ const typeDefs = gql`
     @mutation(operations: []) {
     label: String!
     counts: [Int!]!
+  }
+
+  type EventSummary
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    name: String!
+    hours: [Int!]!
   }
 
   type ItemCountGroupedRiskLevel
@@ -4885,6 +5040,91 @@ const typeDefs = gql`
         """
         columnName: "comments"
       )
+    customBacklogItem(
+      limit: Int! = 10
+      offset: Int = 0
+      filters: BacklogItemFilterInput
+      parentId: ID!
+      order: String! = "DESC"
+    ): [BacklogItem!]!
+      @cypher(
+        statement: """
+        WITH coalesce($filters,{}) AS f, $parentId AS parentId, toUpper($order) AS ord
+        MATCH (parent:BacklogItem|FlowNode {id: parentId})-[:HAS_CHILD_ITEM]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL AND (
+          size(coalesce(f.titleContains,[])) = 0
+          OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+        )
+        AND (
+          size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+            OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
+          )
+        )
+        AND (
+          size(coalesce(f.typeIds,[]))=0
+          OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+        )
+        AND (
+          size(coalesce(f.statusIds,[]))=0
+          OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+        )
+        AND (
+          size(coalesce(f.sprintIds,[]))=0
+          OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+        )
+        AND (
+          size(coalesce(f.riskLevelIds,[]))=0
+          OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+        )
+
+        WITH DISTINCT bi, ord
+        ORDER BY
+          CASE WHEN ord = "ASC"  THEN bi.uid END ASC,
+          CASE WHEN ord = "DESC" THEN bi.uid END DESC
+        SKIP $offset LIMIT $limit
+
+        RETURN bi AS backlogItems
+        """
+        columnName: "backlogItems"
+      )
+    backlogItemsCount(filters: BacklogItemFilterInput, parentId: ID!): Int!
+      @cypher(
+        statement: """
+        WITH coalesce($filters,{}) AS f,$parentId AS parentId
+        MATCH(parent:BacklogItem|FlowNode {id:parentId})-[:HAS_CHILD_ITEM]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL AND (
+            size(coalesce(f.titleContains,[]))=0
+            OR ANY(q IN f.titleContains WHERE toLower(bi.label) CONTAINS toLower(q))
+          )
+          AND (
+            size(coalesce(f.assignedUserIds,[])) = 0
+            OR ANY(id IN f.assignedUserIds WHERE
+              (id = "UNASSIGNED" AND NOT (bi)-[:HAS_ASSIGNED_USER]->(:User))
+              OR (bi)-[:HAS_ASSIGNED_USER]->(:User {id: id})
+            )
+          )
+          AND (
+            size(coalesce(f.typeIds,[]))=0
+            OR ANY(id IN f.typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+          )
+          AND (
+            size(coalesce(f.statusIds,[]))=0
+            OR ANY(id IN f.statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+          )
+          AND (
+            size(coalesce(f.sprintIds,[]))=0
+            OR ANY(id IN f.sprintIds WHERE (bi)-[:HAS_SPRINTS]->(:Sprint {id: id}))
+          )
+          AND (
+            size(coalesce(f.riskLevelIds,[]))=0
+            OR ANY(id IN f.riskLevelIds WHERE (bi)-[:HAS_RISK_LEVEL]->(:RiskLevel {id: id}))
+          )
+        RETURN COUNT(DISTINCT bi) AS backlogItemsCount
+        """
+        columnName: "backlogItemsCount"
+      )
 
     commentsCount(projectId: ID, filters: CommentsFilter): Int!
       @cypher(
@@ -5181,6 +5421,49 @@ const typeDefs = gql`
         SKIP $offset LIMIT $limit
         """
         columnName: "orgMembers"
+      )
+
+    eventSummaryByAsset(projectId: ID!, year: Int!): [EventSummary!]!
+      @cypher(
+        statement: """
+        MATCH (p:Project {id: $projectId})-[:HAS_EVENT]->(e:CalenderEvent)
+        OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(a:Asset)
+
+        WITH e, a,
+             datetime({year:$year,   month:1, day:1}) AS ys,
+             datetime({year:$year+1, month:1, day:1}) AS ye
+        WHERE datetime(e.startDate) < ye
+          AND datetime(e.endDate)   >= ys
+
+        WITH a,
+             datetime(e.startDate) AS s0,
+             datetime(e.endDate)   AS e0,
+             ys, ye
+        WITH a,
+             CASE WHEN s0 < ys THEN ys ELSE s0 END AS s,
+             CASE WHEN e0 > ye THEN ye ELSE e0 END AS e
+
+        WITH a,
+             duration.inSeconds(s, e).seconds / 3600.0 AS hrs,
+             date(s) AS d
+
+        WITH a, toInteger(d.month) - 1 AS m, hrs
+        WITH coalesce(a.name, 'Unassigned') AS name, m, sum(hrs) AS monthHours
+
+        WITH name, collect({m:m, v:monthHours}) AS buckets
+        WITH name,
+             [i IN range(0,11) |
+               toInteger(round(
+                 reduce(acc = 0.0, b IN buckets |
+                   acc + CASE WHEN b.m = i THEN b.v ELSE 0.0 END
+                 )
+               ))
+             ] AS hours
+
+        RETURN { name: name, hours: hours } AS eventSummary
+        ORDER BY name
+        """
+        columnName: "eventSummary"
       )
 
     orgMembersCount(
