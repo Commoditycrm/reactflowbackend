@@ -4,6 +4,7 @@ import { initializeApolloServer } from "../graphql/init/apollo.init";
 import cronRouter from "./cronRouters";
 import authRouter from "./authRouters";
 import notificationRouter from "./notificationRouter";
+import ragRouter from "./ragRouter";
 
 import multer from "multer";
 import { readEpicSheet } from "../controllers/xlsheet/readSheet";
@@ -25,6 +26,7 @@ const apiRouter = async (
   router.use("/cron", cronRouter);
   router.use("/auth", authRouter);
   router.use("/notification", notificationRouter);
+  router.use("/rag", ragRouter);
   router.post("/sheet/read", upload.single("file"), readEpicSheet);
 
   return router;
