@@ -2157,10 +2157,10 @@ const typeDefs = gql`
     @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
-    # uniqueSprint: String!
-    #   @unique
-    #   @settable(onCreate: false, onUpdate: false)
-    #   @populatedBy(callback: "uniqueSprint", operations: [CREATE])
+    uniqueTag: String!
+      @unique
+      @settable(onCreate: false, onUpdate: false)
+      @populatedBy(callback: "uniqueSprint", operations: [CREATE])
     createdBy: User!
       @relationship(
         type: "CREATED_SPRINT"
@@ -3990,6 +3990,13 @@ const typeDefs = gql`
     counts: [Int!]!
   }
 
+  type EventSummary
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    name: String!
+    hours: [Int!]!
+  }
+
   type ItemCountGroupedRiskLevel
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
@@ -5326,6 +5333,49 @@ const typeDefs = gql`
         SKIP $offset LIMIT $limit
         """
         columnName: "orgMembers"
+      )
+
+    eventSummaryByAsset(projectId: ID!, year: Int!): [EventSummary!]!
+      @cypher(
+        statement: """
+        MATCH (p:Project {id: $projectId})-[:HAS_EVENT]->(e:CalenderEvent)
+        OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(a:Asset)
+
+        WITH e, a,
+             datetime({year:$year,   month:1, day:1}) AS ys,
+             datetime({year:$year+1, month:1, day:1}) AS ye
+        WHERE datetime(e.startDate) < ye
+          AND datetime(e.endDate)   >= ys
+
+        WITH a,
+             datetime(e.startDate) AS s0,
+             datetime(e.endDate)   AS e0,
+             ys, ye
+        WITH a,
+             CASE WHEN s0 < ys THEN ys ELSE s0 END AS s,
+             CASE WHEN e0 > ye THEN ye ELSE e0 END AS e
+
+        WITH a,
+             duration.inSeconds(s, e).seconds / 3600.0 AS hrs,
+             date(s) AS d
+
+        WITH a, toInteger(d.month) - 1 AS m, hrs
+        WITH coalesce(a.name, 'Unassigned') AS name, m, sum(hrs) AS monthHours
+
+        WITH name, collect({m:m, v:monthHours}) AS buckets
+        WITH name,
+             [i IN range(0,11) |
+               toInteger(round(
+                 reduce(acc = 0.0, b IN buckets |
+                   acc + CASE WHEN b.m = i THEN b.v ELSE 0.0 END
+                 )
+               ))
+             ] AS hours
+
+        RETURN { name: name, hours: hours } AS eventSummary
+        ORDER BY name
+        """
+        columnName: "eventSummary"
       )
 
     orgMembersCount(
