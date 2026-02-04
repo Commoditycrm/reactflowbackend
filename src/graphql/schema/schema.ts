@@ -3795,6 +3795,94 @@ const typeDefs = gql`
     OTHER
   }
 
+  enum DocumentChunkStatus {
+    PENDING
+    PROCESSING
+    COMPLETED
+    FAILED
+  }
+
+  type DocumentChunk
+    @query(read: true, aggregate: false)
+    @mutation(operations: []) {
+    id: ID! @id
+    content: String!
+    embedding: [Float!]
+    pageNumber: Int!
+    chunkIndex: Int!
+    status: DocumentChunkStatus!
+    metadata: String
+    externalFile: ExternalFile!
+      @relationship(type: "CHUNK_OF", direction: OUT, aggregate: false)
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+  }
+
+  type RAGSource
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    documentId: ID!
+    documentName: String!
+    pageNumber: Int!
+    relevanceScore: Float!
+    snippet: String!
+  }
+
+  type RAGResponseMetadata
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    model: String!
+    chunksUsed: Int!
+    processingTimeMs: Float!
+    tokensUsed: Int
+  }
+
+  type RAGChatResponse
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    answer: String!
+    sources: [RAGSource!]!
+    conversationId: ID!
+    metadata: RAGResponseMetadata!
+  }
+
+  type RAGConversationMessage
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    role: String!
+    content: String!
+    timestamp: DateTime!
+  }
+
+  type RAGConversation
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID!
+    projectId: ID!
+    messages: [RAGConversationMessage!]!
+    createdAt: DateTime!
+    updatedAt: DateTime
+  }
+
+  type RAGIngestionResponse
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    success: Boolean!
+    documentId: ID!
+    chunksCreated: Int!
+    processingTimeMs: Float!
+    error: String
+  }
+
+  type RAGDocumentStatus
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    documentId: ID!
+    documentName: String!
+    status: DocumentChunkStatus!
+    totalChunks: Int!
+    indexedChunks: Int!
+  }
+
   type OpenAIResponse
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
@@ -5127,6 +5215,25 @@ const typeDefs = gql`
       )
 
     getFirebaseStorage(orgId: String!): FirebaseStorage!
+
+    ragChat(
+      message: String!
+      projectId: ID!
+      conversationId: ID
+      maxChunks: Int = 5
+    ): RAGChatResponse!
+
+    ragGetConversation(conversationId: ID!): RAGConversation
+
+    ragGetConversations(projectId: ID!, limit: Int = 10): [RAGConversation!]!
+
+    ragGetDocumentStatus(projectId: ID!): [RAGDocumentStatus!]!
+
+    ragSearchDocuments(
+      query: String!
+      projectId: ID!
+      topK: Int = 5
+    ): [RAGSource!]!
   }
 `;
 

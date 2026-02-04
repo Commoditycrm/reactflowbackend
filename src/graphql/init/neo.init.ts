@@ -13,6 +13,7 @@ import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
+import { ragResolvers } from "./../resolvers/rag.resolvers";
 import { EnvLoader } from "../../util/EnvLoader";
 
 export type IResolvers =
@@ -127,7 +128,10 @@ export class NeoConnection {
         ...updateOperationMutations,
         ...deleteOperationMutations,
       },
-      Query: { ...readOperationQueries },
+      Query: {
+        ...readOperationQueries,
+        ...ragResolvers.Query,
+      },
     };
   }
 
