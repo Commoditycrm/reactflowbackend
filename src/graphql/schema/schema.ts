@@ -5335,11 +5335,11 @@ const typeDefs = gql`
         columnName: "orgMembers"
       )
 
-    eventSummaryByAsset(projectId: ID!, year: Int!): [EventSummary!]!
+    eventSummaryByAsset(projectId: ID!, year: Int!,assetId:ID!): [EventSummary!]!
       @cypher(
         statement: """
         MATCH (p:Project {id: $projectId})-[:HAS_EVENT]->(e:CalenderEvent)
-        OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(a:Asset)
+        OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(a:Asset {id:$assetId})
 
         WITH e, a,
              datetime({year:$year,   month:1, day:1}) AS ys,
