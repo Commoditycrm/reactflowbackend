@@ -5335,33 +5335,42 @@ const typeDefs = gql`
         columnName: "orgMembers"
       )
 
-    eventSummaryByAsset(projectId: ID!, year: Int!,assetId:ID!): [EventSummary!]!
+    eventSummaryByAsset(
+      projectId: ID!
+      year: Int!
+      assetId: ID!
+    ): [EventSummary!]!
       @cypher(
         statement: """
         MATCH (p:Project {id: $projectId})-[:HAS_EVENT]->(e:CalenderEvent)
-        OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(a:Asset {id:$assetId})
+        MATCH (e)-[:HAS_RESOURCE]->(a:Asset {id: $assetId})
 
-        WITH e, a,
-             datetime({year:$year,   month:1, day:1}) AS ys,
+        WITH a, e,
+             datetime({year:$year, month:1, day:1}) AS ys,
              datetime({year:$year+1, month:1, day:1}) AS ye
-        WHERE datetime(e.startDate) < ye
-          AND datetime(e.endDate)   >= ys
 
         WITH a,
-             datetime(e.startDate) AS s0,
-             datetime(e.endDate)   AS e0,
-             ys, ye
-        WITH a,
-             CASE WHEN s0 < ys THEN ys ELSE s0 END AS s,
-             CASE WHEN e0 > ye THEN ye ELSE e0 END AS e
+             CASE WHEN datetime(e.startDate) < ys THEN ys ELSE datetime(e.startDate) END AS s,
+             CASE WHEN datetime(e.endDate)   > ye THEN ye ELSE datetime(e.endDate)   END AS t
 
-        WITH a,
-             duration.inSeconds(s, e).seconds / 3600.0 AS hrs,
-             date(s) AS d
+        UNWIND range(0,11) AS m
+        WITH a, s, t, m,
+             datetime({year:$year, month:m+1, day:1}) AS ms,
+             CASE
+               WHEN m = 11 THEN datetime({year:$year+1, month:1, day:1})
+               ELSE datetime({year:$year, month:m+2, day:1})
+             END AS me
 
-        WITH a, toInteger(d.month) - 1 AS m, hrs
-        WITH coalesce(a.name, 'Unassigned') AS name, m, sum(hrs) AS monthHours
+        WITH a, m,
+             CASE WHEN s > ms THEN s ELSE ms END AS os,
+             CASE WHEN t < me THEN t ELSE me END AS oe
 
+        WITH a, m,
+             CASE WHEN oe <= os THEN 0.0
+                  ELSE duration.inSeconds(os, oe).seconds / 3600.0
+             END AS hrs
+
+        WITH a.name AS name, m, sum(hrs) AS monthHours
         WITH name, collect({m:m, v:monthHours}) AS buckets
         WITH name,
              [i IN range(0,11) |
@@ -5373,7 +5382,6 @@ const typeDefs = gql`
              ] AS hours
 
         RETURN { name: name, hours: hours } AS eventSummary
-        ORDER BY name
         """
         columnName: "eventSummary"
       )
