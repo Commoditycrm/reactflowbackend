@@ -1261,7 +1261,7 @@ const typeDefs = gql`
     hourlyRate: Float
     project: Project!
       @relationship(
-        type: "HAS_PROJECT"
+        type: "HAS_WORK_FORCE"
         direction: IN
         nestedOperations: [CONNECT]
         aggregate: false
