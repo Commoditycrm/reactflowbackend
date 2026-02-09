@@ -925,23 +925,25 @@ CALL apoc.periodic.iterate(
 export const COPY_FILE_GROUP_CHILD_CONNECTION_CQL = `
 CALL apoc.periodic.iterate(
 "
-  MATCH (originalFile:File {id:$fileId})-[:HAS_GROUP_NODE]->(groupNode:GroupNode)
-  MATCH (originalFile)-[:HAS_FLOW_NODE]->(flowNodes:FlowNode)
-  RETURN groupNode,flowNodes
+  MATCH (originalFile:File {id:$fileId})-[:HAS_FLOW_NODE]->(origChild:FlowNode)-[:BELONGS_TO_GROUP]->(origGroup:GroupNode)
+  WHERE origChild.deletedAt IS NULL AND origGroup.deletedAt IS NULL
+  RETURN origChild, origGroup
 ",
 "
-  WITH groupNode,flowNodes
-  MATCH (newGroupNode:GroupNode {refId: groupNode.id})
-  MATCH (child:FlowNode {refId:flowNodes.id})
-  MERGE (child)-[:BELONGS_TO_GROUP]->(newGroupNode)
+  WITH origChild, origGroup
+  MATCH (newGroup:GroupNode {refId: origGroup.id})
+  MATCH (newChild:FlowNode {refId: origChild.id})
+
+  OPTIONAL MATCH (newChild)-[r:BELONGS_TO_GROUP]->(:GroupNode)
+  DELETE r
+
+  MERGE (newChild)-[:BELONGS_TO_GROUP]->(newGroup)
 ",
 {
-  batchSize: 200,
-  parallel: true,
+  batchSize: 500,
+  parallel: false,
   retries: 3,
-  params: {
-    fileId: $fileId
-  }
+  params: { fileId: $fileId }
 }
 );
 `;
