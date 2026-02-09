@@ -1254,6 +1254,20 @@ const typeDefs = gql`
     hourlyRate: Float
   }
 
+  type WorkForce {
+    id: ID! @id
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    designation: String
+    hourlyRate: Float
+    addedBy: User!
+      @relationship(
+        type: "HAS_WORK_FORCE"
+        direction: OUT
+        aggregate: true
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+  }
+
   type Project implements SoftDeletable
     @authorization(
       filter: [
@@ -1532,7 +1546,14 @@ const typeDefs = gql`
         direction: OUT
         aggregate: true
         nestedOperations: [CONNECT, DISCONNECT]
-        properties:"UserProjectAssignment"
+        properties: "UserProjectAssignment"
+      )
+    workForce: [WorkForce!]!
+      @relationship(
+        type: "HAS_WORK_FORCE"
+        direction: OUT
+        aggregate: true
+        nestedOperations: [CONNECT, DISCONNECT]
       )
     folders: [Folder!]!
       @relationship(
