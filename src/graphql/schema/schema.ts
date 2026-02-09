@@ -1245,6 +1245,15 @@ const typeDefs = gql`
     paidOn: DateTime
   }
 
+  type UserProjectAssignment
+    @relationshipProperties
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID! @id
+    designation: String
+    hourlyRate: Float
+  }
+
   type Project implements SoftDeletable
     @authorization(
       filter: [
@@ -1523,6 +1532,7 @@ const typeDefs = gql`
         direction: OUT
         aggregate: true
         nestedOperations: [CONNECT, DISCONNECT]
+        properties:"UserProjectAssignment"
       )
     folders: [Folder!]!
       @relationship(
