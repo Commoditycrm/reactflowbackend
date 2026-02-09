@@ -1259,6 +1259,13 @@ const typeDefs = gql`
     createdAt: DateTime! @timestamp(operations: [CREATE])
     designation: String
     hourlyRate: Float
+    project: Project!
+      @relationship(
+        type: "HAS_PROJECT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
     addedBy: User!
       @relationship(
         type: "HAS_WORK_FORCE"
