@@ -1399,6 +1399,7 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
+    budget:Float
     isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
     uniqueProject: String!
