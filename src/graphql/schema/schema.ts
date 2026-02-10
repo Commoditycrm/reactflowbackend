@@ -1399,7 +1399,7 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
-    budget:Float
+    budget: Float
     isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
     uniqueProject: String!
@@ -3334,6 +3334,18 @@ const typeDefs = gql`
         callback: "updateOrgLastModified"
         operations: [UPDATE, CREATE]
       )
+  }
+
+  type WorkLogs implements Timestamped {
+    id: ID! @id
+    workDate: Date!
+    hoursWorked: Float
+    hourlyRate: Float!
+    totalCost: Float
+    loggedBy: User @relationship(type: "LOGGED_BY", direction: OUT)
+    backlogItem: BacklogItem! @relationship(type: "HAS_WORK_LOG", direction: IN)
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
   union BacklogItemParent = FlowNode | BacklogItem | Project
