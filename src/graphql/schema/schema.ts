@@ -3341,7 +3341,13 @@ const typeDefs = gql`
     workDate: Date!
     hoursWorked: Float
     hourlyRate: Float!
-    totalCost: Float
+    totalCost: Float!
+      @cypher(
+        statement: """
+        RETURN toFloat(this.hourlyRate *this.hoursWorked) AS totalCost
+        """
+        columnName: "totalCost"
+      )
     loggedBy: User @relationship(type: "LOGGED_BY", direction: OUT)
     backlogItem: BacklogItem! @relationship(type: "HAS_WORK_LOG", direction: IN)
     createdAt: DateTime! @timestamp(operations: [CREATE])
