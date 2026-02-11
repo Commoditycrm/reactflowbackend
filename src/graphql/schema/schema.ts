@@ -3341,7 +3341,7 @@ const typeDefs = gql`
     workDate: Date!
     hoursWorked: Float
     hourlyRate: Float!
-    totalCost: Float!
+    totalCost: Float
       @cypher(
         statement: """
         RETURN toFloat(this.hourlyRate *this.hoursWorked) AS totalCost
