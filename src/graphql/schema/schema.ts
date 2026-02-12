@@ -1446,7 +1446,7 @@ const typeDefs = gql`
         }
         WITH bi
         MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
-        RETURN coalesce(sum(w.hourlyRate), 0) AS totalConsumed
+        RETURN coalesce(sum(w.hourlyRate *w.hoursWorked), 0) AS totalConsumed
         """
         columnName: "totalConsumed"
       )
@@ -3528,7 +3528,7 @@ const typeDefs = gql`
         statement: """
         WITH this
         MATCH(this)-[:HAS_WORK_LOG]->(w:WorkLogs)
-        RETURN coalesce( sum(hourlyRate),0 ) AS totalConsumed
+        RETURN coalesce(sum(w.hourlyRate *w.hoursWorked), 0) AS totalConsumed
         """
         columnName: "totalConsumed"
       )
