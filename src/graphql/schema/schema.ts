@@ -1408,6 +1408,48 @@ const typeDefs = gql`
         callback: "uniqueProjectExtractor"
         operations: [CREATE, UPDATE]
       )
+    totalConsumed: Float!
+      @cypher(
+        statement: """
+        WITH this AS p
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+        }
+        WITH bi
+        MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN coalesce(sum(w.hourlyRate), 0) AS totalConsumed
+        """
+        columnName: "totalConsumed"
+      )
     startDate: DateTime
       @cypher(
         statement: """
@@ -3341,10 +3383,10 @@ const typeDefs = gql`
     workDate: Date!
     hoursWorked: Float
     hourlyRate: Float!
-    totalCost: Float
+    totalCost: Float!
       @cypher(
         statement: """
-        RETURN toFloat(this.hourlyRate *this.hoursWorked) AS totalCost
+        RETURN coalesce(toFloat(this.hourlyRate *this.hoursWorked),0) AS totalCost
         """
         columnName: "totalCost"
       )
@@ -3481,6 +3523,15 @@ const typeDefs = gql`
     isRecurringTask: Boolean! @default(value: false)
     scheduleDays: Int
     actualExpense: Float
+    totalConsumed: Float!
+      @cypher(
+        statement: """
+        WITH this
+        MATCH(this)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN coalesce( sum(hourlyRate),0 ) AS totalConsumed
+        """
+        columnName: "totalConsumed"
+      )
     isTopLevelParentItem: Boolean!
       @populatedBy(callback: "topLevelParentItem", operations: [CREATE])
     type: BacklogItemType!
