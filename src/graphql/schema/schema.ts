@@ -1595,7 +1595,7 @@ const typeDefs = gql`
         type: "HAS_ASSIGNED_USER"
         direction: OUT
         aggregate: true
-        nestedOperations: [CONNECT, DISCONNECT]
+        nestedOperations: [CONNECT, DISCONNECT,UPDATE]
         properties: "UserProjectAssignment"
       )
     workForce: [WorkForce!]!
