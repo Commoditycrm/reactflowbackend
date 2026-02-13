@@ -53,7 +53,7 @@ const typeDefs = gql`
             ]
           }
         }
-        { operations: [UPDATE], where: { node: { externalId: "$jwt.sub" } } }
+        # { operations: [UPDATE], where: { node: { externalId: "$jwt.sub" } } }
         {
           operations: [DELETE]
           where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
