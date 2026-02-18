@@ -32,7 +32,7 @@ const parseList = (raw: string) =>
 export function readAllSheetAsJson({ buffer, projectId }: ReadAllArgs) {
   const wb = XLSX.read(buffer, { type: "buffer" });
 
-  const sheetName = "Epic & Feature &User Story & Ta";
+  const sheetName = "Copy of Main Tracker";
   const ws = wb.Sheets[sheetName];
   if (!ws) {
     throw new Error(`Sheet "${sheetName}" not found. Available: ${wb.SheetNames.join(", ")}`);
