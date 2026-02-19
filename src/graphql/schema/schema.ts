@@ -1450,6 +1450,90 @@ const typeDefs = gql`
         """
         columnName: "totalConsumed"
       )
+    workLogs(limit: Int! = 10, offset: Int! = 0): [WorkLogs!]!
+      @cypher(
+        statement: """
+        WITH this AS p
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+        }
+        WITH bi
+        MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN DISTINCT w AS workLogs ORDER BY w.createdAt DESC SKIP $offset LIMIT $limit
+        """
+        columnName: "workLogs"
+      )
+    workLogsCount: Int!
+      @cypher(
+        statement: """
+        WITH this AS p
+
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            AND bi.startDate IS NOT NULL
+          RETURN DISTINCT bi
+        }
+        WITH bi
+        MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN COUNT(DISTINCT w) AS workLogCount
+        """
+        columnName: "workLogCount"
+      )
     startDate: DateTime
       @cypher(
         statement: """
@@ -1595,7 +1679,7 @@ const typeDefs = gql`
         type: "HAS_ASSIGNED_USER"
         direction: OUT
         aggregate: true
-        nestedOperations: [CONNECT, DISCONNECT,UPDATE]
+        nestedOperations: [CONNECT, DISCONNECT, UPDATE]
         properties: "UserProjectAssignment"
       )
     workForce: [WorkForce!]!
