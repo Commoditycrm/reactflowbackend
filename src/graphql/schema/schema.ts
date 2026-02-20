@@ -1257,6 +1257,12 @@ const typeDefs = gql`
     id: ID! @id
     designation: String
     hourlyRate: Float
+    hours: Int
+    budget: Float
+    consumedHours: Float # sum of all work logs that perticular user
+    consumedBudget: Float #sum of hourlyRate * hoursWork all work perticular user
+    remainingHours: Int # hours - consumedHours
+    remainingBudget: Float # budget - consumedBudget
   }
 
   type WorkForce {
@@ -1264,6 +1270,8 @@ const typeDefs = gql`
     createdAt: DateTime! @timestamp(operations: [CREATE])
     designation: String
     hourlyRate: Float
+    hours: Int
+    budget: Float
     project: Project!
       @relationship(
         type: "HAS_WORK_FORCE"
@@ -2111,6 +2119,140 @@ const typeDefs = gql`
     deletedAt: DateTime
   }
 
+  type ProjectMemberRow {
+    id: ID!
+    name: String
+    email: String
+
+    accessRole: String # ✅ from user.role
+    designation: String # ✅ from assignment.designation
+    hourlyRate: Float
+    plannedHours: Float
+    plannedBudget: Float
+
+    consumedHours: Float!
+    consumedBudget: Float!
+    remainingHours: Float!
+    remainingBudget: Float!
+
+    completedTask: Int!
+    pendingTask: Int!
+  }
+
+  extend type Project {
+    memberRows(limit: Int = 50, offset: Int = 0): [ProjectMemberRow!]!
+      @cypher(
+        statement: """
+        WITH this AS p
+        WHERE p.deletedAt IS NULL
+
+        // ----------------------------
+        // 1) Collect FlowNodes under project (same as your user task cypher)
+        // ----------------------------
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
+
+        // ----------------------------
+        // 2) Collect BacklogItems in project (same UNION logic)
+        // ----------------------------
+        CALL {
+          WITH p, nodes
+
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
+
+        WITH p, collect(DISTINCT bi) AS allItems
+
+        // ----------------------------
+        // 3) Members from assigned users ONLY (since designation is from rel prop)
+        // ----------------------------
+        MATCH (p)-[assignment:HAS_ASSIGNED_USER]->(user:User)
+
+        // ----------------------------
+        // 4) Completed/Pending per user using same rule as your user fields
+        // ----------------------------
+        WITH p, allItems, user, assignment,
+             [bi IN allItems WHERE EXISTS {
+               MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
+               WHERE u2.externalId = user.externalId
+             }] AS myItems
+
+        UNWIND myItems AS bi
+        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+
+        WITH p, user, assignment,
+             collect(DISTINCT toLower(coalesce(s.defaultName, s.name, ""))) AS statuses,
+             count(DISTINCT bi) AS totalMine
+
+        WITH p, user, assignment,
+             size([st IN statuses WHERE st = 'completed']) AS completedTask,
+             totalMine
+
+        WITH p, user, assignment,
+             completedTask,
+             (totalMine - completedTask) AS pendingTask
+
+        // ----------------------------
+        // 5) Worklog totals per user inside this project
+        // ----------------------------
+        OPTIONAL MATCH (user)<-[:LOGGED_BY]-(wl:WorkLogs)<-[:HAS_WORK_LOG]-(biWL:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        WHERE biWL.deletedAt IS NULL
+
+        WITH user, assignment, completedTask, pendingTask,
+             coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
+             coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
+             coalesce(toFloat(assignment.hourlyRate), 0.0) AS hourlyRate,
+             coalesce(toFloat(assignment.hours), 0.0) AS plannedHours,
+             coalesce(toFloat(assignment.budget), 0.0) AS plannedBudget
+
+        RETURN {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+
+          accessRole: user.role,
+          designation: assignment.designation,
+
+          hourlyRate: hourlyRate,
+          plannedHours: plannedHours,
+          plannedBudget: plannedBudget,
+
+          consumedHours: consumedHours,
+          consumedBudget: consumedBudget,
+          remainingHours: (plannedHours - consumedHours),
+          remainingBudget: (plannedBudget - consumedBudget),
+
+          completedTask: completedTask,
+          pendingTask: pendingTask
+        } AS memberRows
+
+        ORDER BY toLower(coalesce(user.name,'')) ASC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "memberRows"
+      )
+  }
   extend type Project {
     whatsappNotifications: WhatsappNotification!
       @relationship(
