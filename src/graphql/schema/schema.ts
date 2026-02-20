@@ -1245,6 +1245,11 @@ const typeDefs = gql`
     paidOn: DateTime
   }
 
+  input WorkLogFilters {
+    userId: [ID]
+    designation: String
+  }
+
   type UserProjectAssignment
     @relationshipProperties
     @query(read: false, aggregate: false)
@@ -1450,10 +1455,14 @@ const typeDefs = gql`
         """
         columnName: "totalConsumed"
       )
-    workLogs(limit: Int! = 10, offset: Int! = 0): [WorkLogs!]!
+    workLogs(
+      limit: Int! = 10
+      offset: Int! = 0
+      filters: WorkLogFilters
+    ): [WorkLogs!]!
       @cypher(
         statement: """
-        WITH this AS p
+        WITH this AS p,coalesce($filters,{}) AS f
 
         CALL {
           WITH p
@@ -1486,16 +1495,26 @@ const typeDefs = gql`
             AND bi.startDate IS NOT NULL
           RETURN DISTINCT bi
         }
-        WITH bi
+        WITH bi,f
         MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        OPTIONAL MATCH (w)-[:LOGGED_BY]->(u:User)
+        OPTIONAL MATCH (u)-[upa:HAS_ASSIGNED_USER]->(p)
+        WHERE (
+          size(coalesce(f.userId, [])) = 0
+          OR u.id IN f.userId
+        )
+        AND (
+          size(coalesce(f.designation, [])) = 0
+          OR upa.designation IN f.designation
+        )
         RETURN DISTINCT w AS workLogs ORDER BY w.createdAt DESC SKIP $offset LIMIT $limit
         """
         columnName: "workLogs"
       )
-    workLogsCount: Int!
+    workLogsCount(filters: WorkLogFilters): Int!
       @cypher(
         statement: """
-        WITH this AS p
+        WITH this AS p,coalesce($filters,{}) AS f
 
         CALL {
           WITH p
@@ -1528,8 +1547,18 @@ const typeDefs = gql`
             AND bi.startDate IS NOT NULL
           RETURN DISTINCT bi
         }
-        WITH bi
+        WITH bi,f
         MATCH(bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        OPTIONAL MATCH (w)-[:LOGGED_BY]->(u:User)
+        OPTIONAL MATCH (u)-[upa:HAS_ASSIGNED_USER]->(p)
+        WHERE (
+          size(coalesce(f.userId, [])) = 0
+          OR u.id IN f.userId
+        )
+        AND (
+          size(coalesce(f.designation, [])) = 0
+          OR upa.designation IN f.designation
+        )
         RETURN COUNT(DISTINCT w) AS workLogCount
         """
         columnName: "workLogCount"
