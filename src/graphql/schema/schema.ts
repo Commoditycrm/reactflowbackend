@@ -1471,7 +1471,11 @@ const typeDefs = gql`
       @cypher(
         statement: """
         WITH this AS p, coalesce($filters,{}) AS f
+        WHERE p.deletedAt IS NULL
 
+        // ----------------------------
+        // 1) Collect FlowNodes under project
+        // ----------------------------
         CALL {
           WITH p
           OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
@@ -1484,6 +1488,9 @@ const typeDefs = gql`
           RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
         }
 
+        // ----------------------------
+        // 2) Collect BacklogItems in project
+        // ----------------------------
         CALL {
           WITH p, nodes
 
@@ -1504,31 +1511,44 @@ const typeDefs = gql`
           RETURN DISTINCT bi
         }
 
-        WITH bi, f, p
+        WITH DISTINCT bi, f, p
+
+        // ----------------------------
+        // 3) WorkLogs + LoggedBy user
+        // ----------------------------
         MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
         MATCH (w)-[:LOGGED_BY]->(u:User)
-        MATCH (p)-[upa:HAS_ASSIGNED_USER]->(u)
 
+        // designation comes from Project->User relationship (may not exist for all)
+        OPTIONAL MATCH (p)-[upa:HAS_ASSIGNED_USER]->(u)
+
+        // ----------------------------
+        // 4) Filters
+        // ----------------------------
         WHERE
-        (
-          size(coalesce(f.userId, [])) = 0
-          OR u.id IN f.userId
-        )
-        AND
-        (
-          size(coalesce(f.designation, [])) = 0
-          OR upa.designation IN f.designation
-        )
+          (
+            size(coalesce(f.userId, [])) = 0
+            OR u.id IN f.userId
+            OR u.externalId IN f.userId
+          )
+          AND
+          (
+            size(coalesce(f.designation, [])) = 0
+            OR coalesce(upa.designation, '') IN f.designation
+          )
+
         RETURN DISTINCT w AS workLogs
         ORDER BY w.createdAt DESC
         SKIP $offset LIMIT $limit
         """
         columnName: "workLogs"
       )
+
     workLogsCount(filters: WorkLogFilters): Int!
       @cypher(
         statement: """
         WITH this AS p, coalesce($filters,{}) AS f
+        WHERE p.deletedAt IS NULL
 
         CALL {
           WITH p
@@ -1562,26 +1582,28 @@ const typeDefs = gql`
           RETURN DISTINCT bi
         }
 
-        WITH bi, f, p
+        WITH DISTINCT bi, f, p
         MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
         MATCH (w)-[:LOGGED_BY]->(u:User)
-        OPTIONAL  MATCH (p)-[upa:HAS_ASSIGNED_USER]->(u)
+        OPTIONAL MATCH (p)-[upa:HAS_ASSIGNED_USER]->(u)
 
         WHERE
           (
             size(coalesce(f.userId, [])) = 0
             OR u.id IN f.userId
+            OR u.externalId IN f.userId
           )
           AND
           (
             size(coalesce(f.designation, [])) = 0
-            OR upa.designation IN f.designation
+            OR coalesce(upa.designation, '') IN f.designation
           )
 
         RETURN COUNT(DISTINCT w) AS workLogCount
         """
         columnName: "workLogCount"
       )
+
     startDate: DateTime
       @cypher(
         statement: """
@@ -2196,7 +2218,9 @@ const typeDefs = gql`
         WITH p, collect(DISTINCT bi) AS allItems
 
         // ----------------------------
-        // 3) Members (same logic as memberCount)
+        // 3) Members
+        //   - Users: rel props on HAS_ASSIGNED_USER
+        //   - WorkForce: NO rel props; use node props
         // ----------------------------
         CALL {
           WITH p
@@ -2206,12 +2230,12 @@ const typeDefs = gql`
           UNION
 
           WITH p
-          MATCH (p)-[r:HAS_WORK_FORCE]->(w:WorkForce)
-          RETURN w AS member, r AS rel, 'WorkForce' AS memberType
+          MATCH (p)-[:HAS_WORK_FORCE]->(w:WorkForce)
+          RETURN w AS member, NULL AS rel, 'WorkForce' AS memberType
         }
 
         // ----------------------------
-        // 4) Build myItems (only Users can match backlog item assignments in your model)
+        // 4) Build myItems (only Users match assignments)
         // ----------------------------
         WITH p, allItems, member, rel, memberType,
              CASE
@@ -2234,34 +2258,63 @@ const typeDefs = gql`
                ELSE toLower(coalesce(s.defaultName, s.name, ""))
              END) AS statuses
 
-        WITH member, rel, memberType,
+        WITH p, member, rel, memberType,
              totalMine,
              size([st IN statuses WHERE st = 'completed']) AS completedTask
 
-        WITH member, rel, memberType,
+        WITH p, member, rel, memberType,
              completedTask,
              (totalMine - completedTask) AS pendingTask
 
         // ----------------------------
-        // 5) Worklog totals (only Users are LOGGED_BY in your model)
+        // 5) Worklog totals (only Users are LOGGED_BY)
         // ----------------------------
         OPTIONAL MATCH (member)<-[:LOGGED_BY]-(wl:WorkLogs)<-[:HAS_WORK_LOG]-(biWL:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         WHERE memberType = 'User' AND biWL.deletedAt IS NULL
 
+        // ----------------------------
+        // 6) Planned/Rate/Budget:
+        //    - User -> from rel props
+        //    - WorkForce -> from member node props
+        // ----------------------------
         WITH member, rel, memberType, completedTask, pendingTask,
              coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
              coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
-             coalesce(toFloat(rel.hourlyRate), 0.0) AS hourlyRate,
-             coalesce(toFloat(rel.hours), 0.0) AS plannedHours,
-             coalesce(toFloat(rel.budget), 0.0) AS plannedBudget
+
+             // hourlyRate
+             CASE
+               WHEN memberType = 'User' THEN coalesce(toFloat(rel.hourlyRate), 0.0)
+               ELSE coalesce(toFloat(member.hourlyRate), 0.0)
+             END AS hourlyRate,
+
+             // plannedHours
+             CASE
+               WHEN memberType = 'User' THEN coalesce(toFloat(rel.hours), 0.0)
+               ELSE coalesce(toFloat(member.hours), 0.0)
+             END AS plannedHours,
+
+             // plannedBudget
+             CASE
+               WHEN memberType = 'User' THEN coalesce(toFloat(rel.budget), 0.0)
+               ELSE coalesce(toFloat(member.budget), 0.0)
+             END AS plannedBudget,
+
+             // designation
+             CASE
+               WHEN memberType = 'User' THEN coalesce(rel.designation, "")
+               ELSE coalesce(member.designation, "")
+             END AS designation,
+
+             // accessRole
+             coalesce(member.role, "") AS accessRole
 
         RETURN {
           id: member.id,
           name: member.name,
           email: coalesce(member.email, ""),
 
-          accessRole: coalesce(member.role, ""),
-          designation: coalesce(rel.designation, ""),
+          accessRole: accessRole,
+          designation: designation,
 
           hourlyRate: hourlyRate,
           plannedHours: plannedHours,
