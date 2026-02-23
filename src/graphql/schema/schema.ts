@@ -2140,7 +2140,7 @@ const typeDefs = gql`
   }
 
   extend type Project {
-    memberRows(limit: Int = 50, offset: Int = 0): [ProjectMemberRow!]!
+    memberRows(limit: Int = 10, offset: Int = 0): [ProjectMemberRow!]!
       @cypher(
         statement: """
         WITH this AS p
@@ -2251,6 +2251,25 @@ const typeDefs = gql`
         SKIP $offset LIMIT $limit
         """
         columnName: "memberRows"
+      )
+    memberCount: Int!
+      @cypher(
+        statement: """
+        CALL {
+          WITH this
+          MATCH (this)-[:HAS_ASSIGNED_USER]->(u:User)
+          RETURN u
+
+          UNION
+
+          WITH this
+          MATCH (this)-[:HAS_WORK_FORCE]->(w:WorkForce)
+          RETURN w AS u
+        }
+
+        RETURN COUNT(DISTINCT u) AS memberCount
+        """
+        columnName: "memberCount"
       )
   }
   extend type Project {
