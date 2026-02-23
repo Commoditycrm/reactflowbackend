@@ -113,4 +113,90 @@ export const RAG_CONFIG = {
   MIN_RELEVANCE_SCORE: 0.7,
   MAX_TOKENS: 4000,
   VECTOR_INDEX_NAME: "document_embeddings",
+  GEMINI_SUMMARIZATION_MODEL: "gemini-flash-latest",
+  DIAGRAM_SUMMARY_EMBEDDING_DIMENSIONS: 1024, // Changed for consistency
+  DIAGRAM_SUMMARY_INDEX_NAME: "diagram_summary_embeddings",
 } as const;
+
+// ─── Diagram Types ───────────────────────────────────────────────────────────
+
+export interface DiagramNode {
+  id: string;
+  name: string;
+  shape: string;
+  color: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  type: string;
+  description: string | null;
+  parentGroupId: string | null;
+  childItemCount: number;
+  fileLinksCount: number;
+  commentsCount: number;
+}
+
+export interface DiagramEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  sourceName: string;
+  targetName: string;
+  label: string;
+  color: string;
+  sourceHandle: string;
+  targetHandle: string;
+  animated: boolean;
+  bidirectional: boolean;
+}
+
+export interface DiagramGroup {
+  id: string;
+  name: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  color: string | null;
+  layoutType: string;
+  childNodeIds: string[];
+}
+
+export interface DiagramData {
+  fileId: string;
+  fileName: string;
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  groups: DiagramGroup[];
+}
+
+export interface DiagramSummary {
+  fileId: string;
+  fileName: string;
+  nodeCount: number;
+  edgeCount: number;
+  groupCount: number;
+  summary: string;
+}
+
+export interface DiagramListItem {
+  fileId: string;
+  fileName: string;
+  nodeCount: number;
+  edgeCount: number;
+  groupCount: number;
+  hasSummaryEmbedding: boolean;
+}
+
+export interface ToolCallResult {
+  toolName: string;
+  content: string;
+}
+
+export interface DiagramSearchResult {
+  fileId: string;
+  fileName: string;
+  score: number;
+  summary: string;
+}
