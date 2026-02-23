@@ -177,4 +177,84 @@ ragRouter.delete("/conversation/:conversationId", async (req, res) => {
   }
 });
 
+// ─── Diagram Indexing Endpoints ──────────────────────────────────────────────
+
+ragRouter.get("/diagrams/:projectId", async (req, res) => {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const { projectId } = req.params;
+
+    if (!projectId) {
+      return res.status(400).json({ success: false, error: "projectId is required" });
+    }
+
+    const diagrams = await ragService.listProjectDiagrams(projectId, userId);
+
+    return res.status(200).json({ success: true, diagrams });
+  } catch (error: any) {
+    logger?.error("RAG list diagrams endpoint failed", { error });
+    const statusCode = error?.extensions?.code === "UNAUTHENTICATED" ? 401 : 500;
+    return res.status(statusCode).json({ success: false, error: error.message || "Internal server error" });
+  }
+});
+
+ragRouter.post("/index-diagram", async (req, res) => {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const { fileId, projectId } = req.body;
+
+    if (!fileId || !projectId) {
+      return res.status(400).json({
+        success: false,
+        error: "fileId and projectId are required",
+      });
+    }
+
+    const result = await ragService.indexDiagram(fileId, projectId, userId);
+
+    return res.status(200).json({ success: true, summary: result });
+  } catch (error: any) {
+    logger?.error("RAG index-diagram endpoint failed", { error });
+    const statusCode = error?.extensions?.code === "UNAUTHENTICATED" ? 401 : 500;
+    return res.status(statusCode).json({ success: false, error: error.message || "Internal server error" });
+  }
+});
+
+ragRouter.post("/index-project-diagrams", async (req, res) => {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const { projectId } = req.body;
+
+    if (!projectId) {
+      return res.status(400).json({
+        success: false,
+        error: "projectId is required",
+      });
+    }
+
+    const result = await ragService.indexProjectDiagrams(projectId, userId);
+
+    return res.status(200).json({ success: true, ...result });
+  } catch (error: any) {
+    logger?.error("RAG index-project-diagrams endpoint failed", { error });
+    const statusCode = error?.extensions?.code === "UNAUTHENTICATED" ? 401 : 500;
+    return res.status(statusCode).json({ success: false, error: error.message || "Internal server error" });
+  }
+});
+
+ragRouter.delete("/diagram-index/:fileId", async (req, res) => {
+  try {
+    await authenticateRequest(req);
+    const { fileId } = req.params;
+
+    const deleted = await ragService.deleteDiagramIndex(fileId);
+
+    return res.status(200).json({ success: true, deleted });
+  } catch (error: any) {
+    logger?.error("RAG delete diagram index endpoint failed", { error });
+    const statusCode = error?.extensions?.code === "UNAUTHENTICATED" ? 401 : 500;
+    return res.status(statusCode).json({ success: false, error: error.message || "Internal server error" });
+  }
+});
+
 export default ragRouter;

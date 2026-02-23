@@ -1,17 +1,17 @@
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 import { RAG_CONFIG, RAGQueryResult, VectorSearchOptions } from "../types/rag.types";
-import { EmbeddingService } from "./EmbeddingService";
+import { EmbeddingServiceFactory, IEmbeddingService } from "./EmbeddingServiceFactory";
 import { ProcessedChunk } from "./PDFProcessor";
 import neo4j from "neo4j-driver";
 
 export class VectorStore {
   private static instance: VectorStore;
-  private embeddingService: EmbeddingService;
+  private embeddingService: IEmbeddingService;
   private initializedIndexes = new Set<string>();
 
   private constructor() {
-    this.embeddingService = EmbeddingService.getInstance();
+    this.embeddingService = EmbeddingServiceFactory.getInstance();
   }
 
   static getInstance(): VectorStore {

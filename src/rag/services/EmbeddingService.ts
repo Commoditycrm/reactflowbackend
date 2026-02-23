@@ -1,7 +1,12 @@
 import OpenAI from "openai";
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionToolMessageParam,
+} from "openai/resources/chat/completions";
 import { EnvLoader } from "../../util/EnvLoader";
 import logger from "../../logger";
-import { EmbeddingResult, RAG_CONFIG } from "../types/rag.types";
+import { EmbeddingResult, RAG_CONFIG, ToolCallResult } from "../types/rag.types";
 
 export class EmbeddingService {
   private static instance: EmbeddingService;
@@ -162,6 +167,117 @@ export class EmbeddingService {
         "EmbeddingService.generateChatCompletionWithHistory failed",
         { error }
       );
+      throw error;
+    }
+  }
+
+  /**
+   * Chat completion with OpenAI tool-calling support.
+   *
+   * Flow:
+   *  1. Send messages + tool definitions to the model
+   *  2. If model decides to call tools, return the tool calls for the caller to execute
+   *  3. Caller executes tools, passes results back via continueWithToolResults()
+   *  4. Model produces final answer
+   */
+  async chatWithTools(
+    systemPrompt: string,
+    messages: ChatCompletionMessageParam[],
+    tools: ChatCompletionTool[]
+  ): Promise<{
+    /** Non-null when the model responded with text directly (no tool calls) */
+    content: string | null;
+    /** Non-null when the model wants to call tools */
+    toolCalls:
+      | Array<{
+          id: string;
+          functionName: string;
+          arguments: string;
+        }>
+      | null;
+    /** The assistant message to append to the conversation */
+    assistantMessage: ChatCompletionMessageParam;
+    tokensUsed: number;
+  }> {
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: RAG_CONFIG.CHAT_MODEL,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        tools,
+        tool_choice: "auto",
+        max_tokens: RAG_CONFIG.MAX_TOKENS,
+        temperature: 0.7,
+      });
+
+      const choice = response.choices[0];
+      const message = choice?.message;
+      const tokensUsed = response.usage?.total_tokens ?? 0;
+
+      if (message?.tool_calls && message.tool_calls.length > 0) {
+        return {
+          content: null,
+          toolCalls: message.tool_calls.map((tc) => ({
+            id: tc.id,
+            functionName: tc.function.name,
+            arguments: tc.function.arguments,
+          })),
+          assistantMessage: message as ChatCompletionMessageParam,
+          tokensUsed,
+        };
+      }
+
+      return {
+        content: message?.content ?? "",
+        toolCalls: null,
+        assistantMessage: message as ChatCompletionMessageParam,
+        tokensUsed,
+      };
+    } catch (error) {
+      logger?.error("EmbeddingService.chatWithTools failed", { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Continue a tool-calling conversation after tools have been executed.
+   * Sends tool results back to the model to produce the final answer.
+   */
+  async continueWithToolResults(
+    systemPrompt: string,
+    messages: ChatCompletionMessageParam[],
+    assistantMessage: ChatCompletionMessageParam,
+    toolResults: ToolCallResult[],
+    toolCallIds: string[]
+  ): Promise<{ content: string; tokensUsed: number }> {
+    try {
+      const toolMessages: ChatCompletionToolMessageParam[] = toolResults.map(
+        (result, index) => ({
+          role: "tool" as const,
+          tool_call_id: toolCallIds[index]!,
+          content: result.content,
+        })
+      );
+
+      const response = await this.openai.chat.completions.create({
+        model: RAG_CONFIG.CHAT_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages,
+          assistantMessage,
+          ...toolMessages,
+        ],
+        max_tokens: RAG_CONFIG.MAX_TOKENS,
+        temperature: 0.7,
+      });
+
+      return {
+        content: response.choices[0]?.message?.content ?? "",
+        tokensUsed: response.usage?.total_tokens ?? 0,
+      };
+    } catch (error) {
+      logger?.error("EmbeddingService.continueWithToolResults failed", {
+        error,
+      });
       throw error;
     }
   }
