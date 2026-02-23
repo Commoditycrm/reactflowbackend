@@ -1,37 +1,113 @@
 import { v4 as uuidv4 } from "uuid";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 import {
   Conversation,
   ConversationMessage,
+  DiagramListItem,
   IngestionResponse,
   RAG_CONFIG,
   RAGChatResponse,
   RAGSource,
+  ToolCallResult,
 } from "../types/rag.types";
+import { DiagramIndexService } from "./DiagramIndexService";
+import { DiagramService } from "./DiagramService";
+import { EmbeddingServiceFactory, IEmbeddingService } from "./EmbeddingServiceFactory";
 import { EmbeddingService } from "./EmbeddingService";
 import { PDFProcessor } from "./PDFProcessor";
 import { VectorStore } from "./VectorStore";
 
-const RAG_SYSTEM_PROMPT = `You are a helpful assistant that answers questions based on the provided document context.
-Follow these guidelines:
-1. Only answer based on the provided context. If the context doesn't contain relevant information, say so.
-2. Be concise and accurate.
-3. If you reference specific information, mention the source document when possible.
-4. If the question is unclear, ask for clarification.
-5. Do not make up information that is not in the context.`;
+// ─── System Prompt ────────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT_TEMPLATE = `You are an intelligent project assistant with access to both project documents (PDFs) and project diagrams/flowcharts.
+
+You have tools to retrieve information. Use them as needed:
+- **search_documents**: Search PDF documents attached to the project for text-based information (specifications, reports, requirements, etc.)
+- **get_diagram_context**: Retrieve the full structure of a specific diagram/flowchart by its file ID. Use when the user asks about processes, workflows, relationships between steps, or visual diagrams.
+
+AVAILABLE DIAGRAMS IN THIS PROJECT:
+{DIAGRAM_LIST}
+
+Guidelines:
+1. Use tools when the user's question requires information from documents or diagrams. You may call both tools if the question spans both.
+2. If the user mentions a specific diagram by name, use get_diagram_context with the matching file ID from the list above.
+3. If the question is about a process/workflow and you're not sure which diagram, use get_diagram_context with a search query to find the right one.
+4. When you have diagram data, explain the flowchart structure, relationships, and processes clearly.
+5. Be concise and accurate. Cite sources (document names, diagram names) when possible.
+6. If context is insufficient, say so — do not make up information.
+7. For conversational messages (greetings, clarifications), respond directly without tools.`;
+
+// ─── Tool Definitions ─────────────────────────────────────────────────────────
+
+const TOOLS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "search_documents",
+      description:
+        "Search project PDF documents for text-based information. Use for specifications, reports, requirements, meeting notes, or any textual content in attached documents.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "The search query describing what information you need from the documents.",
+          },
+          topK: {
+            type: "number",
+            description:
+              "Maximum number of relevant chunks to retrieve (default: 5).",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_diagram_context",
+      description:
+        "Retrieve the full structure of a project diagram/flowchart. Returns nodes, connections, groups, and a Mermaid representation. Use when the user asks about processes, workflows, flowcharts, or relationships between steps. You can provide either a fileId (from the diagram list) or a search query to find the most relevant diagram.",
+      parameters: {
+        type: "object",
+        properties: {
+          fileId: {
+            type: "string",
+            description:
+              "The exact file ID of the diagram to retrieve (from the available diagrams list). Use when you know which diagram the user is referring to.",
+          },
+          query: {
+            type: "string",
+            description:
+              "A search query to find the most relevant diagram (e.g. 'order processing flow'). Used when the user's question doesn't reference a specific diagram by name.",
+          },
+        },
+      },
+    },
+  },
+];
 
 export class RAGService {
   private static instance: RAGService;
-  private embeddingService: EmbeddingService;
+  private embeddingService: IEmbeddingService; // For embeddings (can be local or OpenAI)
+  private chatService: EmbeddingService; // For chat completions (always OpenAI for tool support)
   private pdfProcessor: PDFProcessor;
   private vectorStore: VectorStore;
+  private diagramService: DiagramService;
+  private diagramIndexService: DiagramIndexService;
   private conversations: Map<string, Conversation> = new Map();
 
   private constructor() {
-    this.embeddingService = EmbeddingService.getInstance();
+    this.embeddingService = EmbeddingServiceFactory.getInstance(); // Uses local or OpenAI based on USE_LOCAL_MODELS
+    this.chatService = EmbeddingService.getInstance(); // Always use OpenAI for chat completions
     this.pdfProcessor = PDFProcessor.getInstance();
     this.vectorStore = VectorStore.getInstance();
+    this.diagramService = DiagramService.getInstance();
+    this.diagramIndexService = DiagramIndexService.getInstance();
   }
 
   static getInstance(): RAGService {
@@ -180,20 +256,21 @@ export class RAGService {
 
     try {
       const orgId = await this.resolveOrgIdForProject(projectId, userId);
-      const searchResults = await this.vectorStore.searchSimilar(message, {
+
+      // ── 1. Build system prompt with diagram list injected directly ────
+      const diagramList = await this.diagramService.listProjectDiagrams(
         projectId,
         userId,
-        orgId,
-        topK: effectiveMaxChunks,
-      });
+        orgId
+      );
+      const diagramListText =
+        this.diagramService.serializeDiagramList(diagramList);
+      const systemPrompt = SYSTEM_PROMPT_TEMPLATE.replace(
+        "{DIAGRAM_LIST}",
+        diagramListText
+      );
 
-      const context = searchResults
-        .map(
-          (r, i) =>
-            `[Source ${i + 1}: ${r.source}, Page ${r.pageNumber}]\n${r.content}`
-        )
-        .join("\n\n---\n\n");
-
+      // ── 2. Manage conversation ───────────────────────────────────────
       const convId = conversationId || uuidv4();
       let conversation = this.conversations.get(convId);
 
@@ -215,40 +292,159 @@ export class RAGService {
         timestamp: new Date(),
       });
 
-      const historyMessages = conversation.messages.slice(-10).map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      // Build message history for OpenAI
+      const historyMessages: ChatCompletionMessageParam[] = conversation.messages
+        .slice(-10)
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
 
-      const { content, tokensUsed } =
-        await this.embeddingService.generateChatCompletionWithHistory(
-          RAG_SYSTEM_PROMPT,
-          historyMessages,
-          context
+      // ── 3. First LLM call — let model decide which tools to call ─────
+      console.log("\n" + "=".repeat(80));
+      console.log("🤖 RAG CHAT: Making LLM call with tools");
+      console.log("=".repeat(80));
+      console.log(`User Query: ${message}`);
+      console.log(`Available Tools: ${TOOLS.map(t => t.function.name).join(", ")}`);
+      console.log("=".repeat(80) + "\n");
+      
+      logger?.info("RAGService: Making first LLM call with tools", {
+        systemPromptLength: systemPrompt.length,
+        historyCount: historyMessages.length,
+        toolsAvailable: TOOLS.map(t => t.function.name),
+      });
+      
+      const firstResponse = await this.chatService.chatWithTools(
+        systemPrompt,
+        historyMessages,
+        TOOLS
+      );
+
+      console.log("\n" + "=".repeat(80));
+      console.log("✅ LLM RESPONSE RECEIVED");
+      console.log("=".repeat(80));
+      if (firstResponse.toolCalls && firstResponse.toolCalls.length > 0) {
+        console.log(`🛠️  Tool Calls Requested: ${firstResponse.toolCalls.length}`);
+        firstResponse.toolCalls.forEach((tc, i) => {
+          console.log(`   ${i + 1}. ${tc.functionName}`);
+          console.log(`      Args: ${tc.arguments}`);
+        });
+      } else {
+        console.log("💬 Direct response (no tools used)");
+        console.log(`   Content: ${firstResponse.content?.substring(0, 150)}...`);
+      }
+      console.log("=".repeat(80) + "\n");
+      
+      logger?.info("RAGService: First LLM response received", {
+        hasToolCalls: !!firstResponse.toolCalls,
+        toolCallsCount: firstResponse.toolCalls?.length ?? 0,
+        toolNames: firstResponse.toolCalls?.map(tc => tc.functionName) ?? [],
+        directContent: firstResponse.content?.substring(0, 100),
+      });
+
+      let finalContent: string;
+      let tokensUsed = firstResponse.tokensUsed;
+      const allSources: RAGSource[] = [];
+      let chunksUsed = 0;
+
+      if (firstResponse.toolCalls && firstResponse.toolCalls.length > 0) {
+        // ── 4. Execute tool calls in parallel ──────────────────────────
+        logger?.info("RAGService: Executing tool calls", {
+          toolCalls: firstResponse.toolCalls.map(tc => ({
+            function: tc.functionName,
+            arguments: tc.arguments,
+          })),
+        });
+        
+        const toolResults = await Promise.all(
+          firstResponse.toolCalls.map((tc) =>
+            this.executeToolCall(
+              tc.functionName,
+              tc.arguments,
+              projectId,
+              userId,
+              orgId,
+              effectiveMaxChunks,
+              diagramList,
+              allSources
+            )
+          )
         );
 
+        logger?.info("RAGService: Tool calls executed", {
+          resultsCount: toolResults.length,
+          sourcesFound: allSources.length,
+        });
+
+        console.log("\n" + "=".repeat(80));
+        console.log("✅ TOOL EXECUTION COMPLETED");
+        console.log("=".repeat(80));
+        console.log(`Sources Found: ${allSources.length}`);
+        allSources.forEach((src, i) => {
+          console.log(`   ${i + 1}. ${src.documentName} (score: ${(src.relevanceScore * 100).toFixed(1)}%)`);
+        });
+        console.log("=".repeat(80) + "\n");
+
+        chunksUsed = allSources.length;
+
+        // ── 5. Second LLM call — model produces answer with tool results
+        const toolCallIds = firstResponse.toolCalls.map((tc) => tc.id);
+        const finalResponse =
+          await this.chatService.continueWithToolResults(
+            systemPrompt,
+            historyMessages,
+            firstResponse.assistantMessage,
+            toolResults,
+            toolCallIds
+          );
+
+        logger?.info("RAGService: Final LLM response received", {
+          contentLength: finalResponse.content.length,
+          contentPreview: finalResponse.content.substring(0, 200),
+          tokensUsed: finalResponse.tokensUsed,
+        });
+
+        console.log("\n" + "=".repeat(80));
+        console.log("🎯 FINAL ANSWER GENERATED");
+        console.log("=".repeat(80));
+        console.log(finalResponse.content);
+        console.log("=".repeat(80));
+        console.log(`Tokens Used: ${tokensUsed}, Processing Time: ${Date.now() - startTime}ms`);
+        console.log("=".repeat(80) + "\n");
+
+        finalContent = finalResponse.content;
+        tokensUsed += finalResponse.tokensUsed;
+      } else {
+        // Model answered directly without tools
+        logger?.info("RAGService: Model answered directly without tools", {
+          contentLength: firstResponse.content?.length ?? 0,
+          contentPreview: firstResponse.content?.substring(0, 200),
+        });
+        finalContent = firstResponse.content ?? "";
+      }
+
+      // ── 6. Store response & return ───────────────────────────────────
       conversation.messages.push({
         role: "assistant",
-        content,
+        content: finalContent,
         timestamp: new Date(),
       });
       conversation.updatedAt = new Date();
 
-      const sources: RAGSource[] = searchResults.map((r) => ({
-        documentId: r.documentId,
-        documentName: r.source,
-        pageNumber: r.pageNumber,
-        relevanceScore: r.score,
-        snippet: r.content.slice(0, 200) + "...",
-      }));
+      logger?.info("RAGService.chat completed successfully", {
+        answerLength: finalContent.length,
+        sourcesCount: allSources.length,
+        tokensUsed,
+        processingTimeMs: Date.now() - startTime,
+      });
 
       return {
-        answer: content,
-        sources,
+        answer: finalContent,
+        sources: allSources,
         conversationId: convId,
         metadata: {
           model: RAG_CONFIG.CHAT_MODEL,
-          chunksUsed: searchResults.length,
+          chunksUsed,
           processingTimeMs: Date.now() - startTime,
           tokensUsed,
         },
@@ -257,6 +453,189 @@ export class RAGService {
       logger?.error("RAGService.chat failed", { error, projectId, userId });
       throw error;
     }
+  }
+
+  // ─── Tool Execution ──────────────────────────────────────────────────────
+
+  private async executeToolCall(
+    functionName: string,
+    argumentsJson: string,
+    projectId: string,
+    userId: string,
+    orgId: string,
+    maxChunks: number,
+    diagramList: DiagramListItem[],
+    sourcesAccumulator: RAGSource[]
+  ): Promise<ToolCallResult> {
+    try {
+      const args = JSON.parse(argumentsJson);
+
+      switch (functionName) {
+        case "search_documents":
+          return this.toolSearchDocuments(
+            args.query,
+            projectId,
+            userId,
+            orgId,
+            args.topK ?? maxChunks,
+            sourcesAccumulator
+          );
+
+        case "get_diagram_context":
+          return this.toolGetDiagramContext(
+            projectId,
+            userId,
+            orgId,
+            diagramList,
+            args.fileId,
+            args.query,
+            sourcesAccumulator
+          );
+
+        default:
+          return {
+            toolName: functionName,
+            content: `Unknown tool: ${functionName}`,
+          };
+      }
+    } catch (error: any) {
+      logger?.error("RAGService.executeToolCall failed", {
+        functionName,
+        error,
+      });
+      return {
+        toolName: functionName,
+        content: `Error executing ${functionName}: ${error.message}`,
+      };
+    }
+  }
+
+  private async toolSearchDocuments(
+    query: string,
+    projectId: string,
+    userId: string,
+    orgId: string,
+    topK: number,
+    sourcesAccumulator: RAGSource[]
+  ): Promise<ToolCallResult> {
+    const searchResults = await this.vectorStore.searchSimilar(query, {
+      projectId,
+      userId,
+      orgId,
+      topK,
+    });
+
+    // Accumulate sources for the response
+    for (const r of searchResults) {
+      sourcesAccumulator.push({
+        documentId: r.documentId,
+        documentName: r.source,
+        pageNumber: r.pageNumber,
+        relevanceScore: r.score,
+        snippet: r.content.slice(0, 200) + "...",
+      });
+    }
+
+    if (searchResults.length === 0) {
+      return {
+        toolName: "search_documents",
+        content:
+          "No relevant document chunks found for this query. The project may not have any PDF documents ingested yet, or the query may not match any content.",
+      };
+    }
+
+    const context = searchResults
+      .map(
+        (r, i) =>
+          `[Document Source ${i + 1}: "${r.source}", Page ${r.pageNumber}, Relevance: ${(r.score * 100).toFixed(1)}%]\n${r.content}`
+      )
+      .join("\n\n---\n\n");
+
+    return { toolName: "search_documents", content: context };
+  }
+
+  private async toolGetDiagramContext(
+    projectId: string,
+    userId: string,
+    orgId: string,
+    diagramList: DiagramListItem[],
+    fileId?: string,
+    query?: string,
+    sourcesAccumulator?: RAGSource[]
+  ): Promise<ToolCallResult> {
+    let targetFileId = fileId;
+
+    // If no fileId, use query to search diagram summaries
+    if (!targetFileId && query) {
+      const searchResults = await this.diagramIndexService.searchDiagrams(
+        query,
+        orgId,
+        projectId,
+        userId,
+        3
+      );
+
+      if (searchResults.length > 0) {
+        targetFileId = searchResults[0]!.fileId;
+
+        // If multiple diagrams are relevant, include that info
+        if (searchResults.length > 1) {
+          const otherMatches = searchResults
+            .slice(1)
+            .map(
+              (r) =>
+                `"${r.fileName}" (fileId: ${r.fileId}, relevance: ${(r.score * 100).toFixed(1)}%)`
+            )
+            .join(", ");
+
+          logger?.info(
+            "DiagramService: multiple diagrams matched, using best match",
+            { targetFileId, otherMatches }
+          );
+        }
+      }
+    }
+
+    // If still no fileId and there's only 1 diagram, use it
+    if (!targetFileId && diagramList.length === 1) {
+      targetFileId = diagramList[0]!.fileId;
+    }
+
+    if (!targetFileId) {
+      return {
+        toolName: "get_diagram_context",
+        content:
+          "Could not determine which diagram to retrieve. Please specify the diagram name or try a more specific query. Available diagrams are listed in the system prompt.",
+      };
+    }
+
+    // Fetch full diagram structure (always live from Neo4j)
+    const diagramData = await this.diagramService.fetchDiagramData(
+      targetFileId,
+      projectId,
+      userId,
+      orgId
+    );
+
+    if (!diagramData || diagramData.nodes.length === 0) {
+      return {
+        toolName: "get_diagram_context",
+        content: `Diagram with fileId "${targetFileId}" not found or has no nodes.`,
+      };
+    }
+
+    // Add diagram as a source
+    sourcesAccumulator?.push({
+      documentId: targetFileId,
+      documentName: diagramData.fileName,
+      pageNumber: 0,
+      relevanceScore: 1.0,
+      snippet: `Diagram: ${diagramData.nodes.length} nodes, ${diagramData.edges.length} edges, ${diagramData.groups.length} groups`,
+    });
+
+    // Serialize to LLM-friendly format
+    const serialized = this.diagramService.serializeForLLM(diagramData);
+    return { toolName: "get_diagram_context", content: serialized };
   }
 
   async searchDocuments(
@@ -316,6 +695,55 @@ export class RAGService {
 
   async getDocumentStatuses(projectId: string, userId: string) {
     return this.vectorStore.getProjectDocumentStatuses(projectId, userId);
+  }
+
+  // ─── Diagram Indexing ────────────────────────────────────────────────────
+
+  /**
+   * Index a single diagram's summary for semantic search.
+   */
+  async indexDiagram(
+    fileId: string,
+    projectId: string,
+    userId: string
+  ) {
+    const orgId = await this.resolveOrgIdForProject(projectId, userId);
+    return this.diagramIndexService.indexDiagram(
+      fileId,
+      projectId,
+      userId,
+      orgId
+    );
+  }
+
+  /**
+   * Index all un-indexed diagrams in a project.
+   */
+  async indexProjectDiagrams(
+    projectId: string,
+    userId: string
+  ) {
+    const orgId = await this.resolveOrgIdForProject(projectId, userId);
+    return this.diagramIndexService.indexProjectDiagrams(
+      projectId,
+      userId,
+      orgId
+    );
+  }
+
+  /**
+   * Delete diagram summary embedding (e.g. when diagram file is deleted).
+   */
+  async deleteDiagramIndex(fileId: string) {
+    return this.diagramIndexService.deleteDiagramSummary(fileId);
+  }
+
+  /**
+   * List all diagrams in a project with their indexing status.
+   */
+  async listProjectDiagrams(projectId: string, userId: string) {
+    const orgId = await this.resolveOrgIdForProject(projectId, userId);
+    return this.diagramService.listProjectDiagrams(projectId, userId, orgId);
   }
 
   async ingestProjectDocuments(

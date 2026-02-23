@@ -35,7 +35,18 @@ const ragChat = async (
       maxChunks
     );
 
-    return {
+    console.log("\n" + "=".repeat(80));
+    console.log("📤 GRAPHQL RESOLVER: Preparing response");
+    console.log("=".repeat(80));
+    console.log("Response object:", JSON.stringify({
+      answerLength: response.answer?.length,
+      sourcesCount: response.sources?.length,
+      conversationId: response.conversationId,
+      metadata: response.metadata,
+    }, null, 2));
+    console.log("=".repeat(80) + "\n");
+
+    const result = {
       answer: response.answer,
       sources: response.sources,
       conversationId: response.conversationId,
@@ -46,6 +57,14 @@ const ragChat = async (
         tokensUsed: response.metadata.tokensUsed,
       },
     };
+
+    console.log("\n" + "=".repeat(80));
+    console.log("✅ GRAPHQL RESOLVER: Returning result");
+    console.log("=".repeat(80));
+    console.log("Result:", JSON.stringify(result, null, 2));
+    console.log("=".repeat(80) + "\n");
+
+    return result;
   } catch (error) {
     logger?.error("ragChat resolver failed", { error, projectId, userId });
     throw new GraphQLError("Failed to process RAG chat request", {
