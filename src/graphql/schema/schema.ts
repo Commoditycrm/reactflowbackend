@@ -2158,7 +2158,7 @@ const typeDefs = gql`
         WHERE p.deletedAt IS NULL
 
         // ----------------------------
-        // 1) Collect FlowNodes under project (same as your user task cypher)
+        // 1) Collect FlowNodes under project
         // ----------------------------
         CALL {
           WITH p
@@ -2173,7 +2173,7 @@ const typeDefs = gql`
         }
 
         // ----------------------------
-        // 2) Collect BacklogItems in project (same UNION logic)
+        // 2) Collect BacklogItems in project
         // ----------------------------
         CALL {
           WITH p, nodes
@@ -2196,54 +2196,72 @@ const typeDefs = gql`
         WITH p, collect(DISTINCT bi) AS allItems
 
         // ----------------------------
-        // 3) Members from assigned users ONLY (since designation is from rel prop)
+        // 3) Members (same logic as memberCount)
         // ----------------------------
-        MATCH (p)-[assignment:HAS_ASSIGNED_USER]->(user:User)
+        CALL {
+          WITH p
+          MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
+          RETURN u AS member, r AS rel, 'User' AS memberType
+
+          UNION
+
+          WITH p
+          MATCH (p)-[r:HAS_WORK_FORCE]->(w:WorkForce)
+          RETURN w AS member, r AS rel, 'WorkForce' AS memberType
+        }
 
         // ----------------------------
-        // 4) Completed/Pending per user using same rule as your user fields
+        // 4) Build myItems (only Users can match backlog item assignments in your model)
         // ----------------------------
-        WITH p, allItems, user, assignment,
-             [bi IN allItems WHERE EXISTS {
-               MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
-               WHERE u2.externalId = user.externalId
-             }] AS myItems
+        WITH p, allItems, member, rel, memberType,
+             CASE
+               WHEN memberType = 'User'
+               THEN [bi IN allItems WHERE EXISTS {
+                 MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
+                 WHERE u2.id = member.id
+               }]
+               ELSE []
+             END AS myItems
 
-        UNWIND myItems AS bi
+        // ✅ SAFE UNWIND so member doesn't disappear when myItems = []
+        UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-        WITH p, user, assignment,
-             collect(DISTINCT toLower(coalesce(s.defaultName, s.name, ""))) AS statuses,
-             count(DISTINCT bi) AS totalMine
+        WITH p, member, rel, memberType,
+             count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
+             collect(DISTINCT CASE
+               WHEN bi IS NULL THEN NULL
+               ELSE toLower(coalesce(s.defaultName, s.name, ""))
+             END) AS statuses
 
-        WITH p, user, assignment,
-             size([st IN statuses WHERE st = 'completed']) AS completedTask,
-             totalMine
+        WITH member, rel, memberType,
+             totalMine,
+             size([st IN statuses WHERE st = 'completed']) AS completedTask
 
-        WITH p, user, assignment,
+        WITH member, rel, memberType,
              completedTask,
              (totalMine - completedTask) AS pendingTask
 
         // ----------------------------
-        // 5) Worklog totals per user inside this project
+        // 5) Worklog totals (only Users are LOGGED_BY in your model)
         // ----------------------------
-        OPTIONAL MATCH (user)<-[:LOGGED_BY]-(wl:WorkLogs)<-[:HAS_WORK_LOG]-(biWL:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        WHERE biWL.deletedAt IS NULL
+        OPTIONAL MATCH (member)<-[:LOGGED_BY]-(wl:WorkLogs)<-[:HAS_WORK_LOG]-(biWL:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+        WHERE memberType = 'User' AND biWL.deletedAt IS NULL
 
-        WITH user, assignment, completedTask, pendingTask,
+        WITH member, rel, memberType, completedTask, pendingTask,
              coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
              coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
-             coalesce(toFloat(assignment.hourlyRate), 0.0) AS hourlyRate,
-             coalesce(toFloat(assignment.hours), 0.0) AS plannedHours,
-             coalesce(toFloat(assignment.budget), 0.0) AS plannedBudget
+             coalesce(toFloat(rel.hourlyRate), 0.0) AS hourlyRate,
+             coalesce(toFloat(rel.hours), 0.0) AS plannedHours,
+             coalesce(toFloat(rel.budget), 0.0) AS plannedBudget
 
         RETURN {
-          id: user.id,
-          name: user.name,
-          email: user.email,
+          id: member.id,
+          name: member.name,
+          email: coalesce(member.email, ""),
 
-          accessRole: user.role,
-          designation: assignment.designation,
+          accessRole: coalesce(member.role, ""),
+          designation: coalesce(rel.designation, ""),
 
           hourlyRate: hourlyRate,
           plannedHours: plannedHours,
@@ -2258,7 +2276,7 @@ const typeDefs = gql`
           pendingTask: pendingTask
         } AS memberRows
 
-        ORDER BY toLower(coalesce(user.name,'')) ASC
+        ORDER BY toLower(coalesce(member.name,'')) ASC
         SKIP $offset LIMIT $limit
         """
         columnName: "memberRows"
