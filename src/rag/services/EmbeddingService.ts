@@ -5,11 +5,20 @@ import { EmbeddingResult, RAG_CONFIG } from "../types/rag.types";
 
 export class EmbeddingService {
   private static instance: EmbeddingService;
-  private readonly openai: OpenAI;
+  private readonly embeddingClient: OpenAI;
+  private readonly chatClient: OpenAI;
 
   private constructor() {
-    this.openai = new OpenAI({
-      apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY"),
+    // Separate client for embeddings (local model via ngrok)
+    this.embeddingClient = new OpenAI({
+      apiKey: EnvLoader.get("EMBEDDING_API_KEY") || "dummy-key", // Local model may not need auth
+      baseURL: RAG_CONFIG.EMBEDDING_BASE_URL,
+    });
+
+    // Separate client for chat completions (Groq API)
+    this.chatClient = new OpenAI({
+      apiKey: EnvLoader.getOrThrow("GROQ_API_KEY"),
+      baseURL: RAG_CONFIG.CHAT_BASE_URL,
     });
   }
 
@@ -21,10 +30,10 @@ export class EmbeddingService {
 
   async generateEmbedding(text: string): Promise<EmbeddingResult> {
     try {
-      const response = await this.openai.embeddings.create({
+      const response = await this.embeddingClient.embeddings.create({
         model: RAG_CONFIG.EMBEDDING_MODEL,
         input: text.slice(0, 8000),
-        dimensions: RAG_CONFIG.EMBEDDING_DIMENSIONS,
+        encoding_format: "float",
       });
 
       const firstData = response.data[0];
@@ -46,15 +55,27 @@ export class EmbeddingService {
   async generateEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
     try {
       const truncatedTexts = texts.map((t) => t.slice(0, 8000));
-      const response = await this.openai.embeddings.create({
+      const response = await this.embeddingClient.embeddings.create({
         model: RAG_CONFIG.EMBEDDING_MODEL,
         input: truncatedTexts,
-        dimensions: RAG_CONFIG.EMBEDDING_DIMENSIONS,
+        encoding_format: "float",
       });
 
       const tokensPerText = Math.floor(
         (response.usage?.total_tokens ?? 0) / texts.length
       );
+
+      // DEBUG: Check what the SDK actually returns
+      const firstItem = response.data[0];
+      if (firstItem) {
+        logger?.info("EmbeddingService.generateEmbeddings dimension check", {
+          firstEmbeddingLength: firstItem.embedding.length,
+          isArray: Array.isArray(firstItem.embedding),
+          type: typeof firstItem.embedding,
+          firstValues: firstItem.embedding.slice(0, 3),
+          totalItems: response.data.length,
+        });
+      }
 
       return response.data.map((item) => ({
         embedding: item.embedding,
@@ -73,7 +94,7 @@ export class EmbeddingService {
     context: string
   ): Promise<{ content: string; tokensUsed: number }> {
     try {
-      const response = await this.openai.chat.completions.create({
+      const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
@@ -125,7 +146,7 @@ export class EmbeddingService {
         }
       }
 
-      const response = await this.openai.chat.completions.create({
+      const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: formattedMessages,
         max_tokens: RAG_CONFIG.MAX_TOKENS,
