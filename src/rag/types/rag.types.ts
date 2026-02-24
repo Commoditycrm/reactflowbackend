@@ -99,9 +99,16 @@ export interface EmbeddingResult {
 export const RAG_CONFIG = {
   CHUNK_SIZE: 1000,
   CHUNK_OVERLAP: 200,
-  EMBEDDING_MODEL: "text-embedding-3-small",
-  EMBEDDING_DIMENSIONS: 1536,
-  CHAT_MODEL: "gpt-4o-mini",
+  
+  // Embedding config (local Qwen model via ngrok)
+  EMBEDDING_MODEL: "text-embedding-qwen3-embedding-0.6b",
+  EMBEDDING_DIMENSIONS: 1024,
+  EMBEDDING_BASE_URL: process.env.EMBEDDING_BASE_URL || "https://unmodelled-marquis-nonexpulsive.ngrok-free.dev/v1",
+  
+  // Chat/LLM config (Groq API with Llama-4)
+  CHAT_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
+  CHAT_BASE_URL: process.env.CHAT_BASE_URL || "https://api.groq.com/openai/v1",
+  
   MAX_CONTEXT_CHUNKS: 5,
   MIN_RELEVANCE_SCORE: 0.7,
   MAX_TOKENS: 4000,
