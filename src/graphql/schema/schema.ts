@@ -1259,10 +1259,10 @@ const typeDefs = gql`
     hourlyRate: Float
     hours: Int
     budget: Float
-    consumedHours: Float # sum of all work logs that perticular user
-    consumedBudget: Float #sum of hourlyRate * hoursWork all work perticular user
-    remainingHours: Int # hours - consumedHours
-    remainingBudget: Float # budget - consumedBudget
+    consumedHours: Float
+    consumedBudget: Float 
+    remainingHours: Int 
+    remainingBudget: Float
   }
 
   type WorkForce {
@@ -2157,8 +2157,8 @@ const typeDefs = gql`
     name: String
     email: String
 
-    accessRole: String # ✅ from user.role
-    designation: String # ✅ from assignment.designation
+    accessRole: String 
+    designation: String 
     hourlyRate: Float
     plannedHours: Float
     plannedBudget: Float
@@ -2247,7 +2247,6 @@ const typeDefs = gql`
                ELSE []
              END AS myItems
 
-        // ✅ SAFE UNWIND so member doesn't disappear when myItems = []
         UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
