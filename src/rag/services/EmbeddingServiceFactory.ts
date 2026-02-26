@@ -1,6 +1,4 @@
 import { EmbeddingService } from "./EmbeddingService";
-import { LocalEmbeddingService } from "./LocalEmbeddingService";
-import { EnvLoader } from "../../util/EnvLoader";
 import type { EmbeddingResult, ToolCallResult } from "../types/rag.types";
 import type {
   ChatCompletionMessageParam,
@@ -8,23 +6,16 @@ import type {
 } from "openai/resources/chat/completions";
 
 /**
- * Factory that returns either OpenAI or Local embedding service
- * based on environment configuration
+ * Factory that returns the unified EmbeddingService
+ * (ngrok embeddings + Groq chat completions)
  */
 export class EmbeddingServiceFactory {
-  private static instance: EmbeddingService | LocalEmbeddingService;
+  private static instance: EmbeddingService;
 
-  static getInstance(): EmbeddingService | LocalEmbeddingService {
+  static getInstance(): EmbeddingService {
     if (!this.instance) {
-      const useLocal = EnvLoader.get("USE_LOCAL_MODELS") === "true";
-      
-      if (useLocal) {
-        this.instance = LocalEmbeddingService.getInstance();
-      } else {
-        this.instance = EmbeddingService.getInstance();
-      }
+      this.instance = EmbeddingService.getInstance();
     }
-    
     return this.instance;
   }
 
@@ -39,7 +30,6 @@ export class EmbeddingServiceFactory {
 
 /**
  * Universal embedding service interface
- * Use this in your code instead of directly importing EmbeddingService or LocalEmbeddingService
  */
 export interface IEmbeddingService {
   generateEmbedding(text: string): Promise<EmbeddingResult>;
@@ -71,4 +61,11 @@ export interface IEmbeddingService {
     toolResults: ToolCallResult[],
     toolCallIds: string[]
   ): Promise<{ content: string; tokensUsed: number }>;
+  generateContent(prompt: string): Promise<string>;
+  summarizeDiagram(
+    fileName: string,
+    nodes: Array<{ name: string; shape: string; description: string | null }>,
+    edges: Array<{ sourceName: string; targetName: string; label: string }>,
+    groups: Array<{ name: string; childNodeNames: string[] }>
+  ): Promise<string>;
 }

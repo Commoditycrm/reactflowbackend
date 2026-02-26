@@ -108,13 +108,13 @@ export const RAG_CONFIG = {
   // Chat/LLM config (Groq API with Llama-4)
   CHAT_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
   CHAT_BASE_URL: process.env.CHAT_BASE_URL || "https://api.groq.com/openai/v1",
+  SUMMARIZATION_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
   
   MAX_CONTEXT_CHUNKS: 5,
   MIN_RELEVANCE_SCORE: 0.7,
   MAX_TOKENS: 4000,
   VECTOR_INDEX_NAME: "document_embeddings",
-  GEMINI_SUMMARIZATION_MODEL: "gemini-flash-latest",
-  DIAGRAM_SUMMARY_EMBEDDING_DIMENSIONS: 1024, // Changed for consistency
+  DIAGRAM_SUMMARY_EMBEDDING_DIMENSIONS: 1024,
   DIAGRAM_SUMMARY_INDEX_NAME: "diagram_summary_embeddings",
 } as const;
 
