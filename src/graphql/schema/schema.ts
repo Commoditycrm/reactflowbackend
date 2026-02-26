@@ -1260,8 +1260,8 @@ const typeDefs = gql`
     hours: Int
     budget: Float
     consumedHours: Float
-    consumedBudget: Float 
-    remainingHours: Int 
+    consumedBudget: Float
+    remainingHours: Int
     remainingBudget: Float
   }
 
@@ -1604,6 +1604,75 @@ const typeDefs = gql`
         columnName: "workLogCount"
       )
 
+    assignedUsers: [User!]!
+      @relationship(
+        type: "HAS_ASSIGNED_USER"
+        direction: OUT
+        aggregate: true
+        nestedOperations: [CONNECT, DISCONNECT, UPDATE]
+        properties: "UserProjectAssignment"
+      )
+    workForce: [WorkForce!]!
+      @relationship(
+        type: "HAS_WORK_FORCE"
+        direction: OUT
+        aggregate: true
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+    folders: [Folder!]!
+      @relationship(
+        type: "HAS_CHILD_FOLDER"
+        direction: OUT
+        aggregate: true
+        nestedOperations: []
+      )
+    files: [File!]!
+      @relationship(
+        type: "HAS_CHILD_FILE"
+        direction: OUT
+        aggregate: true
+        nestedOperations: []
+      )
+
+    organization: Organization!
+      @relationship(
+        type: "HAS_PROJECTS"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    createdBy: User!
+      @relationship(
+        type: "CREATED_PROJECT"
+        direction: IN
+        nestedOperations: [CONNECT]
+        aggregate: false
+      )
+    sprints: [Sprint!]!
+      @relationship(
+        type: "HAS_SPRINTS"
+        direction: IN
+        nestedOperations: []
+        aggregate: false
+      )
+    resources: [Resource!]!
+      @relationship(
+        type: "HAS_RESOURCE"
+        direction: OUT
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+    deletedAt: DateTime
+  }
+
+  # custom project fields
+  extend type Project {
     startDate: DateTime
       @cypher(
         statement: """
@@ -1744,60 +1813,80 @@ const typeDefs = gql`
         """
         columnName: "progress"
       )
-    assignedUsers: [User!]!
-      @relationship(
-        type: "HAS_ASSIGNED_USER"
-        direction: OUT
-        aggregate: true
-        nestedOperations: [CONNECT, DISCONNECT, UPDATE]
-        properties: "UserProjectAssignment"
-      )
-    workForce: [WorkForce!]!
-      @relationship(
-        type: "HAS_WORK_FORCE"
-        direction: OUT
-        aggregate: true
-        nestedOperations: [CONNECT, DISCONNECT]
-      )
-    folders: [Folder!]!
-      @relationship(
-        type: "HAS_CHILD_FOLDER"
-        direction: OUT
-        aggregate: true
-        nestedOperations: []
-      )
-    files: [File!]!
-      @relationship(
-        type: "HAS_CHILD_FILE"
-        direction: OUT
-        aggregate: true
-        nestedOperations: []
-      )
-    ganttChartItems(
-      limit: Int! = 10
-      offset: Int! = 0
-      typeIds: [ID!]
-      statusIds: [ID!]
-    ): [BacklogItem!]!
+  }
+
+  type ProjectMemberRow {
+    id: ID!
+    name: String
+    email: String
+    accessRole: String
+    designation: String
+    hourlyRate: Float
+    plannedHours: Float
+    plannedBudget: Float
+    consumedHours: Float!
+    consumedBudget: Float!
+    remainingHours: Float!
+    remainingBudget: Float!
+    completedTask: Int!
+    pendingTask: Int!
+  }
+
+  # traversing and getting valide file and folder
+  extend type Project {
+    getAllFiles(
+      limit: Int = 10
+      offset: Int = 0
+      searchQuery: String
+    ): [File!]!
       @cypher(
         statement: """
-        WITH this,$typeIds AS typeIds , $statusIds AS statusIds
-        MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
-        WHERE bi.deletedAt IS NULL AND ALL (x IN nodes(p) WHERE NOT x:BacklogItem OR x.deleted IS NULL)
-        AND (
-          size(coalesce(typeIds,[]))=0
-          OR ANY(id IN typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
-        )
-        AND (
-          size(coalesce(statusIds,[]))=0
-          OR ANY(id IN statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
-        )
-        RETURN DISTINCT bi AS backlogItems
-        ORDER BY bi.startDate ASC
+        WITH this, $searchQuery AS sq
+
+        CALL(this) {
+          WITH this
+          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)
+          WHERE file.deletedAt IS NULL
+          RETURN file
+
+          UNION
+
+          WITH this
+          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)
+          WHERE file.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN file
+        }
+
+        WITH DISTINCT file,sq
+        WHERE sq IS NULL OR trim(sq) = "" OR toLower(file.name) CONTAINS toLower(sq)
+
+        RETURN DISTINCT file
+        ORDER BY file.createdAt DESC
         SKIP $offset LIMIT $limit
         """
-        columnName: "backlogItems"
+        columnName: "file"
       )
+
+    getAllFolders(
+      limit: Int! = 10
+      offset: Int! = 0
+      searchQuery: String
+    ): [Folder!]!
+      @cypher(
+        statement: """
+        WITH this, $searchQuery AS sq
+        MATCH path = (this)-[:HAS_CHILD_FOLDER]->(folders:Folder)
+        WHERE folders.deletedAt IS NULL AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          AND (sq IS NULL OR trim(sq)="" OR toLower(folders.name) CONTAINS toLower(sq))
+        RETURN DISTINCT folders ORDER BY folders.createdAt DESC SKIP $offset LIMIT $limit
+        """
+        columnName: "folders"
+      )
+  }
+
+  # backlogItems and there counts
+  extend type Project {
     backlogItems(
       filters: BacklogItemFilterInput
       limit: Int! = 10
@@ -2064,112 +2153,31 @@ const typeDefs = gql`
         """
         columnName: "backlogItemsCount"
       )
-
-    getAllFiles(
-      limit: Int = 10
-      offset: Int = 0
-      searchQuery: String
-    ): [File!]!
-      @cypher(
-        statement: """
-        WITH this, $searchQuery AS sq
-
-        CALL(this) {
-          WITH this
-          MATCH (this)-[:HAS_CHILD_FILE]->(file:File)
-          WHERE file.deletedAt IS NULL
-          RETURN file
-
-          UNION
-
-          WITH this
-          MATCH path=(this)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)
-          WHERE file.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          RETURN file
-        }
-
-        WITH DISTINCT file,sq
-        WHERE sq IS NULL OR trim(sq) = "" OR toLower(file.name) CONTAINS toLower(sq)
-
-        RETURN DISTINCT file
-        ORDER BY file.createdAt DESC
-        SKIP $offset LIMIT $limit
-        """
-        columnName: "file"
-      )
-
-    getAllFolders(
+    ganttChartItems(
       limit: Int! = 10
       offset: Int! = 0
-      searchQuery: String
-    ): [Folder!]!
+      typeIds: [ID!]
+      statusIds: [ID!]
+    ): [BacklogItem!]!
       @cypher(
         statement: """
-        WITH this, $searchQuery AS sq
-        MATCH path = (this)-[:HAS_CHILD_FOLDER]->(folders:Folder)
-        WHERE folders.deletedAt IS NULL AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-          AND (sq IS NULL OR trim(sq)="" OR toLower(folders.name) CONTAINS toLower(sq))
-        RETURN DISTINCT folders ORDER BY folders.createdAt DESC SKIP $offset LIMIT $limit
+        WITH this,$typeIds AS typeIds , $statusIds AS statusIds
+        MATCH p = (this)-[r:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(this)
+        WHERE bi.deletedAt IS NULL AND ALL (x IN nodes(p) WHERE NOT x:BacklogItem OR x.deleted IS NULL)
+        AND (
+          size(coalesce(typeIds,[]))=0
+          OR ANY(id IN typeIds WHERE (bi)-[:HAS_BACKLOGITEM_TYPE]->(:BacklogItemType {id: id}))
+        )
+        AND (
+          size(coalesce(statusIds,[]))=0
+          OR ANY(id IN statusIds WHERE (bi)-[:HAS_STATUS]->(:Status {id: id}))
+        )
+        RETURN DISTINCT bi AS backlogItems
+        ORDER BY bi.startDate ASC
+        SKIP $offset LIMIT $limit
         """
-        columnName: "folders"
+        columnName: "backlogItems"
       )
-
-    organization: Organization!
-      @relationship(
-        type: "HAS_PROJECTS"
-        direction: IN
-        aggregate: false
-        nestedOperations: [CONNECT]
-      )
-    createdBy: User!
-      @relationship(
-        type: "CREATED_PROJECT"
-        direction: IN
-        nestedOperations: [CONNECT]
-        aggregate: false
-      )
-    sprints: [Sprint!]!
-      @relationship(
-        type: "HAS_SPRINTS"
-        direction: IN
-        nestedOperations: []
-        aggregate: false
-      )
-    resources: [Resource!]!
-      @relationship(
-        type: "HAS_RESOURCE"
-        direction: OUT
-        nestedOperations: [CONNECT, DISCONNECT]
-      )
-    triggerLastModified: Boolean
-      @populatedBy(
-        callback: "updateOrgLastModified"
-        operations: [UPDATE, CREATE]
-      )
-    createdAt: DateTime! @timestamp(operations: [CREATE])
-    updatedAt: DateTime @timestamp(operations: [UPDATE])
-    deletedAt: DateTime
-  }
-
-  type ProjectMemberRow {
-    id: ID!
-    name: String
-    email: String
-
-    accessRole: String 
-    designation: String 
-    hourlyRate: Float
-    plannedHours: Float
-    plannedBudget: Float
-
-    consumedHours: Float!
-    consumedBudget: Float!
-    remainingHours: Float!
-    remainingBudget: Float!
-
-    completedTask: Int!
-    pendingTask: Int!
   }
 
   extend type Project {
