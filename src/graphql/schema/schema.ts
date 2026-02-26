@@ -2146,6 +2146,7 @@ const typeDefs = gql`
     name: String
     email: String
     phoneNumber: String
+    createdAt: DateTime
     accessRole: String
     designation: String
     hourlyRate: Float
@@ -2431,7 +2432,8 @@ const typeDefs = gql`
            remainingBudget: (plannedBudget - consumedBudget),
 
            completedTask: completedTask,
-           pendingTask: pendingTask
+           pendingTask: pendingTask,
+           createdAt:u.createdAt
          } AS getProjectUserDetail
         """
         columnName: "getProjectUserDetail"
