@@ -7,7 +7,6 @@ import {
 } from "../types/rag.types";
 import { DiagramService } from "./DiagramService";
 import { EmbeddingServiceFactory, IEmbeddingService } from "./EmbeddingServiceFactory";
-import { GeminiService } from "./GeminiService";
 
 // Utility function to add delay between API calls
 function sleep(ms: number): Promise<void> {
@@ -18,8 +17,8 @@ function sleep(ms: number): Promise<void> {
  * Manages lightweight diagram summary embeddings.
  *
  * Each diagram file gets a single DiagramSummaryNode in Neo4j containing:
- *   - A Gemini-generated text summary of the diagram's content
- *   - An OpenAI embedding of that summary for vector search
+ *   - A Groq Llama-4 generated text summary of the diagram's content
+ *   - An embedding of that summary (via ngrok local model) for vector search
  *
  * This allows semantic search over diagrams ("find the order flow")
  * without embedding the full graph structure.
@@ -28,13 +27,11 @@ function sleep(ms: number): Promise<void> {
 export class DiagramIndexService {
   private static instance: DiagramIndexService;
   private embeddingService: IEmbeddingService;
-  private geminiService: GeminiService;
   private diagramService: DiagramService;
   private initializedIndexes = new Set<string>();
 
   private constructor() {
     this.embeddingService = EmbeddingServiceFactory.getInstance();
-    this.geminiService = GeminiService.getInstance();
     this.diagramService = DiagramService.getInstance();
   }
 
@@ -131,7 +128,7 @@ export class DiagramIndexService {
       return null;
     }
 
-    // 2. Generate summary via Gemini
+    // 2. Generate summary via Groq Llama-4
     const nodeInfos = diagramData.nodes.map((n) => ({
       name: n.name,
       shape: n.shape,
@@ -149,15 +146,15 @@ export class DiagramIndexService {
         .filter(Boolean),
     }));
 
-    const summaryText = await this.geminiService.summarizeDiagram(
+    const summaryText = await this.embeddingService.summarizeDiagram(
       diagramData.fileName,
       nodeInfos,
       edgeInfos,
       groupInfos
     );
 
-    // Log the Gemini-generated summary
-    logger?.info("📝 Gemini Summary Generated", {
+    // Log the Groq-generated summary
+    logger?.info("📝 Groq Summary Generated", {
       fileId,
       fileName: diagramData.fileName,
       summaryLength: summaryText.length,
@@ -169,7 +166,7 @@ export class DiagramIndexService {
     console.log(summaryText);
     console.log("=".repeat(80) + "\n");
 
-    // 3. Embed the summary using OpenAI
+    // 3. Embed the summary using local model (ngrok)
     const { embedding } =
       await this.embeddingService.generateEmbedding(summaryText);
 
@@ -281,9 +278,8 @@ export class DiagramIndexService {
         if (result) indexed++;
         else skipped++;
         
-        // Add delay between Gemini API calls to avoid rate limiting
-        // Gemini free tier: 15 requests per minute = 4 seconds between calls
-        await sleep(5000);
+        // Add delay between API calls to avoid rate limiting
+        await sleep(2000);
       } catch (error) {
         logger?.error(
           "DiagramIndexService.indexProjectDiagrams: failed for diagram",
@@ -292,7 +288,7 @@ export class DiagramIndexService {
         failed++;
         
         // Add delay even on failure to respect rate limits
-        await sleep(5000);
+        await sleep(2000);
       }
     }
 

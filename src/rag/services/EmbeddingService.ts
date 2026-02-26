@@ -8,6 +8,12 @@ import { EnvLoader } from "../../util/EnvLoader";
 import logger from "../../logger";
 import { EmbeddingResult, RAG_CONFIG, ToolCallResult } from "../types/rag.types";
 
+/**
+ * Unified EmbeddingService
+ *
+ * - **Embeddings** → local model via ngrok (EMBEDDING_BASE_URL / EMBEDDING_API_KEY)
+ * - **Chat completions** → Groq API (CHAT_BASE_URL / GROQ_API_KEY) with Llama-4
+ */
 export class EmbeddingService {
   private static instance: EmbeddingService;
   private readonly embeddingClient: OpenAI;
@@ -33,6 +39,8 @@ export class EmbeddingService {
     return EmbeddingService.instance;
   }
 
+  // ─── Embeddings (ngrok / local model) ─────────────────────────────────
+
   async generateEmbedding(text: string): Promise<EmbeddingResult> {
     try {
       const response = await this.embeddingClient.embeddings.create({
@@ -43,7 +51,7 @@ export class EmbeddingService {
 
       const firstData = response.data[0];
       if (!firstData) {
-        throw new Error("No embedding returned from OpenAI");
+        throw new Error("No embedding returned from embedding service");
       }
 
       return {
@@ -92,6 +100,8 @@ export class EmbeddingService {
       throw error;
     }
   }
+
+  // ─── Chat Completions (Groq / Llama-4) ────────────────────────────────
 
   async generateChatCompletion(
     systemPrompt: string,
@@ -171,8 +181,10 @@ export class EmbeddingService {
     }
   }
 
+  // ─── Tool-calling (Groq / Llama-4) ───────────────────────────────────
+
   /**
-   * Chat completion with OpenAI tool-calling support.
+   * Chat completion with Groq tool-calling support.
    *
    * Flow:
    *  1. Send messages + tool definitions to the model
@@ -200,7 +212,7 @@ export class EmbeddingService {
     tokensUsed: number;
   }> {
     try {
-      const response = await this.openai.chat.completions.create({
+      const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         tools,
@@ -258,7 +270,7 @@ export class EmbeddingService {
         })
       );
 
-      const response = await this.openai.chat.completions.create({
+      const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
@@ -280,5 +292,82 @@ export class EmbeddingService {
       });
       throw error;
     }
+  }
+
+  // ─── Summarization (Groq / Llama-4) ──────────────────────────────────
+
+  /**
+   * Generate content using Groq Llama-4 (replaces Gemini).
+   */
+  async generateContent(prompt: string): Promise<string> {
+    try {
+      const response = await this.chatClient.chat.completions.create({
+        model: RAG_CONFIG.SUMMARIZATION_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        max_tokens: 1024,
+        top_p: 0.8,
+      });
+
+      const text = response.choices[0]?.message?.content;
+      if (!text) {
+        throw new Error("No text returned from Groq API");
+      }
+
+      return text.trim();
+    } catch (error) {
+      logger?.error("EmbeddingService.generateContent failed", { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Summarize a diagram's structure into a concise text description.
+   * This summary is used as a lightweight embedding for diagram discovery.
+   */
+  async summarizeDiagram(
+    fileName: string,
+    nodes: Array<{ name: string; shape: string; description: string | null }>,
+    edges: Array<{
+      sourceName: string;
+      targetName: string;
+      label: string;
+    }>,
+    groups: Array<{ name: string; childNodeNames: string[] }>
+  ): Promise<string> {
+    const nodeList = nodes
+      .map(
+        (n) =>
+          `- "${n.name}" (${n.shape})${n.description ? `: ${n.description}` : ""}`
+      )
+      .join("\n");
+
+    const edgeList = edges
+      .map(
+        (e) =>
+          `- "${e.sourceName}" → "${e.targetName}"${e.label ? ` [${e.label}]` : ""}`
+      )
+      .join("\n");
+
+    const groupList = groups
+      .map((g) => `- Group "${g.name}": contains [${g.childNodeNames.join(", ")}]`)
+      .join("\n");
+
+    const prompt = `You are a technical analyst. Summarize this diagram/flowchart into a concise paragraph (3-5 sentences) that captures its purpose, the key processes/steps, and how they connect. Focus on WHAT the diagram represents, not visual layout.
+
+Diagram: "${fileName}"
+
+Nodes:
+${nodeList || "(none)"}
+
+Connections:
+${edgeList || "(none)"}
+
+Groups:
+${groupList || "(none)"}
+
+Write a clear, searchable summary paragraph:`;
+
+    return this.generateContent(prompt);
   }
 }

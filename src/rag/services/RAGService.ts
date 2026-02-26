@@ -14,7 +14,7 @@ import {
 } from "../types/rag.types";
 import { DiagramIndexService } from "./DiagramIndexService";
 import { DiagramService } from "./DiagramService";
-import { EmbeddingServiceFactory, IEmbeddingService } from "./EmbeddingServiceFactory";
+import { EmbeddingServiceFactory } from "./EmbeddingServiceFactory";
 import { EmbeddingService } from "./EmbeddingService";
 import { PDFProcessor } from "./PDFProcessor";
 import { VectorStore } from "./VectorStore";
@@ -93,8 +93,7 @@ const TOOLS: ChatCompletionTool[] = [
 
 export class RAGService {
   private static instance: RAGService;
-  private embeddingService: IEmbeddingService; // For embeddings (can be local or OpenAI)
-  private chatService: EmbeddingService; // For chat completions (always OpenAI for tool support)
+  private service: EmbeddingService; // Unified: ngrok embeddings + Groq chat
   private pdfProcessor: PDFProcessor;
   private vectorStore: VectorStore;
   private diagramService: DiagramService;
@@ -102,8 +101,7 @@ export class RAGService {
   private conversations: Map<string, Conversation> = new Map();
 
   private constructor() {
-    this.embeddingService = EmbeddingServiceFactory.getInstance(); // Uses local or OpenAI based on USE_LOCAL_MODELS
-    this.chatService = EmbeddingService.getInstance(); // Always use OpenAI for chat completions
+    this.service = EmbeddingService.getInstance();
     this.pdfProcessor = PDFProcessor.getInstance();
     this.vectorStore = VectorStore.getInstance();
     this.diagramService = DiagramService.getInstance();
@@ -292,7 +290,7 @@ export class RAGService {
         timestamp: new Date(),
       });
 
-      // Build message history for OpenAI
+      // Build message history for Groq
       const historyMessages: ChatCompletionMessageParam[] = conversation.messages
         .slice(-10)
         .map((m) => ({
@@ -314,7 +312,7 @@ export class RAGService {
         toolsAvailable: TOOLS.map(t => t.function.name),
       });
       
-      const firstResponse = await this.chatService.chatWithTools(
+      const firstResponse = await this.service.chatWithTools(
         systemPrompt,
         historyMessages,
         TOOLS
@@ -390,7 +388,7 @@ export class RAGService {
         // ── 5. Second LLM call — model produces answer with tool results
         const toolCallIds = firstResponse.toolCalls.map((tc) => tc.id);
         const finalResponse =
-          await this.chatService.continueWithToolResults(
+          await this.service.continueWithToolResults(
             systemPrompt,
             historyMessages,
             firstResponse.assistantMessage,
