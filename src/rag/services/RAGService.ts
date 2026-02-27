@@ -299,12 +299,12 @@ export class RAGService {
         }));
 
       // ── 3. First LLM call — let model decide which tools to call ─────
-      console.log("\n" + "=".repeat(80));
-      console.log("🤖 RAG CHAT: Making LLM call with tools");
-      console.log("=".repeat(80));
+      console.log("\n" + "-".repeat(80));
+      console.log("RAG CHAT: Making LLM call with tools");
+      console.log("-".repeat(80));
       console.log(`User Query: ${message}`);
       console.log(`Available Tools: ${TOOLS.map(t => t.function.name).join(", ")}`);
-      console.log("=".repeat(80) + "\n");
+      console.log("-".repeat(80) + "\n");
       
       logger?.info("RAGService: Making first LLM call with tools", {
         systemPromptLength: systemPrompt.length,
@@ -318,20 +318,20 @@ export class RAGService {
         TOOLS
       );
 
-      console.log("\n" + "=".repeat(80));
-      console.log("✅ LLM RESPONSE RECEIVED");
-      console.log("=".repeat(80));
+      console.log("\n" + "-".repeat(80));
+      console.log("LLM response received");
+      console.log("-".repeat(80));
       if (firstResponse.toolCalls && firstResponse.toolCalls.length > 0) {
-        console.log(`🛠️  Tool Calls Requested: ${firstResponse.toolCalls.length}`);
+        console.log(`Tool calls requested: ${firstResponse.toolCalls.length}`);
         firstResponse.toolCalls.forEach((tc, i) => {
           console.log(`   ${i + 1}. ${tc.functionName}`);
           console.log(`      Args: ${tc.arguments}`);
         });
       } else {
-        console.log("💬 Direct response (no tools used)");
+        console.log("Direct response (no tools used)");
         console.log(`   Content: ${firstResponse.content?.substring(0, 150)}...`);
       }
-      console.log("=".repeat(80) + "\n");
+      console.log("-".repeat(80) + "\n");
       
       logger?.info("RAGService: First LLM response received", {
         hasToolCalls: !!firstResponse.toolCalls,
@@ -374,14 +374,14 @@ export class RAGService {
           sourcesFound: allSources.length,
         });
 
-        console.log("\n" + "=".repeat(80));
-        console.log("✅ TOOL EXECUTION COMPLETED");
-        console.log("=".repeat(80));
-        console.log(`Sources Found: ${allSources.length}`);
+        console.log("\n" + "-".repeat(80));
+        console.log("Tool execution completed");
+        console.log("-".repeat(80));
+        console.log(`Sources found: ${allSources.length}`);
         allSources.forEach((src, i) => {
           console.log(`   ${i + 1}. ${src.documentName} (score: ${(src.relevanceScore * 100).toFixed(1)}%)`);
         });
-        console.log("=".repeat(80) + "\n");
+        console.log("-".repeat(80) + "\n");
 
         chunksUsed = allSources.length;
 
@@ -402,13 +402,13 @@ export class RAGService {
           tokensUsed: finalResponse.tokensUsed,
         });
 
-        console.log("\n" + "=".repeat(80));
-        console.log("🎯 FINAL ANSWER GENERATED");
-        console.log("=".repeat(80));
+        console.log("\n" + "-".repeat(80));
+        console.log("Final answer generated");
+        console.log("-".repeat(80));
         console.log(finalResponse.content);
-        console.log("=".repeat(80));
-        console.log(`Tokens Used: ${tokensUsed}, Processing Time: ${Date.now() - startTime}ms`);
-        console.log("=".repeat(80) + "\n");
+        console.log("-".repeat(80));
+        console.log(`Tokens used: ${tokensUsed}, Processing time: ${Date.now() - startTime}ms`);
+        console.log("-".repeat(80) + "\n");
 
         finalContent = finalResponse.content;
         tokensUsed += finalResponse.tokensUsed;

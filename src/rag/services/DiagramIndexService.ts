@@ -154,17 +154,17 @@ export class DiagramIndexService {
     );
 
     // Log the Groq-generated summary
-    logger?.info("📝 Groq Summary Generated", {
+    logger?.info("DiagramIndexService: Summary generated", {
       fileId,
       fileName: diagramData.fileName,
       summaryLength: summaryText.length,
       summary: summaryText,
     });
-    console.log("\n" + "=".repeat(80));
-    console.log(`📊 DIAGRAM: ${diagramData.fileName}`);
-    console.log("=".repeat(80));
+    console.log("\n" + "-".repeat(80));
+    console.log(`Diagram: ${diagramData.fileName}`);
+    console.log("-".repeat(80));
     console.log(summaryText);
-    console.log("=".repeat(80) + "\n");
+    console.log("-".repeat(80) + "\n");
 
     // 3. Embed the summary using local model (ngrok)
     const { embedding } =
@@ -218,7 +218,7 @@ export class DiagramIndexService {
         edgeCount: diagramData.edges.length,
         groupCount: diagramData.groups.length,
       });
-      console.log(`✅ Stored in Neo4j with ${embedding.length}-dim embedding\n`);
+      console.log(`Stored in Neo4j with ${embedding.length}-dim embedding\n`);
 
       return {
         fileId,
