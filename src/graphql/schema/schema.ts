@@ -2164,157 +2164,158 @@ const typeDefs = gql`
     memberRows(limit: Int = 10, offset: Int = 0): [ProjectMemberRow!]!
       @cypher(
         statement: """
-        WITH this AS p
-        WHERE p.deletedAt IS NULL
+          WITH this AS p
+          WHERE p.deletedAt IS NULL
 
-        // ----------------------------
-        // 1) Collect FlowNodes under project
-        // ----------------------------
-        CALL {
-          WITH p
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          // ----------------------------
+          // 1) Collect FlowNodes under project
+          // ----------------------------
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
-          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
-        }
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
 
-        // ----------------------------
-        // 2) Collect BacklogItems in project (VALID ITEMS)
-        // ----------------------------
-        CALL {
-          WITH p, nodes
+          // ----------------------------
+          // 2) Collect BacklogItems in project (VALID ITEMS)
+          // ----------------------------
+          CALL {
+            WITH p, nodes
 
-          UNWIND nodes AS n
-          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-          RETURN DISTINCT bi
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
 
-          UNION
+            UNION
 
-          WITH p
-          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-          WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-          RETURN DISTINCT bi
-        }
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
 
-        WITH p, collect(DISTINCT bi) AS allItems
+          WITH p, collect(DISTINCT bi) AS allItems
 
-        // ----------------------------
-        // 3) Members
-        //   - Users: rel props on HAS_ASSIGNED_USER
-        //   - WorkForce: NO rel props; use node props
-        // ----------------------------
-        CALL {
-          WITH p
-          MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
-          RETURN u AS member, r AS rel, 'User' AS memberType
+          // ----------------------------
+          // 3) Members
+          //   - Users: rel props on HAS_ASSIGNED_USER
+          //   - WorkForce: NO rel props; use node props
+          // ----------------------------
+          CALL {
+            WITH p
+            MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
+            RETURN u AS member, r AS rel, 'User' AS memberType
 
-          UNION
+            UNION
 
-          WITH p
-          MATCH (p)-[:HAS_WORK_FORCE]->(w:WorkForce)
-          RETURN w AS member, NULL AS rel, 'WorkForce' AS memberType
-        }
+            WITH p
+            MATCH (p)-[:HAS_WORK_FORCE]->(w:WorkForce)
+            RETURN w AS member, NULL AS rel, 'WorkForce' AS memberType
+          }
 
-        // ----------------------------
-        // 4) Tasks for member (Users only)
-        // ----------------------------
-        WITH p, allItems, member, rel, memberType,
-             CASE
-               WHEN memberType = 'User'
-               THEN [bi IN allItems WHERE EXISTS {
-                 MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
-                 WHERE u2.id = member.id
-               }]
-               ELSE []
-             END AS myItems
+          // ----------------------------
+          // 4) Tasks for member (Users only)
+          // ----------------------------
+          WITH p, allItems, member, rel, memberType,
+               CASE
+                 WHEN memberType = 'User'
+                 THEN [bi IN allItems WHERE EXISTS {
+                   MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
+                   WHERE u2.id = member.id
+                 }]
+                 ELSE []
+               END AS myItems
 
-        UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
-        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+          // myItems is already built above (ID-only)
+          UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
+          OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-        WITH p, allItems, member, rel, memberType,
-             count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
-             collect(DISTINCT CASE
-               WHEN bi IS NULL THEN NULL
-               ELSE toLower(coalesce(s.defaultName, s.name, ""))
-             END) AS statuses
+          WITH p, allItems, member, rel, memberType,
+          // total assigned items for this member
+          count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
 
-        WITH p, allItems, member, rel, memberType, totalMine,
-             size([st IN statuses WHERE st = 'completed']) AS completedTask
+          // completed items for this member
+          count(DISTINCT CASE
+            WHEN bi IS NULL THEN NULL
+          WHEN toLower(coalesce(s.defaultName, s.name, "")) = 'completed' THEN bi
+          ELSE NULL
+          END) AS completedTask
 
-        WITH p, allItems, member, rel, memberType, completedTask,
-             (totalMine - completedTask) AS pendingTask
+        WITH p, allItems, member, rel, memberType,completedTask,
+        (totalMine - completedTask) AS pendingTask
+          // ----------------------------
+          // 5) Worklog totals ONLY from valid items (allItems)
+          //    ✅ SAFE even if allItems = []
+          // ----------------------------
+          UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
+          OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
+          WHERE memberType = 'User'
+            AND uWL.id = member.id
+            AND (biWL IS NULL OR biWL.deletedAt IS NULL)
 
-        // ----------------------------
-        // 5) Worklog totals ONLY from valid items (allItems)
-        //    ✅ SAFE even if allItems = []
-        // ----------------------------
-        UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
-        OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
-        WHERE memberType = 'User'
-          AND uWL.id = member.id
-          AND (biWL IS NULL OR biWL.deletedAt IS NULL)
+          // ----------------------------
+          // 6) Planned/Rate/Budget:
+          //    - User -> rel props
+          //    - WorkForce -> node props
+          // ----------------------------
+          WITH member, rel, memberType, completedTask, pendingTask,
+               coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
+               coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
 
-        // ----------------------------
-        // 6) Planned/Rate/Budget:
-        //    - User -> rel props
-        //    - WorkForce -> node props
-        // ----------------------------
-        WITH member, rel, memberType, completedTask, pendingTask,
-             coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
-             coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
+               CASE
+                 WHEN memberType = 'User' THEN coalesce(toFloat(rel.hourlyRate), 0.0)
+                 ELSE coalesce(toFloat(member.hourlyRate), 0.0)
+               END AS hourlyRate,
 
-             CASE
-               WHEN memberType = 'User' THEN coalesce(toFloat(rel.hourlyRate), 0.0)
-               ELSE coalesce(toFloat(member.hourlyRate), 0.0)
-             END AS hourlyRate,
+               CASE
+                 WHEN memberType = 'User' THEN coalesce(toFloat(rel.hours), 0.0)
+                 ELSE coalesce(toFloat(member.hours), 0.0)
+               END AS plannedHours,
 
-             CASE
-               WHEN memberType = 'User' THEN coalesce(toFloat(rel.hours), 0.0)
-               ELSE coalesce(toFloat(member.hours), 0.0)
-             END AS plannedHours,
+               CASE
+                 WHEN memberType = 'User' THEN coalesce(toFloat(rel.budget), 0.0)
+                 ELSE coalesce(toFloat(member.budget), 0.0)
+               END AS plannedBudget,
 
-             CASE
-               WHEN memberType = 'User' THEN coalesce(toFloat(rel.budget), 0.0)
-               ELSE coalesce(toFloat(member.budget), 0.0)
-             END AS plannedBudget,
+               CASE
+                 WHEN memberType = 'User' THEN coalesce(rel.designation, "")
+                 ELSE coalesce(member.designation, "")
+               END AS designation,
 
-             CASE
-               WHEN memberType = 'User' THEN coalesce(rel.designation, "")
-               ELSE coalesce(member.designation, "")
-             END AS designation,
+               coalesce(member.role, "") AS accessRole
 
-             coalesce(member.role, "") AS accessRole
+          RETURN {
+            id: member.id,
+            name: member.name,
+            email: coalesce(member.email, ""),
 
-        RETURN {
-          id: member.id,
-          name: member.name,
-          email: coalesce(member.email, ""),
+            accessRole: accessRole,
+            designation: designation,
 
-          accessRole: accessRole,
-          designation: designation,
+            hourlyRate: hourlyRate,
+            plannedHours: plannedHours,
+            plannedBudget: plannedBudget,
 
-          hourlyRate: hourlyRate,
-          plannedHours: plannedHours,
-          plannedBudget: plannedBudget,
+            consumedHours: consumedHours,
+            consumedBudget: consumedBudget,
+            remainingHours: (plannedHours - consumedHours),
+            remainingBudget: (plannedBudget - consumedBudget),
 
-          consumedHours: consumedHours,
-          consumedBudget: consumedBudget,
-          remainingHours: (plannedHours - consumedHours),
-          remainingBudget: (plannedBudget - consumedBudget),
+            completedTask: completedTask,
+            pendingTask: pendingTask
+          } AS memberRows
 
-          completedTask: completedTask,
-          pendingTask: pendingTask
-        } AS memberRows
-
-        ORDER BY member.createdAt DESC
-        SKIP $offset LIMIT $limit
+          ORDER BY member.createdAt DESC
+          SKIP $offset LIMIT $limit
         """
         columnName: "memberRows"
       )
@@ -2392,26 +2393,24 @@ const typeDefs = gql`
         // ----------------------------
         WITH p, u, r, allItems,
              [bi IN allItems WHERE EXISTS {
-               MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
-               WHERE u2.id = u.id OR u2.externalId = u.externalId
+               MATCH (bi)-[:HAS_ASSIGNED_USER]->(u)
              }] AS myItems
 
+        // ✅ SAFE if no items assigned
         // ✅ SAFE if no items assigned
         UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
         WITH p, u, r, allItems,
-             count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
-             collect(DISTINCT CASE
-               WHEN bi IS NULL THEN NULL
-               ELSE toLower(coalesce(s.defaultName, s.name, ""))
-             END) AS statuses
+          count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
+          sum(
+            CASE
+            WHEN bi IS NULL THEN 0
+              WHEN toLower(coalesce(s.defaultName, s.name, "")) = "completed" THEN 1
+            ELSE 0
+          END) AS completedTask
 
-        WITH p, u, r, allItems, totalMine,
-             size([st IN statuses WHERE st = 'completed']) AS completedTask
-
-        WITH p, u, r, allItems, completedTask,
-             (totalMine - completedTask) AS pendingTask
+        WITH p, u, r, allItems, completedTask,(totalMine - completedTask) AS pendingTask
 
         // ----------------------------
         // 5) Worklog totals ONLY from valid items (FIX: safe unwind + don't shadow u)
