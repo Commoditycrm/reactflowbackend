@@ -2335,7 +2335,7 @@ const typeDefs = gql`
         """
         columnName: "memberCount"
       )
-    getProjectUserDetail(userId: ID!): ProjectMemberRow!
+    getProjectUserDetail(userId: ID!): ProjectMemberRow
       @cypher(
         statement: """
          WITH this AS p, $userId AS userId
