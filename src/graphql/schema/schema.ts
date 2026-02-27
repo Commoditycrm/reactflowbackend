@@ -1254,6 +1254,9 @@ const typeDefs = gql`
     hourlyRate: Float
     hours: Int
     budget: Float
+    consumedBudget: Float
+    remainingHours: Int
+    remainingBudget: Float
   }
 
   type WorkForce {
