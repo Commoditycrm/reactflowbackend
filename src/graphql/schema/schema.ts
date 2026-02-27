@@ -2207,6 +2207,8 @@ const typeDefs = gql`
 
         // ----------------------------
         // 3) Members
+        //   - Users: rel props on HAS_ASSIGNED_USER
+        //   - WorkForce: NO rel props; use node props
         // ----------------------------
         CALL {
           WITH p
@@ -2251,13 +2253,13 @@ const typeDefs = gql`
 
         // ----------------------------
         // 5) Worklog totals ONLY from valid items (allItems)
-        //    (Users only are LOGGED_BY)
+        //    ✅ SAFE even if allItems = []
         // ----------------------------
-        UNWIND allItems AS biWL
+        UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
         OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
         WHERE memberType = 'User'
           AND uWL.id = member.id
-          AND biWL.deletedAt IS NULL
+          AND (biWL IS NULL OR biWL.deletedAt IS NULL)
 
         // ----------------------------
         // 6) Planned/Rate/Budget:
@@ -2311,7 +2313,7 @@ const typeDefs = gql`
           pendingTask: pendingTask
         } AS memberRows
 
-        ORDER BY toLower(coalesce(member.name,'')) ASC
+        ORDER BY member.createdAt DESC
         SKIP $offset LIMIT $limit
         """
         columnName: "memberRows"
@@ -2338,102 +2340,116 @@ const typeDefs = gql`
     getProjectUserDetail(userId: ID!): ProjectMemberRow
       @cypher(
         statement: """
-         WITH this AS p, $userId AS userId
-         WHERE p.deletedAt IS NULL
+        WITH this AS p, $userId AS userId
+        WHERE p.deletedAt IS NULL
 
-         CALL {
-           WITH p
-           OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+        // ----------------------------
+        // 1) Collect FlowNodes under project
+        // ----------------------------
+        CALL {
+          WITH p
+          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-           OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
-           WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
-             AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-           RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
-         }
+          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+        }
 
+        // ----------------------------
+        // 2) Collect VALID BacklogItems in project
+        // ----------------------------
+        CALL {
+          WITH p, nodes
 
-         CALL {
-           WITH p, nodes
+          UNWIND nodes AS n
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
 
-           UNWIND nodes AS n
-           MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-           WHERE bi.deletedAt IS NULL
-             AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-           RETURN DISTINCT bi
+          UNION
 
-           UNION
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
 
-           WITH p
-           MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-           WHERE bi.deletedAt IS NULL
-             AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-           RETURN DISTINCT bi
-         }
+        WITH p, userId, collect(DISTINCT bi) AS allItems
 
-         WITH p, userId, collect(DISTINCT bi) AS allItems
+        // ----------------------------
+        // 3) Pick the member user inside this project
+        // ----------------------------
+        MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
+        WHERE u.id = userId OR u.externalId = userId
 
-         MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
-         WHERE u.id = userId OR u.externalId = userId
+        // ----------------------------
+        // 4) My assigned items (FIX: match by id OR externalId)
+        // ----------------------------
+        WITH p, u, r, allItems,
+             [bi IN allItems WHERE EXISTS {
+               MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
+               WHERE u2.id = u.id OR u2.externalId = u.externalId
+             }] AS myItems
 
+        // ✅ SAFE if no items assigned
+        UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
+        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-         WITH p, u, r, allItems,
-              [bi IN allItems WHERE EXISTS {
-                MATCH (bi)-[:HAS_ASSIGNED_USER]->(u2:User)
-                WHERE u2.id = u.id
-              }] AS myItems
+        WITH p, u, r, allItems,
+             count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
+             collect(DISTINCT CASE
+               WHEN bi IS NULL THEN NULL
+               ELSE toLower(coalesce(s.defaultName, s.name, ""))
+             END) AS statuses
 
-         UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
-         OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+        WITH p, u, r, allItems, totalMine,
+             size([st IN statuses WHERE st = 'completed']) AS completedTask
 
-         WITH p, u, r,allItems,
-              count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
-              collect(DISTINCT CASE
-                WHEN bi IS NULL THEN NULL
-                ELSE toLower(coalesce(s.defaultName, s.name, ""))
-              END) AS statuses
+        WITH p, u, r, allItems, completedTask,
+             (totalMine - completedTask) AS pendingTask
 
-         WITH p, u, r, totalMine,allItems,
-              size([st IN statuses WHERE st = 'completed']) AS completedTask
+        // ----------------------------
+        // 5) Worklog totals ONLY from valid items (FIX: safe unwind + don't shadow u)
+        // ----------------------------
+        UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
+        OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
+        WHERE (biWL IS NULL OR biWL.deletedAt IS NULL)
+          AND uWL.id = u.id
 
-        WITH p, u, r, completedTask, allItems,
-               (totalMine - completedTask) AS pendingTask
+        WITH u, r, completedTask, pendingTask,
+             coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
+             coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
+             coalesce(toFloat(r.hourlyRate), 0.0) AS hourlyRate,
+             coalesce(toFloat(r.hours), 0.0) AS plannedHours,
+             coalesce(toFloat(r.budget), 0.0) AS plannedBudget
 
+        RETURN {
+          id: u.id,
+          name: u.name,
+          email: coalesce(u.email, ""),
+          phoneNumber: coalesce(u.phoneNumber, null),
 
-         UNWIND allItems AS biWL
-         OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(u)
-         WHERE biWL.deletedAt IS NULL
+          accessRole: coalesce(u.role, ""),
+          designation: coalesce(r.designation, ""),
 
-         WITH u, r, completedTask, pendingTask,
-           coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
-           coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget,
-           coalesce(toFloat(r.hourlyRate), 0.0) AS hourlyRate,
-           coalesce(toFloat(r.hours), 0.0) AS plannedHours,
-           coalesce(toFloat(r.budget), 0.0) AS plannedBudget
+          hourlyRate: hourlyRate,
+          plannedHours: plannedHours,
+          plannedBudget: plannedBudget,
 
-         RETURN {
-           id: u.id,
-           name: u.name,
-           email: coalesce(u.email, ""),
-           phoneNumber:coalesce(u.phoneNumber,null),
+          consumedHours: consumedHours,
+          consumedBudget: consumedBudget,
+          remainingHours: (plannedHours - consumedHours),
+          remainingBudget: (plannedBudget - consumedBudget),
 
-           accessRole: coalesce(u.role, ""),
-           designation: coalesce(r.designation, ""),
-
-           hourlyRate: hourlyRate,
-           plannedHours: plannedHours,
-           plannedBudget: plannedBudget,
-
-           consumedHours: consumedHours,
-           consumedBudget: consumedBudget,
-           remainingHours: (plannedHours - consumedHours),
-           remainingBudget: (plannedBudget - consumedBudget),
-
-           completedTask: completedTask,
-           pendingTask: pendingTask,
-           createdAt:u.createdAt
-         } AS getProjectUserDetail
+          completedTask: completedTask,
+          pendingTask: pendingTask,
+          createdAt: u.createdAt
+        } AS getProjectUserDetail
         """
         columnName: "getProjectUserDetail"
       )
