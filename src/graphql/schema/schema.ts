@@ -3101,6 +3101,58 @@ const typeDefs = gql`
     id: ID! @id
     name: String!
     description: String
+
+    parent: FolderParent!
+      @relationship(
+        type: "HAS_CHILD_FOLDER"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
+    folders: [Folder!]!
+      @relationship(
+        type: "HAS_CHILD_FOLDER"
+        direction: OUT
+        aggregate: false
+        nestedOperations: []
+      )
+    files: [File!]!
+      @relationship(
+        type: "HAS_CHILD_FILE"
+        direction: OUT
+        aggregate: false
+        nestedOperations: []
+      )
+    project: Project!
+      @relationship(
+        type: "FOLDER_IN_PROJECT"
+        direction: OUT
+        nestedOperations: [CONNECT]
+        aggregate: true
+      )
+    createdBy: User!
+      @relationship(
+        type: "CREATED_FOLDER"
+        direction: IN
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
+    deletedAt: DateTime @unique
+    createdAt: DateTime!
+      @timestamp(operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
+    updatedAt: DateTime
+      @timestamp(operations: [UPDATE])
+      @settable(onCreate: false, onUpdate: true)
+  }
+
+  # Folder custom fields
+  extend type Folder {
     startDate: DateTime
       @cypher(
         statement: """
@@ -3149,53 +3201,6 @@ const typeDefs = gql`
         """
         columnName: "endDate"
       )
-    parent: FolderParent!
-      @relationship(
-        type: "HAS_CHILD_FOLDER"
-        direction: IN
-        aggregate: false
-        nestedOperations: [CONNECT, DISCONNECT]
-      )
-    folders: [Folder!]!
-      @relationship(
-        type: "HAS_CHILD_FOLDER"
-        direction: OUT
-        aggregate: false
-        nestedOperations: []
-      )
-    files: [File!]!
-      @relationship(
-        type: "HAS_CHILD_FILE"
-        direction: OUT
-        aggregate: false
-        nestedOperations: []
-      )
-    project: Project!
-      @relationship(
-        type: "FOLDER_IN_PROJECT"
-        direction: OUT
-        nestedOperations: [CONNECT]
-        aggregate: true
-      )
-    createdBy: User!
-      @relationship(
-        type: "CREATED_FOLDER"
-        direction: IN
-        aggregate: false
-        nestedOperations: [CONNECT]
-      )
-    triggerLastModified: Boolean
-      @populatedBy(
-        callback: "updateOrgLastModified"
-        operations: [UPDATE, CREATE]
-      )
-    deletedAt: DateTime @unique
-    createdAt: DateTime!
-      @timestamp(operations: [CREATE])
-      @settable(onCreate: true, onUpdate: false)
-    updatedAt: DateTime
-      @timestamp(operations: [UPDATE])
-      @settable(onCreate: false, onUpdate: true)
   }
 
   type FileLock @query(aggregate: false) {
@@ -3401,41 +3406,7 @@ const typeDefs = gql`
     @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
-    startDate: DateTime
-      @cypher(
-        statement: """
-        WITH this AS file
 
-        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE n.deletedAt IS NULL
-
-        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-          AND bi.startDate IS NOT NULL
-          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-        RETURN min(bi.startDate) AS startDate
-        """
-        columnName: "startDate"
-      )
-
-    endDate: DateTime
-      @cypher(
-        statement: """
-        WITH this AS file
-
-        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
-        WHERE n.deletedAt IS NULL
-
-        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-          AND bi.endDate IS NOT NULL
-          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-        RETURN max(bi.endDate) AS endDate
-        """
-        columnName: "endDate"
-      )
     flowNodes: [FlowNode!]!
       @relationship(
         type: "HAS_FLOW_NODE"
@@ -3484,6 +3455,45 @@ const typeDefs = gql`
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+  }
+
+  # File Custom fields
+  extend type File {
+    startDate: DateTime
+      @cypher(
+        statement: """
+        WITH this AS file
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.startDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN min(bi.startDate) AS startDate
+        """
+        columnName: "startDate"
+      )
+
+    endDate: DateTime
+      @cypher(
+        statement: """
+        WITH this AS file
+
+        MATCH (file)-[:HAS_FLOW_NODE]->(n:FlowNode)
+        WHERE n.deletedAt IS NULL
+
+        MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.endDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+        RETURN max(bi.endDate) AS endDate
+        """
+        columnName: "endDate"
+      )
   }
 
   type LINKED_TO
@@ -3678,29 +3688,6 @@ const typeDefs = gql`
     width: Float!
     height: Float!
     type: String!
-    startDate: DateTime
-      @cypher(
-        statement: """
-        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-          AND bi.startDate IS NOT NULL
-          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-        RETURN min(bi.startDate) AS startDate
-        """
-        columnName: "startDate"
-      )
-    endDate: DateTime
-      @cypher(
-        statement: """
-        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
-        WHERE bi.deletedAt IS NULL
-          AND bi.endDate IS NOT NULL
-          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-        RETURN max(bi.endDate) AS endDate
-        """
-        columnName: "endDate"
-      )
-
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
@@ -3765,6 +3752,31 @@ const typeDefs = gql`
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+  }
+  # FlowNode custom fields
+  extend type FlowNode {
+    startDate: DateTime
+      @cypher(
+        statement: """
+        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.startDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+        RETURN min(bi.startDate) AS startDate
+        """
+        columnName: "startDate"
+      )
+    endDate: DateTime
+      @cypher(
+        statement: """
+        MATCH pathBI = (this)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)
+        WHERE bi.deletedAt IS NULL
+          AND bi.endDate IS NOT NULL
+          AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+        RETURN max(bi.endDate) AS endDate
+        """
+        columnName: "endDate"
+      )
   }
 
   enum NodeLayoutType {
@@ -4079,15 +4091,6 @@ const typeDefs = gql`
     isRecurringTask: Boolean! @default(value: false)
     scheduleDays: Int
     actualExpense: Float
-    totalConsumed: Float!
-      @cypher(
-        statement: """
-        WITH this
-        MATCH(this)-[:HAS_WORK_LOG]->(w:WorkLogs)
-        RETURN coalesce(sum(w.hourlyRate *w.hoursWorked), 0) AS totalConsumed
-        """
-        columnName: "totalConsumed"
-      )
     isTopLevelParentItem: Boolean!
       @populatedBy(callback: "topLevelParentItem", operations: [CREATE])
     type: BacklogItemType!
@@ -4216,6 +4219,19 @@ const typeDefs = gql`
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+  }
+
+  # BacklogItem custome fields
+  extend type BacklogItem {
+    totalConsumed: Float!
+      @cypher(
+        statement: """
+        WITH this
+        MATCH(this)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN coalesce(sum(w.hourlyRate *w.hoursWorked), 0) AS totalConsumed
+        """
+        columnName: "totalConsumed"
+      )
   }
 
   type BacklogItemHistory
@@ -4492,6 +4508,28 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
+
+    project: Project!
+      @relationship(
+        type: "HAS_SPRINTS"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
+    deletedAt: DateTime
+    createdAt: DateTime!
+      @timestamp(operations: [CREATE])
+      @settable(onCreate: true, onUpdate: false)
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+  }
+
+  #sprint custom fields
+  extend type Sprint {
     backlogItemItemCount(project: ID): Int!
       @cypher(
         statement: """
@@ -4536,24 +4574,6 @@ const typeDefs = gql`
         """
         columnName: "backlogItemItemCount"
       )
-
-    project: Project!
-      @relationship(
-        type: "HAS_SPRINTS"
-        direction: OUT
-        aggregate: false
-        nestedOperations: [CONNECT]
-      )
-    triggerLastModified: Boolean
-      @populatedBy(
-        callback: "updateOrgLastModified"
-        operations: [UPDATE, CREATE]
-      )
-    deletedAt: DateTime
-    createdAt: DateTime!
-      @timestamp(operations: [CREATE])
-      @settable(onCreate: true, onUpdate: false)
-    updatedAt: DateTime @timestamp(operations: [UPDATE])
   }
 
   union ExternalFileParent = BacklogItem | Human | Contact | Asset | Account
