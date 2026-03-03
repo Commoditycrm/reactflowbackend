@@ -703,123 +703,128 @@ const typeDefs = gql`
     getOrgUserDetail(userId: ID!): ProjectMemberRow
       @cypher(
         statement: """
-                WITH this AS org, $userId AS userId
-                MATCH (org)-[:HAS_PROJECTS]->(p:Project)
-                WHERE p.deletedAt IS NULL
+        WITH this AS org, $userId AS userId
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL
 
-                // 1) user assignments across ALL org projects
-                MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
-                WHERE u.id = userId OR u.externalId = userId
+        // 1) user assignments across ALL org projects
+        MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
+        WHERE u.id = userId OR u.externalId = userId
 
-                WITH org, u,
-                     collect(DISTINCT p) AS projects,
-                     collect(DISTINCT r) AS rels
+        WITH org, u,
+             collect(DISTINCT p) AS projects,
+             collect(DISTINCT r) AS rels
 
-                // 2) Planned totals across projects (✅ FIX)
-                // 2) Planned totals across projects (✅ FIX + no missing vars)
-                WITH org, u, projects, rels,
-                    reduce(ph = 0.0, x IN rels | ph + coalesce(toFloat(x.hours), 0.0)) AS plannedHours,
-                    reduce(pb = 0.0, x IN rels | pb + coalesce(toFloat(x.budget), 0.0)) AS plannedBudget,
-                    reduce(cost = 0.0, x IN rels |
-                    cost + (coalesce(toFloat(x.hourlyRate), 0.0) * coalesce(toFloat(x.hours), 0.0))) AS plannedCost
+        // 2) Planned totals across projects
+        // plannedHours = sum(r.hours)
+        // hourlyRate = weighted avg by hours
+        // plannedBudget = hourlyRate * plannedHours   ✅ per your rule
+        WITH org, u, projects,
+             size(projects) AS projectCount,
+             reduce(ph = 0.0, x IN rels | ph + coalesce(toFloat(x.hours), 0.0)) AS plannedHours,
+             reduce(cost = 0.0, x IN rels |
+               cost + (coalesce(toFloat(x.hourlyRate), 0.0) * coalesce(toFloat(x.hours), 0.0))
+             ) AS plannedCost
 
-        WITH org, u, projects, plannedHours, plannedBudget,
-             CASE
-               WHEN plannedHours = 0.0 THEN 0.0
-               ELSE plannedCost / plannedHours
-             END AS hourlyRate
-                // 3) Collect valid backlog items across ALL those projects
-                CALL {
-                  WITH projects
-                  UNWIND projects AS p
+        WITH org, u, projects, projectCount, plannedHours,
+             CASE WHEN plannedHours = 0.0 THEN 0.0 ELSE plannedCost / plannedHours END AS hourlyRate
 
-                  // ---- collect FlowNodes under project (your original logic) ----
-                  CALL {
-                    WITH p
-                    OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-                    WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+        WITH org, u, projects, projectCount, plannedHours, hourlyRate,
+             (hourlyRate * plannedHours) AS plannedBudget
 
-                    OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
-                    WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
-                      AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+        // 3) Collect valid backlog items across ALL those projects
+        CALL {
+          WITH projects
+          UNWIND projects AS p
 
-                    RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
-                  }
+          // ---- collect FlowNodes under project ----
+          CALL {
+            WITH p
+            OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+            WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-                  // ---- collect VALID BacklogItems in project (your original logic) ----
-                  CALL {
-                    WITH p, nodes
+            OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
+            WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
+              AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-                    UNWIND nodes AS n
-                    MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-                    WHERE bi.deletedAt IS NULL
-                      AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-                    RETURN DISTINCT bi
+            RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          }
 
-                    UNION
+          // ---- collect VALID BacklogItems in project ----
+          CALL {
+            WITH p, nodes
 
-                    WITH p
-                    MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-                    WHERE bi.deletedAt IS NULL
-                      AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-                    RETURN DISTINCT bi
-                  }
+            UNWIND nodes AS n
+            MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
 
-                  RETURN collect(DISTINCT bi) AS items
-                }
+            UNION
 
-                WITH org, u, plannedHours, plannedBudget, hourlyRate,
-                     apoc.coll.toSet(apoc.coll.flatten(collect(items))) AS allItems
+            WITH p
+            MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+            WHERE bi.deletedAt IS NULL
+              AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+            RETURN DISTINCT bi
+          }
 
-                // 4) My assigned items
-                WITH org, u, plannedHours, plannedBudget, hourlyRate, allItems,
-                     [bi IN allItems WHERE EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u) }] AS myItems
+          RETURN collect(DISTINCT bi) AS items
+        }
 
-                UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
-                OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+        WITH u, projectCount, plannedHours, hourlyRate, plannedBudget,
+             apoc.coll.toSet(apoc.coll.flatten(collect(items))) AS allItems
 
-                WITH org, u, plannedHours, plannedBudget, hourlyRate, allItems,
-                     count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
-                     sum(CASE
-                           WHEN bi IS NULL THEN 0
-                           WHEN toLower(coalesce(s.defaultName, s.name, "")) = "completed" THEN 1
-                           ELSE 0
-                         END) AS completedTask
+        // 4) My assigned items (keep your current logic)
+        WITH u, projectCount, plannedHours, hourlyRate, plannedBudget, allItems,
+             [bi IN allItems WHERE EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(u) }] AS myItems
 
-                WITH org, u, plannedHours, plannedBudget, hourlyRate, allItems,
-                     completedTask, (totalMine - completedTask) AS pendingTask
+        UNWIND (CASE WHEN size(myItems)=0 THEN [NULL] ELSE myItems END) AS bi
+        OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
 
-                // 5) Worklogs from valid items only
-                UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
-                OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
-                WHERE (biWL IS NULL OR biWL.deletedAt IS NULL)
-                  AND uWL.id = u.id
+        WITH u, projectCount, plannedHours, hourlyRate, plannedBudget, allItems,
+             count(DISTINCT CASE WHEN bi IS NULL THEN NULL ELSE bi END) AS totalMine,
+             sum(CASE
+                   WHEN bi IS NULL THEN 0
+                   WHEN toLower(coalesce(s.defaultName, s.name, "")) = "completed" THEN 1
+                   ELSE 0
+                 END) AS completedTask
 
-                WITH u, completedTask, pendingTask, plannedHours, plannedBudget, hourlyRate,
-                     coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
-                     coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget
+        WITH u, projectCount, plannedHours, hourlyRate, plannedBudget, allItems,
+             completedTask, (totalMine - completedTask) AS pendingTask
 
-                RETURN {
-                  id: u.id,
-                  name: u.name,
-                  email: coalesce(u.email, ""),
-                  phoneNumber: coalesce(u.phoneNumber, null),
+        // 5) Worklogs from valid items only
+        UNWIND (CASE WHEN size(allItems)=0 THEN [NULL] ELSE allItems END) AS biWL
+        OPTIONAL MATCH (biWL)-[:HAS_WORK_LOG]->(wl:WorkLogs)-[:LOGGED_BY]->(uWL:User)
+        WHERE (biWL IS NULL OR biWL.deletedAt IS NULL)
+          AND uWL.id = u.id
 
-                  accessRole: coalesce(u.role, ""),
+        WITH u, projectCount, completedTask, pendingTask, plannedHours, plannedBudget, hourlyRate,
+             coalesce(sum(wl.hoursWorked), 0.0) AS consumedHours,
+             coalesce(sum(wl.hourlyRate * wl.hoursWorked), 0.0) AS consumedBudget
 
-                  hourlyRate: hourlyRate,
-                  plannedHours: plannedHours,
-                  plannedBudget: plannedBudget,
+        RETURN {
+          id: u.id,
+          name: u.name,
+          email: coalesce(u.email, ""),
+          phoneNumber: coalesce(u.phoneNumber, null),
 
-                  consumedHours: consumedHours,
-                  consumedBudget: consumedBudget,
-                  remainingHours: (plannedHours - consumedHours),
-                  remainingBudget: (plannedBudget - consumedBudget),
+          accessRole: coalesce(u.role, ""),
 
-                  completedTask: completedTask,
-                  pendingTask: pendingTask,
-                  createdAt: u.createdAt
-                } AS getProjectUserDetail
+          hourlyRate: hourlyRate,
+          plannedHours: plannedHours,
+          plannedBudget: plannedBudget,
+
+          consumedHours: consumedHours,
+          consumedBudget: consumedBudget,
+          remainingHours: (plannedHours - consumedHours),
+          remainingBudget: (plannedBudget - consumedBudget),
+
+          completedTask: completedTask,
+          pendingTask: pendingTask,
+          createdAt: u.createdAt,
+          projectCount: projectCount
+        } AS getProjectUserDetail
         """
         columnName: "getProjectUserDetail"
       )
@@ -2284,6 +2289,7 @@ const typeDefs = gql`
     remainingBudget: Float!
     completedTask: Int!
     pendingTask: Int!
+    projectCount: Int
   }
 
   #============================== Assign users and workforce in one shot ===================
