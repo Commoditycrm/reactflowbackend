@@ -26,12 +26,14 @@ export class DiagramService {
   // ─── Data Fetching ───────────────────────────────────────────────────────
 
   /**
-   * List all diagram files in a project with node/edge/group counts.
+   * List diagram files with node/edge/group counts.
+   * When projectId is provided, scopes to that project.
+   * When omitted, lists diagrams across all projects the user can access in the org.
    */
   async listProjectDiagrams(
-    projectId: string,
     userId: string,
-    orgId: string
+    orgId: string,
+    projectId?: string
   ): Promise<DiagramListItem[]> {
     const conn = await Neo4JConnection.getInstance();
     const session = conn.driver.session();
@@ -40,8 +42,8 @@ export class DiagramService {
       const result = await session.run(
         `
         MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
-        MATCH (org)-[:HAS_PROJECTS]->(p:Project {id: $projectId})
-        WHERE p.deletedAt IS NULL
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
 
         // Direct files under project
         CALL {
@@ -56,26 +58,26 @@ export class DiagramService {
           RETURN file
         }
 
-        WITH DISTINCT file
+        WITH DISTINCT file, p
         WHERE file IS NOT NULL
 
         // Only files that have FlowNodes (i.e. diagrams)
         MATCH (file)-[:HAS_FLOW_NODE]->(fn:FlowNode)
         WHERE fn.deletedAt IS NULL
 
-        WITH file, collect(DISTINCT fn) AS flowNodes
+        WITH file, p, collect(DISTINCT fn) AS flowNodes
 
         // Count edges
         OPTIONAL MATCH (file)-[:HAS_FLOW_NODE]->(src:FlowNode)-[edge:LINKED_TO]->(tgt:FlowNode)
         WHERE src.deletedAt IS NULL AND tgt.deletedAt IS NULL AND edge.color IS NOT NULL
 
-        WITH file, flowNodes, count(DISTINCT edge) AS edgeCount
+        WITH file, p, flowNodes, count(DISTINCT edge) AS edgeCount
 
         // Count groups
         OPTIONAL MATCH (file)-[:HAS_GROUP_NODE]->(gn:GroupNode)
         WHERE gn.deletedAt IS NULL
 
-        WITH file, size(flowNodes) AS nodeCount, edgeCount, count(DISTINCT gn) AS groupCount
+        WITH file, p, size(flowNodes) AS nodeCount, edgeCount, count(DISTINCT gn) AS groupCount
 
         // Check if summary embedding exists
         OPTIONAL MATCH (file)<-[:SUMMARY_OF]-(ds:DiagramSummaryNode)
@@ -83,18 +85,22 @@ export class DiagramService {
 
         RETURN file.id AS fileId,
                file.name AS fileName,
+               p.id AS projectId,
+               p.name AS projectName,
                nodeCount,
                edgeCount,
                groupCount,
                ds IS NOT NULL AS hasSummaryEmbedding
-        ORDER BY file.name
+        ORDER BY p.name, file.name
         `,
-        { userId, orgId, projectId }
+        { userId, orgId, projectId: projectId ?? null }
       );
 
       return result.records.map((r) => ({
         fileId: r.get("fileId"),
         fileName: r.get("fileName"),
+        projectId: r.get("projectId"),
+        projectName: r.get("projectName"),
         nodeCount: r.get("nodeCount"),
         edgeCount: r.get("edgeCount"),
         groupCount: r.get("groupCount"),
@@ -113,9 +119,9 @@ export class DiagramService {
    */
   async fetchDiagramData(
     fileId: string,
-    projectId: string,
     userId: string,
-    orgId: string
+    orgId: string,
+    projectId?: string
   ): Promise<DiagramData | null> {
     const conn = await Neo4JConnection.getInstance();
     const session = conn.driver.session();
@@ -125,8 +131,8 @@ export class DiagramService {
       const accessResult = await session.run(
         `
         MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
-        MATCH (org)-[:HAS_PROJECTS]->(p:Project {id: $projectId})
-        WHERE p.deletedAt IS NULL
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
         MATCH (file:File {id: $fileId})
         WHERE file.deletedAt IS NULL
           AND (
@@ -135,7 +141,7 @@ export class DiagramService {
           )
         RETURN file.name AS fileName
         `,
-        { userId, orgId, projectId, fileId }
+        { userId, orgId, projectId: projectId ?? null, fileId }
       );
 
       if (accessResult.records.length === 0) return null;
@@ -289,7 +295,7 @@ export class DiagramService {
 
     // ── Header ──────────────────────────────────────────────────────────
     sections.push(
-      `## Diagram: "${data.fileName}" (ID: ${data.fileId})\n`
+      `## Diagram: "${data.fileName}"\n`
     );
 
     // ── Mermaid ─────────────────────────────────────────────────────────
@@ -374,12 +380,25 @@ export class DiagramService {
    * Produce a compact list of diagrams for the system prompt.
    */
   serializeDiagramList(diagrams: DiagramListItem[]): string {
-    if (diagrams.length === 0) return "No diagrams found in this project.";
+    if (diagrams.length === 0) return "No diagrams found.";
 
-    const lines = ["Available diagrams in this project:"];
-    for (const d of diagrams) {
+    // Check if diagrams span multiple projects
+    const uniqueProjects = new Set(diagrams.map((d) => d.projectId));
+    const isMultiProject = uniqueProjects.size > 1;
+
+    const lines = isMultiProject
+      ? ["Available diagrams across projects:"]
+      : ["Available diagrams in this project:"];
+
+    for (let i = 0; i < diagrams.length; i++) {
+      const d = diagrams[i]!;
+      const projectPrefix = isMultiProject
+        ? `[Project: "${d.projectName}"] `
+        : "";
+      const status = d.hasSummaryEmbedding ? "indexed" : "not yet indexed";
+      // Include fileId so the LLM can call get_diagram_context, but keep it minimal
       lines.push(
-        `- "${d.fileName}" (fileId: ${d.fileId}) — ${d.nodeCount} nodes, ${d.edgeCount} edges, ${d.groupCount} groups`
+        `${i + 1}. ${projectPrefix}"${d.fileName}" [fileId: ${d.fileId}] (${status})`
       );
     }
     return lines.join("\n");

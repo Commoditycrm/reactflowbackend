@@ -177,10 +177,10 @@ export class VectorStore {
         MATCH (chunk)-[:CHUNK_OF]->(ef:ExternalFile)
         WHERE ef.deletedAt IS NULL
         
-        // Verify access path: User -> Org -> Project -> BacklogItem -> ExternalFile
-        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization)
-        MATCH (org)-[:HAS_PROJECTS]->(p:Project {id: $projectId})
-        WHERE p.deletedAt IS NULL
+        // Verify access: User -> Org -> Project -> BacklogItem -> ExternalFile
+        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
         MATCH (bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
         MATCH (bi)-[:HAS_ATTACHED_FILE]->(ef)
 
@@ -194,7 +194,8 @@ export class VectorStore {
         `,
         {
           userId: options.userId,
-          projectId: options.projectId,
+          orgId: options.orgId,
+          projectId: options.projectId ?? null,
           embedding: properEmbedding,
           topK,
           minScore,
@@ -269,8 +270,9 @@ export class VectorStore {
   }
 
   async getProjectDocumentStatuses(
-    projectId: string,
-    userId: string
+    userId: string,
+    orgId: string,
+    projectId?: string
   ): Promise<
     Array<{
       documentId: string;
@@ -286,9 +288,9 @@ export class VectorStore {
     try {
       const result = await session.run(
         `
-        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization)
-        MATCH (org)-[:HAS_PROJECTS]->(p:Project {id: $projectId})
-        WHERE p.deletedAt IS NULL
+        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
 
         CALL {
           WITH p
@@ -318,7 +320,7 @@ export class VectorStore {
                indexedChunks
         ORDER BY ef.createdAt DESC
         `,
-        { userId, projectId }
+        { userId, orgId, projectId: projectId ?? null }
       );
 
       return result.records.map((record) => ({

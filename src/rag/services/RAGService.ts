@@ -21,23 +21,27 @@ import { VectorStore } from "./VectorStore";
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT_TEMPLATE = `You are an intelligent project assistant with access to both project documents (PDFs) and project diagrams/flowcharts.
+const SYSTEM_PROMPT_TEMPLATE = `You are an intelligent project assistant. You help users understand their projects, documents, and diagrams in clear, natural language.
 
-You have tools to retrieve information. Use them as needed:
-- **search_documents**: Search PDF documents attached to the project for text-based information (specifications, reports, requirements, etc.)
-- **get_diagram_context**: Retrieve the full structure of a specific diagram/flowchart by its file ID. Use when the user asks about processes, workflows, relationships between steps, or visual diagrams.
+You have tools to retrieve information:
+- **search_documents**: Search PDF documents for text-based information.
+- **get_diagram_context**: Retrieve a diagram/flowchart's structure by its file ID. Returns the full process flow, nodes, and connections so you can explain it.
 
-AVAILABLE DIAGRAMS IN THIS PROJECT:
+{SCOPE_DESCRIPTION}
+
+AVAILABLE DIAGRAMS (internal reference — do NOT expose file IDs, node counts, or technical metadata to the user):
 {DIAGRAM_LIST}
 
-Guidelines:
-1. Use tools when the user's question requires information from documents or diagrams. You may call both tools if the question spans both.
-2. If the user mentions a specific diagram by name, use get_diagram_context with the matching file ID from the list above.
-3. If the question is about a process/workflow and you're not sure which diagram, use get_diagram_context with a search query to find the right one.
-4. When you have diagram data, explain the flowchart structure, relationships, and processes clearly.
-5. Be concise and accurate. Cite sources (document names, diagram names) when possible.
-6. If context is insufficient, say so — do not make up information.
-7. For conversational messages (greetings, clarifications), respond directly without tools.`;
+CRITICAL RULES:
+- NEVER include file IDs, node counts, edge counts, group counts, or any raw technical metadata in your responses. The user does not know what these are.
+- Always respond in clear, natural language. Describe diagrams by their name and purpose, not by their internal structure.
+- When asked for a project summary or overview, use the tools to retrieve actual content from multiple diagrams and documents. Do NOT just list diagram names — actually fetch their context and summarize what the project is about.
+- When the user asks about a broad topic, call get_diagram_context on the most relevant diagrams (you can call it multiple times) to build a comprehensive answer.
+- If a user mentions a diagram by name, use get_diagram_context with the matching file ID from the internal list above.
+- When you have diagram data, explain the processes, workflows, and relationships in plain English.
+- Cite sources by name (e.g. "According to the Application Architecture diagram..."), never by file ID.
+- Be thorough but concise. If context is insufficient, say so — do not make up information.
+- For greetings or clarifications, respond directly without tools.`;
 
 // ─── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -244,8 +248,9 @@ export class RAGService {
 
   async chat(
     message: string,
-    projectId: string,
+    orgId: string,
     userId: string,
+    projectId?: string,
     conversationId?: string,
     maxChunks?: number
   ): Promise<RAGChatResponse> {
@@ -253,34 +258,35 @@ export class RAGService {
     const effectiveMaxChunks = maxChunks ?? RAG_CONFIG.MAX_CONTEXT_CHUNKS;
 
     try {
-      const orgId = await this.resolveOrgIdForProject(projectId, userId);
-
       // ── 1. Build system prompt with diagram list injected directly ────
       const diagramList = await this.diagramService.listProjectDiagrams(
-        projectId,
         userId,
-        orgId
+        orgId,
+        projectId
       );
       const diagramListText =
         this.diagramService.serializeDiagramList(diagramList);
-      const systemPrompt = SYSTEM_PROMPT_TEMPLATE.replace(
-        "{DIAGRAM_LIST}",
-        diagramListText
-      );
+
+      const scopeDescription = projectId
+        ? "You are working within a single project. All searches and diagrams are scoped to that project."
+        : "You are working across all projects in the user's organization. Documents and diagrams may come from different projects.";
+
+      const systemPrompt = SYSTEM_PROMPT_TEMPLATE
+        .replace("{DIAGRAM_LIST}", diagramListText)
+        .replace("{SCOPE_DESCRIPTION}", scopeDescription);
 
       // ── 2. Manage conversation ───────────────────────────────────────
       const convId = conversationId || uuidv4();
-      let conversation = this.conversations.get(convId);
-
-      if (!conversation) {
-        conversation = {
-          id: convId,
-          userId,
-          projectId,
-          messages: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
+      let conversation: Conversation = this.conversations.get(convId) ?? {
+        id: convId,
+        userId,
+        orgId,
+        projectId,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      if (!this.conversations.has(convId)) {
         this.conversations.set(convId, conversation);
       }
 
@@ -359,12 +365,12 @@ export class RAGService {
             this.executeToolCall(
               tc.functionName,
               tc.arguments,
-              projectId,
-              userId,
               orgId,
+              userId,
               effectiveMaxChunks,
               diagramList,
-              allSources
+              allSources,
+              projectId
             )
           )
         );
@@ -458,12 +464,12 @@ export class RAGService {
   private async executeToolCall(
     functionName: string,
     argumentsJson: string,
-    projectId: string,
-    userId: string,
     orgId: string,
+    userId: string,
     maxChunks: number,
     diagramList: DiagramListItem[],
-    sourcesAccumulator: RAGSource[]
+    sourcesAccumulator: RAGSource[],
+    projectId?: string
   ): Promise<ToolCallResult> {
     try {
       const args = JSON.parse(argumentsJson);
@@ -472,22 +478,22 @@ export class RAGService {
         case "search_documents":
           return this.toolSearchDocuments(
             args.query,
-            projectId,
-            userId,
             orgId,
+            userId,
             args.topK ?? maxChunks,
-            sourcesAccumulator
+            sourcesAccumulator,
+            projectId
           );
 
         case "get_diagram_context":
           return this.toolGetDiagramContext(
-            projectId,
-            userId,
             orgId,
+            userId,
             diagramList,
             args.fileId,
             args.query,
-            sourcesAccumulator
+            sourcesAccumulator,
+            projectId
           );
 
         default:
@@ -510,11 +516,11 @@ export class RAGService {
 
   private async toolSearchDocuments(
     query: string,
-    projectId: string,
-    userId: string,
     orgId: string,
+    userId: string,
     topK: number,
-    sourcesAccumulator: RAGSource[]
+    sourcesAccumulator: RAGSource[],
+    projectId?: string
   ): Promise<ToolCallResult> {
     const searchResults = await this.vectorStore.searchSimilar(query, {
       projectId,
@@ -553,13 +559,13 @@ export class RAGService {
   }
 
   private async toolGetDiagramContext(
-    projectId: string,
-    userId: string,
     orgId: string,
+    userId: string,
     diagramList: DiagramListItem[],
     fileId?: string,
     query?: string,
-    sourcesAccumulator?: RAGSource[]
+    sourcesAccumulator?: RAGSource[],
+    projectId?: string
   ): Promise<ToolCallResult> {
     let targetFileId = fileId;
 
@@ -568,9 +574,9 @@ export class RAGService {
       const searchResults = await this.diagramIndexService.searchDiagrams(
         query,
         orgId,
-        projectId,
         userId,
-        3
+        3,
+        projectId
       );
 
       if (searchResults.length > 0) {
@@ -610,9 +616,9 @@ export class RAGService {
     // Fetch full diagram structure (always live from Neo4j)
     const diagramData = await this.diagramService.fetchDiagramData(
       targetFileId,
-      projectId,
       userId,
-      orgId
+      orgId,
+      projectId
     );
 
     if (!diagramData || diagramData.nodes.length === 0) {
@@ -628,7 +634,7 @@ export class RAGService {
       documentName: diagramData.fileName,
       pageNumber: 0,
       relevanceScore: 1.0,
-      snippet: `Diagram: ${diagramData.nodes.length} nodes, ${diagramData.edges.length} edges, ${diagramData.groups.length} groups`,
+      snippet: `Diagram: ${diagramData.fileName}`,
     });
 
     // Serialize to LLM-friendly format
@@ -638,13 +644,13 @@ export class RAGService {
 
   async searchDocuments(
     query: string,
-    projectId: string,
+    orgId: string,
     userId: string,
-    topK?: number
+    topK?: number,
+    projectId?: string
   ): Promise<RAGSource[]> {
     const effectiveTopK = topK ?? RAG_CONFIG.MAX_CONTEXT_CHUNKS;
     try {
-      const orgId = await this.resolveOrgIdForProject(projectId, userId);
       const results = await this.vectorStore.searchSimilar(query, {
         projectId,
         userId,
@@ -669,15 +675,19 @@ export class RAGService {
     return this.conversations.get(conversationId);
   }
 
-  getConversationsForProject(
-    projectId: string,
+  getConversations(
+    orgId: string,
     userId: string,
-    limit = 10
+    limit = 10,
+    projectId?: string
   ): Conversation[] {
     const conversations: Conversation[] = [];
 
     for (const conv of this.conversations.values()) {
-      if (conv.projectId === projectId && conv.userId === userId) {
+      const matchesOrg = conv.orgId === orgId;
+      const matchesUser = conv.userId === userId;
+      const matchesProject = !projectId || conv.projectId === projectId;
+      if (matchesOrg && matchesUser && matchesProject) {
         conversations.push(conv);
       }
     }
@@ -691,8 +701,20 @@ export class RAGService {
     return this.conversations.delete(conversationId);
   }
 
-  async getDocumentStatuses(projectId: string, userId: string) {
-    return this.vectorStore.getProjectDocumentStatuses(projectId, userId);
+  async getDocumentStatuses(orgId: string, userId: string, projectId?: string) {
+    return this.vectorStore.getProjectDocumentStatuses(userId, orgId, projectId);
+  }
+
+  /** REST convenience: resolve orgId from projectId automatically */
+  async getDocumentStatusesForProject(projectId: string, userId: string) {
+    const orgId = await this.resolveOrgIdForProject(projectId, userId);
+    return this.getDocumentStatuses(orgId, userId, projectId);
+  }
+
+  /** REST convenience: resolve orgId from projectId automatically */
+  async listProjectDiagramsForProject(projectId: string, userId: string) {
+    const orgId = await this.resolveOrgIdForProject(projectId, userId);
+    return this.listProjectDiagrams(userId, orgId, projectId);
   }
 
   // ─── Diagram Indexing ────────────────────────────────────────────────────
@@ -739,9 +761,8 @@ export class RAGService {
   /**
    * List all diagrams in a project with their indexing status.
    */
-  async listProjectDiagrams(projectId: string, userId: string) {
-    const orgId = await this.resolveOrgIdForProject(projectId, userId);
-    return this.diagramService.listProjectDiagrams(projectId, userId, orgId);
+  async listProjectDiagrams(userId: string, orgId: string, projectId?: string) {
+    return this.diagramService.listProjectDiagrams(userId, orgId, projectId);
   }
 
   async ingestProjectDocuments(
