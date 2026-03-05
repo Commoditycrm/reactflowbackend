@@ -1895,6 +1895,8 @@ const typeDefs = gql`
         """
         columnName: "endDate"
       )
+    budget: Float
+    totalConsumed: Float
     progress: Float!
       @cypher(
         statement: """
@@ -4840,7 +4842,8 @@ const typeDefs = gql`
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
     id: ID!
-    projectId: ID!
+    orgId: ID!
+    projectId: ID
     messages: [RAGConversationMessage!]!
     createdAt: DateTime!
     updatedAt: DateTime
@@ -6354,20 +6357,22 @@ const typeDefs = gql`
 
     ragChat(
       message: String!
-      projectId: ID!
+      orgId: ID!
+      projectId: ID
       conversationId: ID
       maxChunks: Int = 5
     ): RAGChatResponse!
 
     ragGetConversation(conversationId: ID!): RAGConversation
 
-    ragGetConversations(projectId: ID!, limit: Int = 10): [RAGConversation!]!
+    ragGetConversations(orgId: ID!, projectId: ID, limit: Int = 10): [RAGConversation!]!
 
-    ragGetDocumentStatus(projectId: ID!): [RAGDocumentStatus!]!
+    ragGetDocumentStatus(orgId: ID!, projectId: ID): [RAGDocumentStatus!]!
 
     ragSearchDocuments(
       query: String!
-      projectId: ID!
+      orgId: ID!
+      projectId: ID
       topK: Int = 5
     ): [RAGSource!]!
   }

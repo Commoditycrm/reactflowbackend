@@ -116,9 +116,9 @@ export class DiagramIndexService {
     // 1. Fetch full diagram data
     const diagramData = await this.diagramService.fetchDiagramData(
       fileId,
-      projectId,
       userId,
-      orgId
+      orgId,
+      projectId
     );
     if (!diagramData || diagramData.nodes.length === 0) {
       logger?.info(
@@ -253,9 +253,9 @@ export class DiagramIndexService {
     failed: number;
   }> {
     const diagrams = await this.diagramService.listProjectDiagrams(
-      projectId,
       userId,
-      orgId
+      orgId,
+      projectId
     );
 
     let indexed = 0;
@@ -311,9 +311,9 @@ export class DiagramIndexService {
   async searchDiagrams(
     query: string,
     orgId: string,
-    projectId: string,
     userId: string,
-    topK = 3
+    topK = 3,
+    projectId?: string
   ): Promise<DiagramSearchResult[]> {
     const { indexName } = await this.ensureVectorIndex(orgId);
 
@@ -342,10 +342,10 @@ export class DiagramIndexService {
         MATCH (ds)-[:SUMMARY_OF]->(file:File)
         WHERE file.deletedAt IS NULL
 
-        // Verify the file belongs to the requested project
+        // Verify the file belongs to an accessible project in the org
         MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
-        MATCH (org)-[:HAS_PROJECTS]->(p:Project {id: $projectId})
-        WHERE p.deletedAt IS NULL
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
           AND (
             EXISTS { MATCH (p)-[:HAS_CHILD_FILE]->(file) }
             OR EXISTS { MATCH (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file) }
@@ -364,7 +364,7 @@ export class DiagramIndexService {
           minScore: RAG_CONFIG.MIN_RELEVANCE_SCORE,
           userId,
           orgId,
-          projectId,
+          projectId: projectId ?? null,
         }
       );
 

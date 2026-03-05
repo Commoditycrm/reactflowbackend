@@ -119,7 +119,7 @@ ragRouter.get("/status/:projectId", async (req, res) => {
       });
     }
 
-    const statuses = await ragService.getDocumentStatuses(projectId, userId);
+    const statuses = await ragService.getDocumentStatusesForProject(projectId, userId);
 
     return res.status(200).json({
       success: true,
@@ -188,7 +188,7 @@ ragRouter.get("/diagrams/:projectId", async (req, res) => {
       return res.status(400).json({ success: false, error: "projectId is required" });
     }
 
-    const diagrams = await ragService.listProjectDiagrams(projectId, userId);
+    const diagrams = await ragService.listProjectDiagramsForProject(projectId, userId);
 
     return res.status(200).json({ success: true, diagrams });
   } catch (error: any) {

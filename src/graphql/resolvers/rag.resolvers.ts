@@ -8,12 +8,14 @@ const ragChat = async (
   _source: Record<string, any>,
   {
     message,
+    orgId,
     projectId,
     conversationId,
     maxChunks,
   }: {
     message: string;
-    projectId: string;
+    orgId: string;
+    projectId?: string;
     conversationId?: string;
     maxChunks?: number;
   },
@@ -29,24 +31,20 @@ const ragChat = async (
   try {
     const response = await ragService.chat(
       message,
-      projectId,
+      orgId,
       userId,
+      projectId,
       conversationId,
       maxChunks
     );
 
-    console.log("\n" + "=".repeat(80));
-    console.log("📤 GRAPHQL RESOLVER: Preparing response");
-    console.log("=".repeat(80));
-    console.log("Response object:", JSON.stringify({
+    logger?.info("ragChat resolver: returning response", {
       answerLength: response.answer?.length,
       sourcesCount: response.sources?.length,
       conversationId: response.conversationId,
-      metadata: response.metadata,
-    }, null, 2));
-    console.log("=".repeat(80) + "\n");
+    });
 
-    const result = {
+    return {
       answer: response.answer,
       sources: response.sources,
       conversationId: response.conversationId,
@@ -57,16 +55,8 @@ const ragChat = async (
         tokensUsed: response.metadata.tokensUsed,
       },
     };
-
-    console.log("\n" + "=".repeat(80));
-    console.log("✅ GRAPHQL RESOLVER: Returning result");
-    console.log("=".repeat(80));
-    console.log("Result:", JSON.stringify(result, null, 2));
-    console.log("=".repeat(80) + "\n");
-
-    return result;
   } catch (error) {
-    logger?.error("ragChat resolver failed", { error, projectId, userId });
+    logger?.error("ragChat resolver failed", { error, orgId, projectId, userId });
     throw new GraphQLError("Failed to process RAG chat request", {
       extensions: { code: "INTERNAL_SERVER_ERROR" },
     });
@@ -97,7 +87,8 @@ const ragGetConversation = async (
 
   return {
     id: conversation.id,
-    projectId: conversation.projectId,
+    orgId: conversation.orgId,
+    projectId: conversation.projectId ?? null,
     messages: conversation.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -110,7 +101,7 @@ const ragGetConversation = async (
 
 const ragGetConversations = async (
   _source: Record<string, any>,
-  { projectId, limit }: { projectId: string; limit?: number },
+  { orgId, projectId, limit }: { orgId: string; projectId?: string; limit?: number },
   context: Record<string, any>
 ) => {
   const userId = context?.jwt?.sub;
@@ -120,15 +111,17 @@ const ragGetConversations = async (
     });
   }
 
-  const conversations = ragService.getConversationsForProject(
-    projectId,
+  const conversations = ragService.getConversations(
+    orgId,
     userId,
-    limit
+    limit,
+    projectId
   );
 
   return conversations.map((conv) => ({
     id: conv.id,
-    projectId: conv.projectId,
+    orgId: conv.orgId,
+    projectId: conv.projectId ?? null,
     messages: conv.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -141,7 +134,7 @@ const ragGetConversations = async (
 
 const ragGetDocumentStatus = async (
   _source: Record<string, any>,
-  { projectId }: { projectId: string },
+  { orgId, projectId }: { orgId: string; projectId?: string },
   context: Record<string, any>
 ) => {
   const userId = context?.jwt?.sub;
@@ -152,7 +145,7 @@ const ragGetDocumentStatus = async (
   }
 
   try {
-    const statuses = await ragService.getDocumentStatuses(projectId, userId);
+    const statuses = await ragService.getDocumentStatuses(orgId, userId, projectId);
 
     return statuses.map((s) => ({
       documentId: s.documentId,
@@ -164,6 +157,7 @@ const ragGetDocumentStatus = async (
   } catch (error) {
     logger?.error("ragGetDocumentStatus resolver failed", {
       error,
+      orgId,
       projectId,
       userId,
     });
@@ -175,7 +169,7 @@ const ragGetDocumentStatus = async (
 
 const ragSearchDocuments = async (
   _source: Record<string, any>,
-  { query, projectId, topK }: { query: string; projectId: string; topK?: number },
+  { query, orgId, projectId, topK }: { query: string; orgId: string; projectId?: string; topK?: number },
   context: Record<string, any>
 ) => {
   const userId = context?.jwt?.sub;
@@ -188,9 +182,10 @@ const ragSearchDocuments = async (
   try {
     const results = await ragService.searchDocuments(
       query,
-      projectId,
+      orgId,
       userId,
-      topK
+      topK,
+      projectId
     );
 
     return results.map((r) => ({
@@ -203,6 +198,7 @@ const ragSearchDocuments = async (
   } catch (error) {
     logger?.error("ragSearchDocuments resolver failed", {
       error,
+      orgId,
       projectId,
       userId,
     });

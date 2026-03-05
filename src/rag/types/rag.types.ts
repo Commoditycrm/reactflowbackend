@@ -18,7 +18,8 @@ export interface RAGQueryResult {
 
 export interface RAGChatRequest {
   message: string;
-  projectId: string;
+  orgId: string;
+  projectId?: string;
   conversationId?: string;
   maxChunks?: number;
 }
@@ -54,7 +55,8 @@ export interface ConversationMessage {
 export interface Conversation {
   id: string;
   userId: string;
-  projectId: string;
+  orgId: string;
+  projectId: string | undefined;
   messages: ConversationMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -85,7 +87,7 @@ export interface IngestionResponse {
 export interface VectorSearchOptions {
   topK?: number;
   minScore?: number;
-  projectId: string;
+  projectId: string | undefined;
   userId: string;
   orgId: string;
 }
@@ -183,6 +185,8 @@ export interface DiagramSummary {
 export interface DiagramListItem {
   fileId: string;
   fileName: string;
+  projectId: string;
+  projectName: string;
   nodeCount: number;
   edgeCount: number;
   groupCount: number;
