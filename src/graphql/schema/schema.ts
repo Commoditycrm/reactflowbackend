@@ -1412,6 +1412,11 @@ const typeDefs = gql`
         aggregate: true
         nestedOperations: [CONNECT, DISCONNECT]
       )
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   type Project implements SoftDeletable
@@ -3978,6 +3983,11 @@ const typeDefs = gql`
     backlogItem: BacklogItem! @relationship(type: "HAS_WORK_LOG", direction: IN)
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    triggerLastModified: Boolean
+      @populatedBy(
+        callback: "updateOrgLastModified"
+        operations: [UPDATE, CREATE]
+      )
   }
 
   union BacklogItemParent = FlowNode | BacklogItem | Project

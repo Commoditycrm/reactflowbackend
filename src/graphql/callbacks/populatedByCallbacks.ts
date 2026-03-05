@@ -13,7 +13,7 @@ const firebaseFunctions = FirebaseFunctions.getInstance();
 const externalIdExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return _context?.authorization?.jwt?.sub as string;
 };
@@ -21,7 +21,7 @@ const externalIdExtractor = (
 const userNameExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return _context?.authorization?.jwt?.name;
 };
@@ -29,7 +29,7 @@ const userNameExtractor = (
 const phoneNumberExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return _context?.authorization?.jwt?.phone_number;
 };
@@ -37,7 +37,7 @@ const phoneNumberExtractor = (
 const emailExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return _context?.authorization?.jwt?.email as string;
 };
@@ -45,7 +45,7 @@ const emailExtractor = (
 const counterStarter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return 0;
 };
@@ -53,7 +53,7 @@ const counterStarter = (
 const userRoleSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const userRole = _context?.jwt?.roles[0];
   if (_parent?.ownedOrganization?.create) {
@@ -65,7 +65,7 @@ const userRoleSetter = (
 const topLevelParentItem: Neo4jGraphQLCallback = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   if (_parent?.parent?.Folder || _parent?.parent?.FlowNode) {
     return true;
@@ -76,7 +76,7 @@ const topLevelParentItem: Neo4jGraphQLCallback = (
 const uniqueSprint = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const projectId = _parent?.project?.connect?.where?.node?.id;
   return `${projectId}-${_parent?.name.trim()}`;
@@ -85,7 +85,7 @@ const uniqueSprint = (
 const uniqueInviteExtractor = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const orgId = _parent?.organization?.connect?.where?.node?.id;
   const userEmail = _parent?.email.trim();
@@ -95,7 +95,7 @@ const uniqueInviteExtractor = (
 const uniqueProjectExtractor = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   let orgId = _parent?.organization?.connect?.where?.node?.id;
   const projectName = _parent?.name?.trim().toLowerCase().replace(/\s+/g, "");
@@ -108,8 +108,8 @@ const uniqueProjectExtractor = async (
           "MATCH(:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization) RETURN org.id AS orgId",
           {
             uid: externalId,
-          }
-        )
+          },
+        ),
       );
       orgId = res.records[0]?.get("orgId");
     } catch (error) {
@@ -125,19 +125,20 @@ const uniqueProjectExtractor = async (
 const updateOrgLastModified = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  context: Record<string, any>
+  context: Record<string, any>,
 ) => {
-  const userId = context?.jwt?.sub;
+  const userId = context?.jwt?.uid;
   const session = (await Neo4JConnection.getInstance()).driver.session();
   try {
+    logger?.info("userId:", { userId });
     const tx = session.beginTransaction();
     await tx.run(
       `
       MATCH (u:User {externalId: $userId})-[:MEMBER_OF|OWNS]->(org:Organization)
       SET org.lastModified = datetime()
-      RETURN org
+      RETURN 1
       `,
-      { userId }
+      { userId },
     );
     await tx.commit();
     return true;
@@ -152,7 +153,7 @@ const updateOrgLastModified = async (
 const defaultKeySetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   if (_parent?.organization?.connect?.where?.node?.id) {
     return false;
@@ -163,7 +164,7 @@ const defaultKeySetter = (
 const defaultNameSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const name = _parent?.name;
   return name;
@@ -172,7 +173,7 @@ const defaultNameSetter = (
 const uniqueKeySetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const orgId = _parent?.organization?.connect?.where?.node?.id;
   const name = String(_parent?.name || "")
@@ -184,7 +185,7 @@ const uniqueKeySetter = (
 const messageCounterSetter = async (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ): Promise<number> => {
   const uid = _context?.jwt?.sub;
   const email = _context?.jwt?.email;
@@ -194,13 +195,13 @@ const messageCounterSetter = async (
       uid,
       email,
       UserRole.CompanyAdmin,
-      true
+      true,
     );
     logger.info(`✅ User claim set: orgCreated = true for ${email}`);
   } catch (error: any) {
     logger.error(`Error setting user claims for ${email}:`, error);
     throw new Error(
-      error?.message || "Failed to set user claims. Please try again."
+      error?.message || "Failed to set user claims. Please try again.",
     );
   }
   return 0;
@@ -209,7 +210,7 @@ const messageCounterSetter = async (
 const uniqueEventExtractor = async (
   _parent: any,
   _args: any,
-  _context: any
+  _context: any,
 ) => {
   const externalId = _context?.jwt?.uid;
   const eventId: string | null = _context?.resolveTree?.args?.where?.id ?? null;
@@ -232,8 +233,8 @@ const uniqueEventExtractor = async (
       OPTIONAL MATCH (e)-[:HAS_RESOURCE]->(r:Asset)
       RETURN e.startDate AS startDate, e.endDate AS endDate, r.id AS resourceId
       `,
-        { id: eventId }
-      )
+        { id: eventId },
+      ),
     );
     const rec = res.records[0];
     if (!rec) {
@@ -270,7 +271,7 @@ const uniqueEventExtractor = async (
     if (durationMs === fiveMin || durationMs === tenMin) {
       throw new GraphQLError(
         "Event duration cannot be exactly 5 minutes or 10 minutes. Choose a different duration.",
-        { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
+        { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } },
       );
     }
 
@@ -285,8 +286,8 @@ const uniqueEventExtractor = async (
          AND other.endDate   >= datetime({epochMillis: toInteger($startMs)})
          RETURN count(other) AS conflicts
         `,
-          { resourceId, startMs: s, endMs: e, eventId: eventId ?? null }
-        )
+          { resourceId, startMs: s, endMs: e, eventId: eventId ?? null },
+        ),
       );
 
       const conflicts =
@@ -295,7 +296,7 @@ const uniqueEventExtractor = async (
       if (conflicts > 0) {
         throw new GraphQLError(
           "Another event already exists in the selected time range for this resource.",
-          { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } }
+          { extensions: { code: ApolloServerErrorCode.BAD_USER_INPUT } },
         );
       }
 
@@ -308,7 +309,7 @@ const uniqueEventExtractor = async (
       RETURN org.id AS orgId
       LIMIT 1
       `,
-      { uid: externalId }
+      { uid: externalId },
     );
     const orgId = orgRes.records[0]?.get("orgId") || "NOORG";
     return `ORG#${orgId}#${s}#${e}`;
@@ -323,7 +324,7 @@ const uniqueEventExtractor = async (
 const resourceNameSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const { firstName, lastName, middleName } = _parent;
   return middleName
@@ -334,7 +335,7 @@ const resourceNameSetter = (
 const fileLockSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const fileId = _parent?.file?.connect?.where?.node?.id;
   return fileId;
