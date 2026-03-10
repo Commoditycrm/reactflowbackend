@@ -1571,6 +1571,7 @@ const typeDefs = gql`
     budget: Float
     isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
+    lastVisitedAt: DateTime
     uniqueProject: String!
       @unique
       @populatedBy(
