@@ -442,15 +442,15 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT]
       )
-    backlogItemItemCount(projectId: String): Int!
+    backlogItemCount(projectId: String): Int!
       @cypher(
         statement: """
         WITH this
         MATCH(this)<-[:HAS_BACKLOGITEM_TYPE]-(b:BacklogItem)-[:ITEM_IN_PROJECT]->(p:Project)
         WHERE b.deletedAt IS NULL AND (p.id IS NULL OR p.id = $projectId)
-        RETURN COUNT(DISTINCT b) AS backlogItemItemCount
+        RETURN COUNT(DISTINCT b) AS backlogItemCount
         """
-        columnName: "backlogItemItemCount"
+        columnName: "backlogItemCount"
       )
 
     createdAt: DateTime! @timestamp(operations: [CREATE])
@@ -1954,7 +1954,7 @@ const typeDefs = gql`
         columnName: "progress"
       )
 
-    pendingTask(userId:ID): Int!
+    pendingTask(userId: ID): Int!
       @cypher(
         statement: """
         WITH this AS p,$userId AS userId
@@ -2001,7 +2001,7 @@ const typeDefs = gql`
         """
         columnName: "pendingTask"
       )
-    completedTask(userId:ID): Int!
+    completedTask(userId: ID): Int!
       @cypher(
         statement: """
         WITH this AS p , $userId AS userId
@@ -4678,7 +4678,7 @@ const typeDefs = gql`
 
   #sprint custom fields
   extend type Sprint {
-    backlogItemItemCount(project: ID): Int!
+    backlogItemCount(project: ID): Int!
       @cypher(
         statement: """
         WITH this AS sprint
@@ -4718,9 +4718,9 @@ const typeDefs = gql`
           RETURN DISTINCT bi
         }
 
-        RETURN count(DISTINCT bi) AS backlogItemItemCount
+        RETURN count(DISTINCT bi) AS backlogItemCount
         """
-        columnName: "backlogItemItemCount"
+        columnName: "backlogItemCount"
       )
   }
 
