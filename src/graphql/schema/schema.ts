@@ -1954,10 +1954,10 @@ const typeDefs = gql`
         columnName: "progress"
       )
 
-    pendingTask: Int!
+    pendingTask(userId:ID): Int!
       @cypher(
         statement: """
-        WITH this AS p
+        WITH this AS p,$userId AS userId
         CALL {
           WITH p
           OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
@@ -1988,9 +1988,10 @@ const typeDefs = gql`
           RETURN DISTINCT bi
         }
 
-        WITH DISTINCT bi
-        WHERE EXISTS {
+        WITH DISTINCT bi,userId
+        WHERE userId IS NULL OR EXISTS {
           MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+          WHERE u.id=userId
         }
 
         MATCH (bi)-[:HAS_STATUS]->(s:Status)
@@ -2000,10 +2001,10 @@ const typeDefs = gql`
         """
         columnName: "pendingTask"
       )
-    completedTask: Int!
+    completedTask(userId:ID): Int!
       @cypher(
         statement: """
-        WITH this AS p
+        WITH this AS p , $userId AS userId
 
          CALL {
            WITH p
@@ -2035,9 +2036,10 @@ const typeDefs = gql`
            RETURN DISTINCT bi
          }
 
-         WITH DISTINCT bi
-         WHERE EXISTS {
+         WITH DISTINCT bi,userId
+         WHERE userId IS NULL OR EXISTS {
            MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
+           WHERE u.id = userId
          }
 
          MATCH (bi)-[:HAS_STATUS]->(s:Status)
