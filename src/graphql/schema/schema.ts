@@ -2035,7 +2035,7 @@ const typeDefs = gql`
            RETURN DISTINCT bi
          }
 
-         WITH DISTINCT bi,
+         WITH DISTINCT bi
          WHERE EXISTS {
            MATCH (bi)-[:HAS_ASSIGNED_USER]->(u:User)
          }
