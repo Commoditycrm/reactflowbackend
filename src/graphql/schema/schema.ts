@@ -5391,6 +5391,7 @@ const typeDefs = gql`
             )
           RETURN collect(DISTINCT p) AS projects
         }
+
         CALL {
           WITH $query AS q
           CALL db.index.fulltext.queryNodes('fullTextOnBacklogItemLabel', '*' + q + '*')
@@ -5399,7 +5400,7 @@ const typeDefs = gql`
           RETURN node AS bi, score
         }
 
-        WITH projects, bi, score
+        WITH projects, bi, score, toLower($query) AS q, toLower(coalesce(bi.label, bi.name, '')) AS text
         WHERE EXISTS {
           MATCH (bi)-[:ITEM_IN_PROJECT]->(p:Project)
           WHERE p IN projects
@@ -5423,8 +5424,17 @@ const typeDefs = gql`
               }
             )
         }
-        WITH bi, max(score) AS bestScore
-        ORDER BY bestScore DESC
+
+        WITH bi, score, q, text,
+             CASE
+               WHEN text = q THEN 4
+               WHEN text STARTS WITH q THEN 3
+               WHEN text CONTAINS q THEN 2
+               ELSE 1
+             END AS matchPriority
+
+        WITH bi, max(score) AS bestScore, max(matchPriority) AS matchPriority
+        ORDER BY matchPriority DESC, bestScore DESC, bi.label ASC
         SKIP $offset
         LIMIT $limit
         RETURN bi AS result
