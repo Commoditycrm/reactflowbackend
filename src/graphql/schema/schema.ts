@@ -1397,7 +1397,7 @@ const typeDefs = gql`
     riskLevelIds: [ID!]
     titleContains: [String!]
     tableType: BacklogTable
-    occurredOn: DateTime
+    occuredOn: DateTime
     paidOn: DateTime
   }
 
@@ -2196,31 +2196,33 @@ const typeDefs = gql`
           } AS isExpense,
           (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
-        WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
-          OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
-          OR (tab = 'EXPENSE'    AND isExpense)
-          OR (tab = 'HIERARCHY')
+        WHERE
+          (
+            tab IS NULL
+            OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+            OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
+            OR (tab = 'EXPENSE'    AND isExpense)
+            OR (tab = 'HIERARCHY')
+          )
         AND (
-          tab <> 'EXPENSE'
-          OR (
-            (f.occurredOn IS NULL AND f.paidOn IS NULL)
+            tab <> 'EXPENSE'
             OR (
+              (f.occuredOn IS NULL AND f.paidOn IS NULL)
+              OR (
               (
                 bi.occuredOn IS NOT NULL
-                AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+                AND (f.occuredOn IS NULL OR date(bi.occuredOn) >= date(f.occuredOn))
                 AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
               )
               OR
               (
                 bi.paidOn IS NOT NULL
-                AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+                AND (f.occuredOn IS NULL OR date(bi.paidOn) >= date(f.occuredOn))
                 AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
               )
             )
           )
         )
-
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
           tab IS NULL
@@ -2329,31 +2331,32 @@ const typeDefs = gql`
           } AS isExpense,
           (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
 
-        WHERE tab IS NULL
-          OR (tab = 'WORK_ITEMS' AND NOT isExpense)
-          OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
-          OR (tab = 'EXPENSE'    AND isExpense)
-          OR (tab = 'HIERARCHY')
+        WHERE
+          (
+            tab IS NULL
+            OR (tab = 'WORK_ITEMS' AND NOT isExpense)
+            OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
+            OR (tab = 'EXPENSE'    AND isExpense)
+            OR (tab = 'HIERARCHY')
+          )
         AND (
-          tab <> 'EXPENSE'
-          OR (
-            (f.occurredOn IS NULL AND f.paidOn IS NULL)
+            tab <> 'EXPENSE'
             OR (
-              (
-                bi.occuredOn IS NOT NULL
-                AND (f.occurredOn IS NULL OR date(bi.occuredOn) >= date(f.occurredOn))
+              (f.occuredOn IS NULL AND f.paidOn IS NULL)
+            OR (
+              (bi.occuredOn IS NOT NULL
+              AND (f.occuredOn IS NULL OR date(bi.occuredOn) >= date(f.occuredOn))
                 AND (f.paidOn IS NULL OR date(bi.occuredOn) <= date(f.paidOn))
               )
               OR
-              (
+             (
                 bi.paidOn IS NOT NULL
-                AND (f.occurredOn IS NULL OR date(bi.paidOn) >= date(f.occurredOn))
+                AND (f.occuredOn IS NULL OR date(bi.paidOn) >= date(f.occuredOn))
                 AND (f.paidOn IS NULL OR date(bi.paidOn) <= date(f.paidOn))
               )
             )
           )
         )
-
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
           tab IS NULL
