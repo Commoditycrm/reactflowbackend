@@ -34,12 +34,20 @@ AVAILABLE DIAGRAMS (internal reference — do NOT expose file IDs, node counts, 
 
 CRITICAL RULES:
 - NEVER include file IDs, node counts, edge counts, group counts, or any raw technical metadata in your responses. The user does not know what these are.
-- Always respond in clear, natural language. Describe diagrams by their name and purpose, not by their internal structure.
-- When asked for a project summary or overview, use the tools to retrieve actual content from multiple diagrams and documents. Do NOT just list diagram names — actually fetch their context and summarize what the project is about.
+- Always respond in clear, natural language. Describe diagrams by their business meaning and purpose, not by their internal graph structure.
+- Treat diagrams as project knowledge artifacts (workflows, responsibilities, entities, and decisions), not as isolated files.
+- Never frame answers as "only diagram-based" or "I can only infer from diagrams." Instead, state that the explanation is based on available project artifacts.
+- When asked for a project summary/overview (e.g. "summarize this project", "overall summary"), you MUST call get_diagram_context for multiple relevant diagrams (minimum 2 when available) before answering.
+- For project summaries, synthesize by project entity/workstream (teams, processes, systems, deliverables, dependencies) rather than listing diagram titles.
 - When the user asks about a broad topic, call get_diagram_context on the most relevant diagrams (you can call it multiple times) to build a comprehensive answer.
 - If a user mentions a diagram by name, use get_diagram_context with the matching file ID from the internal list above.
-- When you have diagram data, explain the processes, workflows, and relationships in plain English.
-- Cite sources by name (e.g. "According to the Application Architecture diagram..."), never by file ID.
+- When you have diagram data, explain the processes, workflows, actors, and relationships in plain English from the user's project perspective.
+- Cite sources by name (e.g. "Based on the Application Architecture artifact...") and treat them as evidence for project behavior, never by file ID.
+- Do NOT reveal internal workflow or tool usage. Never output "Step 1", "I will retrieve", "let's examine", or similar planning text. Provide the final answer directly.
+- Avoid speculative wording like "appears", "likely", "probably", "seems" unless uncertainty is explicit and unavoidable.
+- Do not pad with generic limitation sections. Only mention a limitation if it materially changes the conclusion, in one concise sentence.
+- For overview requests, use this concise structure: 1) Overall project/org summary, 2) Key entities/workstreams, 3) Major workflows and dependencies, 4) Suggested next drill-downs (optional).
+- If evidence is weak, ask one specific follow-up question instead of giving a long hedge.
 - Be thorough but concise. If context is insufficient, say so — do not make up information.
 - For greetings or clarifications, respond directly without tools.`;
 
@@ -115,6 +123,13 @@ export class RAGService {
   static getInstance(): RAGService {
     if (!RAGService.instance) RAGService.instance = new RAGService();
     return RAGService.instance;
+  }
+
+  private isOverviewStyleRequest(message: string): boolean {
+    const text = message.toLowerCase();
+    return /(overall|overview|summary|summarize|high[-\s]?level|organization|portfolio|all projects|projects in|across projects)/.test(
+      text
+    );
   }
 
   private async resolveOrgIdForProject(
@@ -324,6 +339,32 @@ export class RAGService {
         TOOLS
       );
 
+      let activeSystemPrompt = systemPrompt;
+      let selectedResponse = firstResponse;
+      let tokensUsed = firstResponse.tokensUsed;
+
+      // If the model tries to answer an overview question without tools,
+      // retry with stricter instructions so the answer is evidence-grounded.
+      if (
+        !firstResponse.toolCalls?.length &&
+        this.isOverviewStyleRequest(message) &&
+        diagramList.length > 0
+      ) {
+        const enforcedSystemPrompt = `${systemPrompt}\n\nMANDATORY OVERRIDE FOR OVERVIEW REQUESTS:\n- Before answering, call get_diagram_context for multiple relevant artifacts (minimum 2 when available).\n- Do not answer from diagram names alone.\n- Return only the final user-facing answer (no planning steps, no tool narration).`;
+
+        const retryResponse = await this.service.chatWithTools(
+          enforcedSystemPrompt,
+          historyMessages,
+          TOOLS
+        );
+
+        tokensUsed += retryResponse.tokensUsed;
+        if (retryResponse.toolCalls?.length) {
+          selectedResponse = retryResponse;
+          activeSystemPrompt = enforcedSystemPrompt;
+        }
+      }
+
       console.log("\n" + "-".repeat(80));
       console.log("LLM response received");
       console.log("-".repeat(80));
@@ -347,21 +388,20 @@ export class RAGService {
       });
 
       let finalContent: string;
-      let tokensUsed = firstResponse.tokensUsed;
       const allSources: RAGSource[] = [];
       let chunksUsed = 0;
 
-      if (firstResponse.toolCalls && firstResponse.toolCalls.length > 0) {
+      if (selectedResponse.toolCalls && selectedResponse.toolCalls.length > 0) {
         // ── 4. Execute tool calls in parallel ──────────────────────────
         logger?.info("RAGService: Executing tool calls", {
-          toolCalls: firstResponse.toolCalls.map(tc => ({
+          toolCalls: selectedResponse.toolCalls.map(tc => ({
             function: tc.functionName,
             arguments: tc.arguments,
           })),
         });
         
         const toolResults = await Promise.all(
-          firstResponse.toolCalls.map((tc) =>
+          selectedResponse.toolCalls.map((tc) =>
             this.executeToolCall(
               tc.functionName,
               tc.arguments,
@@ -392,12 +432,12 @@ export class RAGService {
         chunksUsed = allSources.length;
 
         // ── 5. Second LLM call — model produces answer with tool results
-        const toolCallIds = firstResponse.toolCalls.map((tc) => tc.id);
+        const toolCallIds = selectedResponse.toolCalls.map((tc) => tc.id);
         const finalResponse =
           await this.service.continueWithToolResults(
-            systemPrompt,
+            activeSystemPrompt,
             historyMessages,
-            firstResponse.assistantMessage,
+            selectedResponse.assistantMessage,
             toolResults,
             toolCallIds
           );
@@ -421,10 +461,10 @@ export class RAGService {
       } else {
         // Model answered directly without tools
         logger?.info("RAGService: Model answered directly without tools", {
-          contentLength: firstResponse.content?.length ?? 0,
-          contentPreview: firstResponse.content?.substring(0, 200),
+          contentLength: selectedResponse.content?.length ?? 0,
+          contentPreview: selectedResponse.content?.substring(0, 200),
         });
-        finalContent = firstResponse.content ?? "";
+        finalContent = selectedResponse.content ?? "";
       }
 
       // ── 6. Store response & return ───────────────────────────────────

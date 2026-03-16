@@ -387,8 +387,8 @@ export class DiagramService {
     const isMultiProject = uniqueProjects.size > 1;
 
     const lines = isMultiProject
-      ? ["Available diagrams across projects:"]
-      : ["Available diagrams in this project:"];
+      ? ["Available project artifacts (diagrams) across projects:"]
+      : ["Available project artifacts (diagrams) in this project:"];
 
     for (let i = 0; i < diagrams.length; i++) {
       const d = diagrams[i]!;
