@@ -5,11 +5,12 @@ import { OGMConnection } from "../init/ogm.init";
 import { User } from "../../interfaces";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { getFirebaseAdminAuth } from "../firebase/admin";
+import { DateTime } from "neo4j-driver";
 
 const updateUserRole = async (
   _source: Record<string, any>,
   { userId, role }: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const auth = getFirebaseAdminAuth().auth();
@@ -28,7 +29,7 @@ const updateUserRole = async (
         userId: userId,
         role: role,
         externalId: _context.jwt.sub,
-      }
+      },
     );
 
     if (result.records.length === 0) {
@@ -63,7 +64,7 @@ const updateUserRole = async (
 const updateUserDetail = async (
   _source: Record<string, any>,
   { name, phoneNumber }: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ): Promise<User[]> => {
   const User = (await OGMConnection.getInstance()).model("User");
   const externalId = _context?.jwt?.sub;
@@ -87,7 +88,7 @@ const updateUserDetail = async (
         "Invalid phone format. Must be E.164 like +14155552671",
         {
           extensions: { code: "BAD_USER_INPUT" },
-        }
+        },
       );
     }
 
@@ -108,13 +109,13 @@ const updateUserDetail = async (
         await auth.updateUser(externalId, payload);
         logger?.info(
           `Firebase user updated: uid=${externalId}, changes=${JSON.stringify(
-            payload
-          )}`
+            payload,
+          )}`,
         );
       } catch (error: any) {
         if (error.code === "auth/phone-number-already-exists") {
           logger?.warn(
-            `Phone number already in use. Skipping phone update for uid=${externalId}`
+            `Phone number already in use. Skipping phone update for uid=${externalId}`,
           );
           // only update name in that case
           if (payload.displayName) {
@@ -127,7 +128,7 @@ const updateUserDetail = async (
           logger?.error(
             `Firebase update failed for uid=${externalId}: ${
               error.code || error.message
-            }`
+            }`,
           );
           throw error;
         }
@@ -154,7 +155,7 @@ const updateUserDetail = async (
     }
 
     logger?.info(
-      `User detail updated in Neo4j for uid=${externalId}, name=${updatedUser.name}, phone=${updatedUser.phoneNumber}`
+      `User detail updated in Neo4j for uid=${externalId}, name=${updatedUser.name}, phone=${updatedUser.phoneNumber}`,
     );
 
     return [updatedUser];
@@ -162,7 +163,7 @@ const updateUserDetail = async (
     const logMsg =
       err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     logger?.error(
-      `Failed to update user detail for uid=${externalId}: ${logMsg}`
+      `Failed to update user detail for uid=${externalId}: ${logMsg}`,
     );
 
     throw new GraphQLError(err?.message || "Unexpected server error.", {
@@ -182,7 +183,7 @@ const updateUserDetail = async (
 const updatePhoneNumber = async (
   _source: Record<string, any>,
   { phoneNumber }: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ): Promise<Boolean> => {
   const User = (await OGMConnection.getInstance()).model("User");
   const externalId = _context?.jwt?.sub;
@@ -209,12 +210,12 @@ const updatePhoneNumber = async (
     }
 
     logger?.info(
-      `phoneNumber updated for uid=${externalId}, user=${updated[0]?.email}`
+      `phoneNumber updated for uid=${externalId}, user=${updated[0]?.email}`,
     );
     return true;
   } catch (error) {
     logger?.error(
-      `Failed to update phoneNumber for uid=${externalId}: ${error}`
+      `Failed to update phoneNumber for uid=${externalId}: ${error}`,
     );
     if (error instanceof GraphQLError) throw error;
     throw new GraphQLError("Failed to update phoneNumber.", {
@@ -223,8 +224,58 @@ const updatePhoneNumber = async (
   }
 };
 
+const updateProjectLastVisited = async (
+  _source: Record<string, any>,
+  { projectId, lastVisitedAt, name }: Record<string, any>,
+  context: Record<string, any>,
+) => {
+  const ogm = await OGMConnection.getInstance();
+  const Project = ogm.model("Project");
+
+  try {
+    const projects = await Project.find({
+      where: {
+        id: projectId,
+        OR: [
+          { assignedUsers_SOME: { externalId: context.jwt.sub } },
+          { createdBy: { externalId: context.jwt.sub } },
+          {
+            organization: {
+              memberUsers_SOME: { externalId: context.jwt.sub },
+            },
+          },
+        ],
+      },
+      selectionSet: `{ id }`,
+    });
+
+    if (!projects.length) {
+      throw new Error("Forbidden");
+    }
+
+    await Project.update({
+      where: {
+        id: projectId,
+      },
+      update: {
+        lastVisitedAt,
+        name,
+      },
+    });
+
+    return true;
+  } catch (error) {
+    logger?.error(
+      `Failed to update lastVisited project=${projectId}: ${error}`,
+      { uid: context?.jwt?.sub },
+    );
+    throw error;
+  }
+};
+
 export const updateOperationMutations = {
   updateUserRole,
   updateUserDetail,
   updatePhoneNumber,
+  updateProjectLastVisited,
 };

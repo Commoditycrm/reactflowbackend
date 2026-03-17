@@ -1567,11 +1567,37 @@ const typeDefs = gql`
     @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
+      @authorization(
+        validate: [
+          {
+            when: [BEFORE]
+            operations: [UPDATE]
+            where: {
+              node: {
+                organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
+              }
+            }
+          }
+        ]
+      )
     description: String
     budget: Float
     isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
     lastVisitedAt: DateTime
+      @authorization(
+        validate: [
+          {
+            when: [BEFORE]
+            operations: [UPDATE]
+            where: {
+              node: {
+                organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
+              }
+            }
+          }
+        ]
+      )
     uniqueProject: String!
       @unique
       @populatedBy(
@@ -5038,6 +5064,7 @@ const typeDefs = gql`
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
+    updateProjectLastVisited(projectId: ID!, lastVisitedAt: DateTime!,name:String!): Boolean
     createBacklogItemWithUID(
       input: BacklogItemCreateInput!
     ): CreateBacklogItemsMutationResponse!
