@@ -231,17 +231,25 @@ const updateProjectLastVisited = async (
 ) => {
   const ogm = await OGMConnection.getInstance();
   const Project = ogm.model("Project");
+  const externalId = context?.jwt?.sub;
 
   try {
     const projects = await Project.find({
       where: {
         id: projectId,
         OR: [
-          { assignedUsers_SOME: { externalId: context.jwt.sub } },
-          { createdBy: { externalId: context.jwt.sub } },
+          { assignedUsers_SOME: { externalId } },
+          { createdBy: { externalId } },
           {
             organization: {
-              memberUsers_SOME: { externalId: context.jwt.sub },
+              memberUsers_SOME: { externalId },
+            },
+          },
+          {
+            organization: {
+              createdBy: {
+                externalId,
+              },
             },
           },
         ],
