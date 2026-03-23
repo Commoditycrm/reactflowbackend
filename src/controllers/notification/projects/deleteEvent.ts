@@ -18,6 +18,9 @@ const deleteEvent = async (req: Request, res: Response) => {
   } = req.body;
 
   if (!creator || typeof creator !== "object") {
+    logger.warn("Delete event notification validation failed: invalid creator", {
+      body: req.body,
+    });
     return res.status(400).json({
       status: false,
       message: "creator is required",
@@ -25,6 +28,10 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!projectOwner || typeof projectOwner !== "object") {
+    logger.warn(
+      "Delete event notification validation failed: invalid projectOwner",
+      { body: req.body },
+    );
     return res.status(400).json({
       status: false,
       message: "projectOwner is required",
@@ -32,6 +39,9 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!orgOwner || typeof orgOwner !== "object") {
+    logger.warn("Delete event notification validation failed: invalid orgOwner", {
+      body: req.body,
+    });
     return res.status(400).json({
       status: false,
       message: "orgOwner is required",
@@ -39,21 +49,19 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!creator.id || !creator.name) {
+    logger.warn("Delete event notification validation failed: creator fields missing", {
+      creator,
+    });
     return res.status(400).json({
       status: false,
       message: "creator.id and creator.name are required",
     });
   }
 
-  if (!projectOwner.id || !projectOwner.name || !projectOwner.email) {
-    return res.status(400).json({
-      status: false,
-      message:
-        "projectOwner.id, projectOwner.name and projectOwner.email are required",
-    });
-  }
-
   if (!orgOwner.id || !orgOwner.name || !orgOwner.email) {
+    logger.warn("Delete event notification validation failed: org owner fields missing", {
+      orgOwner,
+    });
     return res.status(400).json({
       status: false,
       message: "orgOwner.id, orgOwner.name and orgOwner.email are required",
@@ -61,6 +69,9 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!title || typeof title !== "string" || !title.trim()) {
+    logger.warn("Delete event notification validation failed: invalid title", {
+      title,
+    });
     return res.status(400).json({
       status: false,
       message: "title is required",
@@ -68,6 +79,9 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!projectName || typeof projectName !== "string" || !projectName.trim()) {
+    logger.warn("Delete event notification validation failed: invalid projectName", {
+      projectName,
+    });
     return res.status(400).json({
       status: false,
       message: "projectName is required",
@@ -75,6 +89,9 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!orgName || typeof orgName !== "string" || !orgName.trim()) {
+    logger.warn("Delete event notification validation failed: invalid orgName", {
+      orgName,
+    });
     return res.status(400).json({
       status: false,
       message: "orgName is required",
@@ -88,14 +105,6 @@ const deleteEvent = async (req: Request, res: Response) => {
   let toEmail = "";
   let toUserName = "";
   let ccEmail: string | undefined;
-
-  if (sameOwners && isProjectOwner && isOrgOwner) {
-    return res.status(400).json({
-      status: false,
-      message:
-        "No notification needed because org owner and project owner are the same as creator",
-    });
-  }
 
   if (isOrgOwner) {
     toEmail = projectOwner.email;
@@ -113,6 +122,12 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   if (!toEmail || !toUserName) {
+    logger.warn("Delete event notification recipient resolution failed", {
+      creatorId: creator.id,
+      projectOwnerId: projectOwner.id,
+      orgOwnerId: orgOwner.id,
+      sameOwners,
+    });
     return res.status(400).json({
       status: false,
       message: "Recipient could not be determined",
@@ -120,6 +135,14 @@ const deleteEvent = async (req: Request, res: Response) => {
   }
 
   try {
+    logger.info("Sending delete event notification", {
+      creatorId: creator.id,
+      projectName: projectName.trim(),
+      eventName: title.trim(),
+      toEmail,
+      ccEmail,
+    });
+
     await emailServices.sendTemplate({
       to: toEmail,
       ...(ccEmail ? { cc: ccEmail } : {}),
@@ -135,6 +158,14 @@ const deleteEvent = async (req: Request, res: Response) => {
         cancelledBy: creator.name.trim(),
         organizationName: orgName.trim(),
       },
+    });
+
+    logger.info("Delete event notification sent successfully", {
+      creatorId: creator.id,
+      toEmail,
+      ccEmail,
+      eventName: title.trim(),
+      projectName: projectName.trim(),
     });
 
     return res.status(202).json({
