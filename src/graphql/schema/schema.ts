@@ -1396,6 +1396,7 @@ const typeDefs = gql`
     tagIds: [ID!]
     riskLevelIds: [ID!]
     titleContains: [String!]
+    createdByIds: [ID!]
     tableType: BacklogTable
     occuredOn: DateTime
     paidOn: DateTime
@@ -2253,17 +2254,11 @@ const typeDefs = gql`
         )
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
-          tab IS NULL
-          OR hasStatusFilter
-          OR tab = 'HIERARCHY'
-          OR NOT coalesce(cfg.enabled,false)
-          OR NOT (
-            EXISTS {
-              MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-              WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
-            }
-            AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
-          )
+        NOT coalesce(cfg.enabled, false)
+        OR NOT EXISTS {
+          MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+          WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
+        }
 
         RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
@@ -2387,18 +2382,11 @@ const typeDefs = gql`
         )
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
-          tab IS NULL
-          OR hasStatusFilter
-          OR tab = 'HIERARCHY'
-          OR NOT coalesce(cfg.enabled,false)
-          OR NOT (
-            EXISTS {
-              MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-              WHERE toLower(coalesce(cs.defaultName, cs.name)) = 'completed'
-            }
-            AND bi.updatedAt < datetime() - duration({days: coalesce(cfg.days, 2)})
-          )
-
+        NOT coalesce(cfg.enabled, false)
+        OR NOT EXISTS {
+          MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+          WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
+        }
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
         columnName: "backlogItemsCount"
@@ -5064,7 +5052,11 @@ const typeDefs = gql`
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
-    updateProjectLastVisited(projectId: ID!, lastVisitedAt: DateTime!,name:String!): Boolean
+    updateProjectLastVisited(
+      projectId: ID!
+      lastVisitedAt: DateTime!
+      name: String!
+    ): Boolean
     createBacklogItemWithUID(
       input: BacklogItemCreateInput!
     ): CreateBacklogItemsMutationResponse!
@@ -6392,7 +6384,11 @@ const typeDefs = gql`
 
     ragGetConversation(conversationId: ID!): RAGConversation
 
-    ragGetConversations(orgId: ID!, projectId: ID, limit: Int = 10): [RAGConversation!]!
+    ragGetConversations(
+      orgId: ID!
+      projectId: ID
+      limit: Int = 10
+    ): [RAGConversation!]!
 
     ragGetDocumentStatus(orgId: ID!, projectId: ID): [RAGDocumentStatus!]!
 
