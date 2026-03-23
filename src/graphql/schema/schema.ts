@@ -2216,6 +2216,10 @@ const typeDefs = gql`
             size(coalesce(f.tagIds,[]))=0
             OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
           )
+          AND (
+            size(coalesce(f.createdByIds,[]))=0
+            OR ANY(id IN f.createdByIds WHERE (bi)<-[:User]-(:User {id: id}))
+          )
 
         WITH DISTINCT bi, tab, me, cfg, f,
           EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
@@ -2344,6 +2348,10 @@ const typeDefs = gql`
           AND (
             size(coalesce(f.tagIds,[]))=0
             OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
+          )
+          AND (
+            size(coalesce(f.createdByIds,[]))=0
+            OR ANY(id IN f.createdByIds WHERE (bi)<-[:User]-(:User {id: id}))
           )
 
         WITH DISTINCT bi, tab, me, cfg, f,
