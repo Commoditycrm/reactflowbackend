@@ -1,6 +1,8 @@
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
+import { createHash } from "crypto";
 import {
+  DiagramData,
   DiagramSearchResult,
   DiagramSummary,
   RAG_CONFIG,
@@ -51,6 +53,73 @@ export class DiagramIndexService {
   private buildIndexName(orgId: string): string {
     const safe = orgId.replace(/[^a-zA-Z0-9]/g, "_");
     return `${RAG_CONFIG.DIAGRAM_SUMMARY_INDEX_NAME}_org_${safe}`;
+  }
+
+  private buildDiagramFingerprint(diagramData: DiagramData): string {
+    // Intentionally ignore absolute positions/sizes so layout-only moves don't trigger re-indexing.
+    const normalizedNodes = diagramData.nodes
+      .map((n) => ({
+        id: n.id,
+        name: n.name ?? "",
+        shape: n.shape ?? "",
+        type: n.type ?? "",
+        description: n.description ?? "",
+        parentGroupId: n.parentGroupId ?? "",
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    const normalizedEdges = diagramData.edges
+      .map((e) => ({
+        sourceId: e.sourceId,
+        targetId: e.targetId,
+        label: e.label ?? "",
+        bidirectional: e.bidirectional ?? false,
+      }))
+      .sort((a, b) => {
+        const lhs = `${a.sourceId}|${a.targetId}|${a.label}|${a.bidirectional}`;
+        const rhs = `${b.sourceId}|${b.targetId}|${b.label}|${b.bidirectional}`;
+        return lhs.localeCompare(rhs);
+      });
+
+    const normalizedGroups = diagramData.groups
+      .map((g) => ({
+        id: g.id,
+        name: g.name ?? "",
+        layoutType: g.layoutType ?? "",
+        childNodeIds: [...(g.childNodeIds ?? [])].sort(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    const payload = {
+      fileId: diagramData.fileId,
+      nodes: normalizedNodes,
+      edges: normalizedEdges,
+      groups: normalizedGroups,
+    };
+
+    return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  }
+
+  private async getStoredDiagramFingerprint(fileId: string): Promise<string | null> {
+    const conn = await Neo4JConnection.getInstance();
+    const session = conn.driver.session();
+
+    try {
+      const result = await session.run(
+        `
+        MATCH (ds:DiagramSummaryNode)-[:SUMMARY_OF]->(file:File {id: $fileId})
+        RETURN ds.diagramFingerprint AS fingerprint
+        ORDER BY ds.createdAt DESC
+        LIMIT 1
+        `,
+        { fileId }
+      );
+
+      if (result.records.length === 0) return null;
+      return (result.records[0]?.get("fingerprint") as string | null) ?? null;
+    } finally {
+      await session.close();
+    }
   }
 
   async ensureVectorIndex(
@@ -109,9 +178,13 @@ export class DiagramIndexService {
     fileId: string,
     projectId: string,
     userId: string,
-    orgId: string
+    orgId: string,
+    options?: {
+      skipIfUnchanged?: boolean;
+    }
   ): Promise<DiagramSummary | null> {
     const { label } = await this.ensureVectorIndex(orgId);
+    const skipIfUnchanged = options?.skipIfUnchanged ?? true;
 
     // 1. Fetch full diagram data
     const diagramData = await this.diagramService.fetchDiagramData(
@@ -126,6 +199,18 @@ export class DiagramIndexService {
         { fileId }
       );
       return null;
+    }
+
+    const currentFingerprint = this.buildDiagramFingerprint(diagramData);
+    if (skipIfUnchanged) {
+      const existingFingerprint = await this.getStoredDiagramFingerprint(fileId);
+      if (existingFingerprint && existingFingerprint === currentFingerprint) {
+        logger?.info(
+          "DiagramIndexService.indexDiagram: skipped (diagram unchanged)",
+          { fileId, fingerprint: currentFingerprint }
+        );
+        return null;
+      }
     }
 
     // 2. Generate summary via Groq Llama-4
@@ -192,6 +277,7 @@ export class DiagramIndexService {
           id: randomUUID(),
           summary: $summary,
           embedding: $embedding,
+          diagramFingerprint: $diagramFingerprint,
           nodeCount: $nodeCount,
           edgeCount: $edgeCount,
           groupCount: $groupCount,
@@ -203,6 +289,7 @@ export class DiagramIndexService {
           fileId,
           summary: summaryText,
           embedding,
+          diagramFingerprint: currentFingerprint,
           nodeCount: diagramData.nodes.length,
           edgeCount: diagramData.edges.length,
           groupCount: diagramData.groups.length,
@@ -240,7 +327,7 @@ export class DiagramIndexService {
   }
 
   /**
-   * Index all diagrams in a project that don't have summaries yet.
+    * Index all diagrams in a project that are new or changed.
    */
   async indexProjectDiagrams(
     projectId: string,
@@ -263,17 +350,13 @@ export class DiagramIndexService {
     let failed = 0;
 
     for (const d of diagrams) {
-      if (d.hasSummaryEmbedding) {
-        skipped++;
-        continue;
-      }
-
       try {
         const result = await this.indexDiagram(
           d.fileId,
           projectId,
           userId,
-          orgId
+          orgId,
+          { skipIfUnchanged: true }
         );
         if (result) indexed++;
         else skipped++;
