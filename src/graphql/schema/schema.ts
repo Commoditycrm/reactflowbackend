@@ -2217,8 +2217,10 @@ const typeDefs = gql`
             OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
           )
           AND (
-            size(coalesce(f.createdByIds,[]))=0
-            OR ANY(id IN f.createdByIds WHERE (bi)<-[:User]-(:User {id: id}))
+            size(coalesce(f.createdByIds,[])) = 0
+            OR ANY(id IN f.createdByIds WHERE
+            (bi)<-[:CREATED_ITEM]-(:User {id: id})
+            )
           )
 
         WITH DISTINCT bi, tab, me, cfg, f,
@@ -2350,10 +2352,11 @@ const typeDefs = gql`
             OR ANY(id IN f.tagIds WHERE (bi)-[:HAS_TAGS]->(:Tag {id: id}))
           )
           AND (
-            size(coalesce(f.createdByIds,[]))=0
-            OR ANY(id IN f.createdByIds WHERE (bi)<-[:User]-(:User {id: id}))
+            size(coalesce(f.createdByIds,[])) = 0
+            OR ANY(id IN f.createdByIds WHERE
+            (bi)<-[:CREATED_ITEM]-(:User {id: id})
+            )
           )
-
         WITH DISTINCT bi, tab, me, cfg, f,
           EXISTS { MATCH (bi)-[:HAS_ASSIGNED_USER]->(:User {externalId: me}) } AS isMine,
           EXISTS {
@@ -3858,8 +3861,8 @@ const typeDefs = gql`
     width: Float!
     height: Float!
     type: String!
-    fontSize:Int
-    textDecoration:String @default(value:"normal")
+    fontSize: Int
+    textDecoration: String @default(value: "normal")
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
