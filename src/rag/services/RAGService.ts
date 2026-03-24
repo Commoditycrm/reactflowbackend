@@ -10,6 +10,8 @@ import {
   RAG_CONFIG,
   RAGChatResponse,
   RAGSource,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
+  SUPPORTED_DOCUMENT_MIME_HINTS,
   ToolCallResult,
 } from "../types/rag.types";
 import { DiagramIndexService } from "./DiagramIndexService";
@@ -47,6 +49,8 @@ CRITICAL RULES:
 - Avoid speculative wording like "appears", "likely", "probably", "seems" unless uncertainty is explicit and unavoidable.
 - Do not pad with generic limitation sections. Only mention a limitation if it materially changes the conclusion, in one concise sentence.
 - For overview requests, use this concise structure: 1) Overall project/org summary, 2) Key entities/workstreams, 3) Major workflows and dependencies, 4) Suggested next drill-downs (optional).
+- Do not mention internal retrieval modality failures in final answers (e.g. "not found in documents" or "let's try diagrams"). Keep responses source-agnostic and user-focused.
+- If nothing relevant is found, say that no relevant sources were found for the query and suggest one concise next step.
 - If evidence is weak, ask one specific follow-up question instead of giving a long hedge.
 - Be thorough but concise. If context is insufficient, say so — do not make up information.
 - For greetings or clarifications, respond directly without tools.`;
@@ -59,7 +63,7 @@ const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "search_documents",
       description:
-        "Search project PDF documents for text-based information. Use for specifications, reports, requirements, meeting notes, or any textual content in attached documents.",
+        "Search project documents for text-based information. Supports indexed PDF, TXT, Markdown, DOCX, XLSX, CSV, and JSON content.",
       parameters: {
         type: "object",
         properties: {
@@ -125,6 +129,73 @@ export class RAGService {
     return RAGService.instance;
   }
 
+  private isGreetingOrAck(message: string): boolean {
+    const text = message.trim().toLowerCase();
+    return /^(hi|hello|hey|thanks|thank you|ok|okay|cool|great|sure|yep|yes|no)$/.test(
+      text
+    );
+  }
+
+  private sanitizeFinalAnswer(
+    content: string,
+    sources: RAGSource[],
+    userMessage: string
+  ): string {
+    const normalized = content
+      .replace(
+        /since\s+i\s+couldn't\s+find[^\n]*?(documents?|diagrams?)[^\n]*\.?/gi,
+        ""
+      )
+      .replace(/let'?s\s+try\s+to\s+search[^\n]*\.?/gi, "")
+      .replace(/i'?ll\s+use\s+[^\n]*\s+as\s+a\s+search\s+query[^\n]*\.?/gi, "")
+      .replace(/let\s+me\s+retrieve[^\n]*\.?/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+    const pendingRetrievalCue =
+      /(which\s+diagram|if\s+you\s+want\s+i\s+can|let'?s\s+try|let\s+me\s+retrieve|i'?ll\s+use\s+.*search\s+query)/i.test(
+        normalized
+      );
+
+    if (sources.length === 0 && !this.isGreetingOrAck(userMessage)) {
+      if (normalized.length > 120 && !pendingRetrievalCue) {
+        return normalized;
+      }
+      return "I couldn't find relevant sources for this query in the currently indexed project artifacts. Try rephrasing your question or specify the project area you want to explore.";
+    }
+
+    return normalized;
+  }
+
+  private shouldAutoContinueRetrieval(
+    content: string | null | undefined,
+    userMessage: string
+  ): boolean {
+    if (!content || this.isGreetingOrAck(userMessage)) return false;
+
+    return /(which\s+diagram|if\s+you\s+want\s+i\s+can|let'?s\s+try\s+to\s+search|let\s+me\s+retrieve|i'?ll\s+use\s+.*search\s+query|continue\s+searching)/i.test(
+      content
+    );
+  }
+
+  private buildSourcePreviewLines(snippet?: string): string[] {
+    if (!snippet) return [];
+
+    const cleaned = snippet.replace(/\.\.\.$/, "").trim();
+    if (!cleaned) return [];
+
+    const rawLines = cleaned
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (rawLines.length > 0) {
+      return rawLines.slice(0, 3).map((line) => line.slice(0, 180));
+    }
+
+    return [cleaned.slice(0, 180)];
+  }
+
   private isOverviewStyleRequest(message: string): boolean {
     const text = message.toLowerCase();
     return /(overall|overview|summary|summarize|high[-\s]?level|organization|portfolio|all projects|projects in|across projects)/.test(
@@ -178,8 +249,14 @@ export class RAGService {
         const result = await session.run(
           `
           MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization)
-          MATCH (ef:ExternalFile {id: $externalFileId, type: 'PDF'})
-          WHERE EXISTS {
+          MATCH (ef:ExternalFile {id: $externalFileId})
+          WHERE ef.deletedAt IS NULL
+            AND (
+              toLower(coalesce(ef.type, '')) IN $supportedExtensions
+              OR any(mimeHint IN $supportedMimeHints WHERE toLower(coalesce(ef.type, '')) CONTAINS mimeHint)
+              OR any(ext IN $supportedExtensions WHERE toLower(coalesce(ef.name, '')) ENDS WITH '.' + ext)
+            )
+            AND EXISTS {
             MATCH (org)-[:HAS_PROJECTS]->(p:Project)
             WHERE p.deletedAt IS NULL
             AND (
@@ -189,7 +266,12 @@ export class RAGService {
           }
           RETURN ef.url AS url, ef.name AS name, ef.type AS type, org.id AS orgId
           `,
-          { userId, externalFileId }
+          {
+            userId,
+            externalFileId,
+            supportedExtensions: [...SUPPORTED_DOCUMENT_EXTENSIONS],
+            supportedMimeHints: [...SUPPORTED_DOCUMENT_MIME_HINTS],
+          }
         );
 
         if (result.records.length === 0) {
@@ -226,7 +308,11 @@ export class RAGService {
         }
       }
 
-      const chunks = await this.pdfProcessor.processDocument(documentInfo.url);
+      const chunks = await this.pdfProcessor.processDocument(
+        documentInfo.url,
+        documentInfo.type,
+        documentInfo.name
+      );
       const storedCount = await this.vectorStore.storeChunks(
         chunks,
         externalFileId,
@@ -365,6 +451,27 @@ export class RAGService {
         }
       }
 
+      // If model responds with "I can search diagrams/documents if you want",
+      // auto-continue once so the user doesn't need to send "continue/okay".
+      if (
+        !selectedResponse.toolCalls?.length &&
+        this.shouldAutoContinueRetrieval(selectedResponse.content, message)
+      ) {
+        const forcedContinuationPrompt = `${activeSystemPrompt}\n\nMANDATORY CONTINUATION:\n- Do not ask the user whether to continue searching.\n- If more context is needed, call the relevant tools now and then answer.\n- Return one complete final answer.`;
+
+        const continuationResponse = await this.service.chatWithTools(
+          forcedContinuationPrompt,
+          historyMessages,
+          TOOLS
+        );
+
+        tokensUsed += continuationResponse.tokensUsed;
+        if (continuationResponse.toolCalls?.length) {
+          selectedResponse = continuationResponse;
+          activeSystemPrompt = forcedContinuationPrompt;
+        }
+      }
+
       console.log("\n" + "-".repeat(80));
       console.log("LLM response received");
       console.log("-".repeat(80));
@@ -426,6 +533,13 @@ export class RAGService {
         console.log(`Sources found: ${allSources.length}`);
         allSources.forEach((src, i) => {
           console.log(`   ${i + 1}. ${src.documentName} (score: ${(src.relevanceScore * 100).toFixed(1)}%)`);
+          const previewLines = this.buildSourcePreviewLines(src.snippet);
+          if (previewLines.length > 0) {
+            console.log("      Preview:");
+            previewLines.forEach((line) => {
+              console.log(`         ${line}`);
+            });
+          }
         });
         console.log("-".repeat(80) + "\n");
 
@@ -466,6 +580,8 @@ export class RAGService {
         });
         finalContent = selectedResponse.content ?? "";
       }
+
+      finalContent = this.sanitizeFinalAnswer(finalContent, allSources, message);
 
       // ── 6. Store response & return ───────────────────────────────────
       conversation.messages.push({
@@ -583,8 +699,7 @@ export class RAGService {
     if (searchResults.length === 0) {
       return {
         toolName: "search_documents",
-        content:
-          "No relevant document chunks found for this query. The project may not have any PDF documents ingested yet, or the query may not match any content.",
+        content: "No relevant sources found for this query in indexed artifacts.",
       };
     }
 
@@ -649,7 +764,7 @@ export class RAGService {
       return {
         toolName: "get_diagram_context",
         content:
-          "Could not determine which diagram to retrieve. Please specify the diagram name or try a more specific query. Available diagrams are listed in the system prompt.",
+          "No relevant sources found for this query in indexed artifacts.",
       };
     }
 
@@ -664,7 +779,7 @@ export class RAGService {
     if (!diagramData || diagramData.nodes.length === 0) {
       return {
         toolName: "get_diagram_context",
-        content: `Diagram with fileId "${targetFileId}" not found or has no nodes.`,
+        content: "No relevant sources found for this query in indexed artifacts.",
       };
     }
 
@@ -821,8 +936,13 @@ export class RAGService {
 
         CALL {
           WITH p
-          MATCH (parent)-[:HAS_ATTACHED_FILE]->(ef:ExternalFile {type: 'PDF'})
+          MATCH (parent)-[:HAS_ATTACHED_FILE]->(ef:ExternalFile)
           WHERE ef.deletedAt IS NULL
+            AND (
+              toLower(coalesce(ef.type, '')) IN $supportedExtensions
+              OR any(mimeHint IN $supportedMimeHints WHERE toLower(coalesce(ef.type, '')) CONTAINS mimeHint)
+              OR any(ext IN $supportedExtensions WHERE toLower(coalesce(ef.name, '')) ENDS WITH '.' + ext)
+            )
             AND (
               EXISTS { MATCH (p)-[:HAS_CHILD_ITEM|HAS_CHILD_FILE|HAS_CHILD_FOLDER*1..10]->(parent) }
               OR EXISTS { MATCH (p)<-[:ITEM_IN_PROJECT]-(parent:BacklogItem) }
@@ -835,7 +955,12 @@ export class RAGService {
         WITH ef, count(chunk) AS chunkCount
         RETURN ef.id AS documentId, chunkCount > 0 AS isEmbedded
         `,
-        { userId, projectId }
+        {
+          userId,
+          projectId,
+          supportedExtensions: [...SUPPORTED_DOCUMENT_EXTENSIONS],
+          supportedMimeHints: [...SUPPORTED_DOCUMENT_MIME_HINTS],
+        }
       );
 
       let successful = 0;
