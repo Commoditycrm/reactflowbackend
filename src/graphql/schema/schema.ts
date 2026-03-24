@@ -2228,9 +2228,7 @@ const typeDefs = gql`
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense,
-          (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
-
+          } AS isExpense
         WHERE
           (
             tab IS NULL
@@ -2258,14 +2256,24 @@ const typeDefs = gql`
             )
           )
         )
-        WITH bi, tab, f, cfg, hasStatusFilter
+        WITH bi, tab, f, cfg,
+        EXISTS {
+          MATCH (s:Status)
+          WHERE s.id IN coalesce(f.statusIds, [])
+          AND toLower(trim(coalesce(s.defaultName, s.name))) = 'completed'
+        } AS completedSelected
+
         WHERE
-        NOT coalesce(cfg.enabled, false)
-        OR hasStatusFilter
-        OR NOT EXISTS {
-          MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-          WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
-        }
+          NOT coalesce(cfg.enabled, false)
+          OR completedSelected
+          OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
+          }
+          AND bi.updatedAt IS NOT NULL
+          AND datetime(bi.updatedAt) < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
 
         RETURN bi AS backlogItems
         ORDER BY bi.uid DESC
@@ -2363,9 +2371,7 @@ const typeDefs = gql`
           EXISTS {
             MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(et:BacklogItemType)
             WHERE toLower(et.defaultName) = 'expense'
-          } AS isExpense,
-          (size(coalesce(f.statusIds,[])) > 0) AS hasStatusFilter
-
+          } AS isExpense
         WHERE
           (
             tab IS NULL
@@ -2392,14 +2398,24 @@ const typeDefs = gql`
             )
           )
         )
-        WITH bi, tab, f, cfg, hasStatusFilter
+        WITH bi, tab, f, cfg,
+        EXISTS {
+          MATCH (s:Status)
+          WHERE s.id IN coalesce(f.statusIds, [])
+          AND toLower(trim(coalesce(s.defaultName, s.name))) = 'completed'
+        } AS completedSelected
+
         WHERE
-        NOT coalesce(cfg.enabled, false)
-        OR hasStatusFilter
-        OR NOT EXISTS {
-          MATCH (bi)-[:HAS_STATUS]->(cs:Status)
-          WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
-        }
+          NOT coalesce(cfg.enabled, false)
+          OR completedSelected
+          OR NOT (
+            EXISTS {
+            MATCH (bi)-[:HAS_STATUS]->(cs:Status)
+            WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
+          }
+          AND bi.updatedAt IS NOT NULL
+          AND datetime(bi.updatedAt) < datetime() - duration({days: coalesce(cfg.days, 2)})
+        )
         RETURN count(DISTINCT bi) AS backlogItemsCount
         """
         columnName: "backlogItemsCount"
