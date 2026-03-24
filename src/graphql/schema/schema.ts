@@ -4577,6 +4577,13 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
+    reactions: [Reaction!]!
+      @relationship(
+        type: "REACTED_TO"
+        direction: IN
+        aggregate: false
+        operations: []
+      )
     triggerLastModified: Boolean
       @populatedBy(
         callback: "updateOrgLastModified"
@@ -4588,6 +4595,27 @@ const typeDefs = gql`
     updatedAt: DateTime
       @timestamp(operations: [UPDATE])
       @settable(onCreate: false, onUpdate: true)
+  }
+
+  type Reaction implements Timestamped {
+    id: ID! @id
+    type: String!
+    createdAt: DateTime! @timestamp(operations: [CREATE])
+    updatedAt: DateTime @timestamp(operations: [UPDATE])
+    user: User!
+      @relationship(
+        type: "REACTED_BY"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT]
+      )
+    comment: Comment!
+      @relationship(
+        type: "REACTED_TO"
+        direction: OUT
+        aggregate: false
+        nestedOperations: [CONNECT, DISCONNECT]
+      )
   }
 
   type Sprint implements TimestampedCreatable & Timestamped
