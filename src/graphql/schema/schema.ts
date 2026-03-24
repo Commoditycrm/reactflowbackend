@@ -3858,6 +3858,8 @@ const typeDefs = gql`
     width: Float!
     height: Float!
     type: String!
+    fontSize:Int
+    textDecoration:String @default(value:"normal")
     childItems: [BacklogItem!]!
       @relationship(
         type: "HAS_CHILD_ITEM"
