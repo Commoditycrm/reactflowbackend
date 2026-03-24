@@ -4582,7 +4582,7 @@ const typeDefs = gql`
         type: "REACTED_TO"
         direction: IN
         aggregate: false
-        operations: []
+        nestedOperations: []
       )
     triggerLastModified: Boolean
       @populatedBy(
