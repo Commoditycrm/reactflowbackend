@@ -98,6 +98,30 @@ export interface EmbeddingResult {
   tokensUsed: number;
 }
 
+export const SUPPORTED_DOCUMENT_EXTENSIONS = [
+  "pdf",
+  "txt",
+  "md",
+  "doc",
+  "docx",
+  "xlsx",
+  "csv",
+  "json",
+] as const;
+
+export const SUPPORTED_DOCUMENT_MIME_HINTS = [
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+  "application/json",
+  "text/json",
+] as const;
+
 export const RAG_CONFIG = {
   CHUNK_SIZE: 1000,
   CHUNK_OVERLAP: 200,
@@ -113,9 +137,13 @@ export const RAG_CONFIG = {
   SUMMARIZATION_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
   
   MAX_CONTEXT_CHUNKS: 5,
-  MIN_RELEVANCE_SCORE: 0.7,
+  MIN_RELEVANCE_SCORE: 0.45,
+  HYBRID_VECTOR_WEIGHT: 0.65,
+  HYBRID_KEYWORD_WEIGHT: 0.35,
+  HYBRID_CANDIDATE_MULTIPLIER: 4,
   MAX_TOKENS: 4000,
   VECTOR_INDEX_NAME: "document_embeddings",
+  FULLTEXT_INDEX_NAME: "document_content_fulltext",
   DIAGRAM_SUMMARY_EMBEDDING_DIMENSIONS: 1024,
   DIAGRAM_SUMMARY_INDEX_NAME: "diagram_summary_embeddings",
 } as const;

@@ -1,14 +1,20 @@
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
-import { RAG_CONFIG, RAGQueryResult, VectorSearchOptions } from "../types/rag.types";
+import {
+  RAG_CONFIG,
+  RAGQueryResult,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
+  SUPPORTED_DOCUMENT_MIME_HINTS,
+  VectorSearchOptions,
+} from "../types/rag.types";
 import { EmbeddingServiceFactory, IEmbeddingService } from "./EmbeddingServiceFactory";
 import { ProcessedChunk } from "./PDFProcessor";
-import neo4j from "neo4j-driver";
 
 export class VectorStore {
   private static instance: VectorStore;
   private embeddingService: IEmbeddingService;
   private initializedIndexes = new Set<string>();
+  private initializedFullTextIndexes = new Set<string>();
 
   private constructor() {
     this.embeddingService = EmbeddingServiceFactory.getInstance();
@@ -28,6 +34,57 @@ export class VectorStore {
   private buildIndexName(orgId: string): string {
     const safe = orgId.replace(/[^a-zA-Z0-9]/g, "_");
     return `${RAG_CONFIG.VECTOR_INDEX_NAME}_org_${safe}`;
+  }
+
+  private buildFullTextIndexName(orgId: string): string {
+    const safe = orgId.replace(/[^a-zA-Z0-9]/g, "_");
+    return `${RAG_CONFIG.FULLTEXT_INDEX_NAME}_org_${safe}`;
+  }
+
+  private buildSupportedTypeQueryParams() {
+    return {
+      supportedExtensions: [...SUPPORTED_DOCUMENT_EXTENSIONS],
+      supportedMimeHints: [...SUPPORTED_DOCUMENT_MIME_HINTS],
+    };
+  }
+
+  private buildHybridFullTextQuery(query: string): string {
+    const cleaned = query.replace(/["~*?:\\/+\-&|!(){}\[\]^]/g, " ").trim();
+    const tokens = cleaned
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2)
+      .slice(0, 12);
+
+    if (tokens.length === 0) return cleaned || query;
+
+    const fuzzy = tokens.map((t) => `${t}~1`).join(" OR ");
+    return cleaned ? `"${cleaned}" OR ${fuzzy}` : fuzzy;
+  }
+
+  private computeHybridScore(
+    query: string,
+    content: string,
+    vectorScore: number,
+    normalizedKeywordScore: number
+  ): number {
+    const q = query.toLowerCase().trim();
+    const c = content.toLowerCase();
+    const exactPhraseBoost = q && c.includes(q) ? 0.15 : 0;
+
+    const queryTerms = q.split(/\s+/).filter((t) => t.length >= 2);
+    const termMatches = queryTerms.filter((term) => c.includes(term)).length;
+    const termCoverageBoost =
+      queryTerms.length > 0 ? 0.1 * (termMatches / queryTerms.length) : 0;
+
+    const fused =
+      RAG_CONFIG.HYBRID_VECTOR_WEIGHT * vectorScore +
+      RAG_CONFIG.HYBRID_KEYWORD_WEIGHT * normalizedKeywordScore +
+      exactPhraseBoost +
+      termCoverageBoost;
+
+    return Math.min(1, fused);
   }
 
   async ensureVectorIndex(orgId: string): Promise<{ indexName: string; label: string }> {
@@ -67,12 +124,48 @@ export class VectorStore {
     return { indexName, label };
   }
 
+  async ensureFullTextIndex(orgId: string): Promise<{ indexName: string; label: string }> {
+    const label = this.buildOrgLabel(orgId);
+    const indexName = this.buildFullTextIndexName(orgId);
+
+    if (this.initializedFullTextIndexes.has(indexName)) return { indexName, label };
+
+    const conn = await Neo4JConnection.getInstance();
+    const session = conn.driver.session();
+
+    try {
+      await session.run(`
+        CREATE FULLTEXT INDEX ${indexName} IF NOT EXISTS
+        FOR (c:${label})
+        ON EACH [c.content]
+      `);
+
+      this.initializedFullTextIndexes.add(indexName);
+      logger?.info("Fulltext index created/verified", { indexName, label });
+    } catch (error: any) {
+      if (!error.message?.includes("already exists")) {
+        logger?.error("VectorStore.ensureFullTextIndex failed", {
+          error,
+          indexName,
+          label,
+        });
+        throw error;
+      }
+      this.initializedFullTextIndexes.add(indexName);
+    } finally {
+      await session.close();
+    }
+
+    return { indexName, label };
+  }
+
   async storeChunks(
     chunks: ProcessedChunk[],
     externalFileId: string,
     orgId: string
   ): Promise<number> {
-    const { indexName, label } = await this.ensureVectorIndex(orgId);
+    const { label } = await this.ensureVectorIndex(orgId);
+    await this.ensureFullTextIndex(orgId);
 
     const conn = await Neo4JConnection.getInstance();
     const session = conn.driver.session();
@@ -146,8 +239,15 @@ export class VectorStore {
       const { embedding } = await this.embeddingService.generateEmbedding(query);
       const topK = options.topK ?? RAG_CONFIG.MAX_CONTEXT_CHUNKS;
       const minScore = options.minScore ?? RAG_CONFIG.MIN_RELEVANCE_SCORE;
+      const candidateK = Math.max(
+        topK * RAG_CONFIG.HYBRID_CANDIDATE_MULTIPLIER,
+        topK + 8
+      );
 
       const { indexName } = await this.ensureVectorIndex(options.orgId);
+      const { indexName: fullTextIndexName } = await this.ensureFullTextIndex(
+        options.orgId
+      );
 
       // Ensure embedding is a plain array for Neo4j
       const embeddingArray: number[] = (Array.isArray(embedding)
@@ -163,51 +263,189 @@ export class VectorStore {
         embeddingType: typeof properEmbedding,
         isArray: Array.isArray(properEmbedding),
         firstValues: properEmbedding.slice(0, 3),
-        indexName
+        indexName,
+        fullTextIndexName,
+        topK,
+        candidateK,
       });
 
-      // Simple vector search first, then filter
-      // Note: indexName must be interpolated, not parameterized
-      const result = await session.run(
+      const sharedParams = {
+        userId: options.userId,
+        orgId: options.orgId,
+        projectId: options.projectId ?? null,
+        ...this.buildSupportedTypeQueryParams(),
+      };
+
+      const vectorResult = await session.run(
         `
-        CALL db.index.vector.queryNodes('${indexName}', toInteger($topK), $embedding)
+        CALL db.index.vector.queryNodes('${indexName}', toInteger($candidateK), $embedding)
         YIELD node AS chunk, score
-        WHERE score >= $minScore
         
         MATCH (chunk)-[:CHUNK_OF]->(ef:ExternalFile)
         WHERE ef.deletedAt IS NULL
+          AND (
+            toLower(coalesce(ef.type, '')) IN $supportedExtensions
+            OR any(mimeHint IN $supportedMimeHints WHERE toLower(coalesce(ef.type, '')) CONTAINS mimeHint)
+            OR any(ext IN $supportedExtensions WHERE toLower(coalesce(ef.name, '')) ENDS WITH '.' + ext)
+          )
         
-        // Verify access: User -> Org -> Project -> BacklogItem -> ExternalFile
         MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
         MATCH (org)-[:HAS_PROJECTS]->(p:Project)
-        WHERE p.deletedAt IS NULL AND ($projectId IS NULL OR p.id = $projectId)
-        MATCH (bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
-        MATCH (bi)-[:HAS_ATTACHED_FILE]->(ef)
+        WHERE p.deletedAt IS NULL
+          AND ($projectId IS NULL OR p.id = $projectId)
+          AND (
+            EXISTS { MATCH (p)-[:HAS_CHILD_ITEM|HAS_CHILD_FILE|HAS_CHILD_FOLDER*1..10]->(parent)-[:HAS_ATTACHED_FILE]->(ef) }
+            OR EXISTS { MATCH (p)<-[:ITEM_IN_PROJECT]-(bi:BacklogItem)-[:HAS_ATTACHED_FILE]->(ef) }
+          )
 
-        RETURN chunk.content AS content,
-               score,
+        RETURN chunk.id AS chunkId,
+               chunk.content AS content,
+               score AS vectorScore,
                ef.name AS source,
                chunk.pageNumber AS pageNumber,
                ef.id AS documentId
-        ORDER BY score DESC
-        LIMIT toInteger($topK)
+        ORDER BY vectorScore DESC
+        LIMIT toInteger($candidateK)
         `,
         {
-          userId: options.userId,
-          orgId: options.orgId,
-          projectId: options.projectId ?? null,
+          ...sharedParams,
           embedding: properEmbedding,
-          topK,
-          minScore,
+          candidateK,
         }
       );
 
-      return result.records.map((record) => ({
-        content: record.get("content"),
-        score: record.get("score"),
-        source: record.get("source"),
-        pageNumber: record.get("pageNumber"),
-        documentId: record.get("documentId"),
+      let keywordResult;
+      try {
+        keywordResult = await session.run(
+          `
+        CALL db.index.fulltext.queryNodes('${fullTextIndexName}', $fullTextQuery, {limit: toInteger($candidateK)})
+        YIELD node AS chunk, score AS keywordScore
+
+        MATCH (chunk)-[:CHUNK_OF]->(ef:ExternalFile)
+        WHERE ef.deletedAt IS NULL
+          AND (
+            toLower(coalesce(ef.type, '')) IN $supportedExtensions
+            OR any(mimeHint IN $supportedMimeHints WHERE toLower(coalesce(ef.type, '')) CONTAINS mimeHint)
+            OR any(ext IN $supportedExtensions WHERE toLower(coalesce(ef.name, '')) ENDS WITH '.' + ext)
+          )
+
+        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        WHERE p.deletedAt IS NULL
+          AND ($projectId IS NULL OR p.id = $projectId)
+          AND (
+            EXISTS { MATCH (p)-[:HAS_CHILD_ITEM|HAS_CHILD_FILE|HAS_CHILD_FOLDER*1..10]->(parent)-[:HAS_ATTACHED_FILE]->(ef) }
+            OR EXISTS { MATCH (p)<-[:ITEM_IN_PROJECT]-(bi:BacklogItem)-[:HAS_ATTACHED_FILE]->(ef) }
+          )
+
+        RETURN chunk.id AS chunkId,
+               chunk.content AS content,
+               keywordScore,
+               ef.name AS source,
+               chunk.pageNumber AS pageNumber,
+               ef.id AS documentId
+        ORDER BY keywordScore DESC
+        LIMIT toInteger($candidateK)
+        `,
+          {
+            ...sharedParams,
+            fullTextQuery: this.buildHybridFullTextQuery(query),
+            candidateK,
+          }
+        );
+      } catch (keywordError) {
+        logger?.warn("VectorStore.searchSimilar keyword search failed, falling back to vector-only", {
+          error: keywordError,
+        });
+        keywordResult = { records: [] };
+      }
+
+      type HybridCandidate = {
+        chunkId: string;
+        content: string;
+        source: string;
+        pageNumber: number;
+        documentId: string;
+        vectorScore: number;
+        keywordScore: number;
+      };
+
+      const candidates = new Map<string, HybridCandidate>();
+
+      for (const record of vectorResult.records) {
+        const chunkId = record.get("chunkId") as string;
+        candidates.set(chunkId, {
+          chunkId,
+          content: record.get("content"),
+          source: record.get("source"),
+          pageNumber: record.get("pageNumber"),
+          documentId: record.get("documentId"),
+          vectorScore: Number(record.get("vectorScore") ?? 0),
+          keywordScore: 0,
+        });
+      }
+
+      for (const record of keywordResult.records) {
+        const chunkId = record.get("chunkId") as string;
+        const existing = candidates.get(chunkId);
+        const keywordScore = Number(record.get("keywordScore") ?? 0);
+        if (existing) {
+          existing.keywordScore = Math.max(existing.keywordScore, keywordScore);
+          continue;
+        }
+
+        candidates.set(chunkId, {
+          chunkId,
+          content: record.get("content"),
+          source: record.get("source"),
+          pageNumber: record.get("pageNumber"),
+          documentId: record.get("documentId"),
+          vectorScore: 0,
+          keywordScore,
+        });
+      }
+
+      const maxKeywordScore = Math.max(
+        1,
+        ...Array.from(candidates.values()).map((c) => c.keywordScore)
+      );
+
+      const fused = Array.from(candidates.values())
+        .map((candidate) => {
+          const normalizedKeywordScore = candidate.keywordScore / maxKeywordScore;
+          const score = this.computeHybridScore(
+            query,
+            candidate.content,
+            candidate.vectorScore,
+            normalizedKeywordScore
+          );
+
+          return {
+            content: candidate.content,
+            score,
+            source: candidate.source,
+            pageNumber: candidate.pageNumber,
+            documentId: candidate.documentId,
+          };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const filtered = fused.filter((r) => r.score >= minScore);
+      const finalResults = (filtered.length > 0 ? filtered : fused).slice(0, topK);
+
+      logger?.info("VectorStore.searchSimilar hybrid results", {
+        vectorCandidates: vectorResult.records.length,
+        keywordCandidates: keywordResult.records.length,
+        mergedCandidates: fused.length,
+        returnedResults: finalResults.length,
+      });
+
+      return finalResults.map((record) => ({
+        content: record.content,
+        score: record.score,
+        source: record.source,
+        pageNumber: record.pageNumber,
+        documentId: record.documentId,
       }));
     } catch (error) {
       logger?.error("VectorStore.searchSimilar failed", { error });
@@ -294,8 +532,13 @@ export class VectorStore {
 
         CALL {
           WITH p
-          MATCH (parent)-[:HAS_ATTACHED_FILE]->(ef:ExternalFile {type: 'PDF'})
+          MATCH (parent)-[:HAS_ATTACHED_FILE]->(ef:ExternalFile)
           WHERE ef.deletedAt IS NULL
+            AND (
+              toLower(coalesce(ef.type, '')) IN $supportedExtensions
+              OR any(mimeHint IN $supportedMimeHints WHERE toLower(coalesce(ef.type, '')) CONTAINS mimeHint)
+              OR any(ext IN $supportedExtensions WHERE toLower(coalesce(ef.name, '')) ENDS WITH '.' + ext)
+            )
             AND (
               EXISTS { MATCH (p)-[:HAS_CHILD_ITEM|HAS_CHILD_FILE|HAS_CHILD_FOLDER*1..10]->(parent) }
               OR EXISTS { MATCH (p)<-[:ITEM_IN_PROJECT]-(parent:BacklogItem) }
@@ -320,7 +563,12 @@ export class VectorStore {
                indexedChunks
         ORDER BY ef.createdAt DESC
         `,
-        { userId, orgId, projectId: projectId ?? null }
+        {
+          userId,
+          orgId,
+          projectId: projectId ?? null,
+          ...this.buildSupportedTypeQueryParams(),
+        }
       );
 
       return result.records.map((record) => ({
