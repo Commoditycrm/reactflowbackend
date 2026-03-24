@@ -1,5 +1,6 @@
 import logger from "../../logger";
 import { RAG_CONFIG } from "../types/rag.types";
+import * as XLSX from "xlsx";
 
 export interface ProcessedChunk {
   content: string;
@@ -25,6 +26,44 @@ export class PDFProcessor {
     return PDFProcessor.instance;
   }
 
+  private detectDocumentType(url: string, fileType?: string, fileName?: string): string {
+    const type = (fileType ?? "").toLowerCase();
+    const extFromName = (fileName ?? "").split(".").pop()?.toLowerCase();
+
+    let extFromUrl: string | undefined;
+    try {
+      const pathname = new URL(url).pathname;
+      extFromUrl = pathname.split(".").pop()?.toLowerCase();
+    } catch {
+      extFromUrl = undefined;
+    }
+
+    if (type.includes("pdf") || extFromName === "pdf" || extFromUrl === "pdf") return "pdf";
+    if (
+      type.includes("wordprocessingml") ||
+      type.includes("docx") ||
+      extFromName === "docx" ||
+      extFromUrl === "docx"
+    ) {
+      return "docx";
+    }
+    if (type.includes("msword") || extFromName === "doc" || extFromUrl === "doc") return "doc";
+    if (
+      type.includes("spreadsheetml") ||
+      type.includes("excel") ||
+      extFromName === "xlsx" ||
+      extFromUrl === "xlsx"
+    ) {
+      return "xlsx";
+    }
+    if (type.includes("markdown") || extFromName === "md" || extFromUrl === "md") return "md";
+    if (type.includes("csv") || extFromName === "csv" || extFromUrl === "csv") return "csv";
+    if (type.includes("json") || extFromName === "json" || extFromUrl === "json") return "json";
+    if (type.startsWith("text/") || extFromName === "txt" || extFromUrl === "txt") return "txt";
+
+    return extFromName ?? extFromUrl ?? "txt";
+  }
+
   async extractTextFromUrl(url: string): Promise<PDFExtractionResult> {
     try {
       const response = await fetch(url);
@@ -36,6 +75,25 @@ export class PDFProcessor {
       return this.extractTextFromBuffer(Buffer.from(buffer));
     } catch (error) {
       logger?.error("PDFProcessor.extractTextFromUrl failed", { error, url });
+      throw error;
+    }
+  }
+
+  async extractTextFromTextLikeUrl(url: string): Promise<PDFExtractionResult> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch text document: ${response.statusText}`);
+      }
+
+      const text = await response.text();
+      return {
+        text,
+        pageTexts: [text],
+        totalPages: 1,
+      };
+    } catch (error) {
+      logger?.error("PDFProcessor.extractTextFromTextLikeUrl failed", { error, url });
       throw error;
     }
   }
@@ -93,6 +151,76 @@ export class PDFProcessor {
         });
       }
     }
+  }
+
+  async extractDocxFromBuffer(buffer: Buffer): Promise<PDFExtractionResult> {
+    try {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      const text = (result.value ?? "").trim();
+
+      if (!text) {
+        throw new Error("DOCX extraction produced empty text");
+      }
+
+      return {
+        text,
+        pageTexts: [text],
+        totalPages: 1,
+        metadata: result.messages?.length
+          ? { warnings: result.messages.map((m) => m.message) }
+          : undefined,
+      };
+    } catch (error) {
+      logger?.error("PDFProcessor.extractDocxFromBuffer failed", { error });
+      throw error;
+    }
+  }
+
+  async extractXlsxFromBuffer(buffer: Buffer): Promise<PDFExtractionResult> {
+    try {
+      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const pageTexts = workbook.SheetNames.map((sheetName) => {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) return "";
+        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false }).trim();
+        if (!csv) return "";
+        return `Sheet: ${sheetName}\n${csv}`;
+      }).filter((t) => t.length > 0);
+
+      if (pageTexts.length === 0) {
+        throw new Error("XLSX extraction produced empty text");
+      }
+
+      return {
+        text: pageTexts.join("\n\n"),
+        pageTexts,
+        totalPages: pageTexts.length,
+      };
+    } catch (error) {
+      logger?.error("PDFProcessor.extractXlsxFromBuffer failed", { error });
+      throw error;
+    }
+  }
+
+  async extractLegacyDocFromBuffer(buffer: Buffer): Promise<PDFExtractionResult> {
+    // Best-effort fallback for legacy .doc without external converters.
+    const text = buffer
+      .toString("utf8")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (text.length < 100) {
+      throw new Error("Legacy .doc parsing is not fully supported. Convert to DOCX for best results.");
+    }
+
+    return {
+      text,
+      pageTexts: [text],
+      totalPages: 1,
+      metadata: { parser: "legacy-doc-fallback" },
+    };
   }
 
   private splitByPages(text: string, numPages: number): string[] {
@@ -178,8 +306,34 @@ export class PDFProcessor {
       .filter((s) => s.trim().length > 0);
   }
 
-  async processDocument(url: string): Promise<ProcessedChunk[]> {
-    const extraction = await this.extractTextFromUrl(url);
+  async processDocument(
+    url: string,
+    fileType?: string,
+    fileName?: string
+  ): Promise<ProcessedChunk[]> {
+    const docType = this.detectDocumentType(url, fileType, fileName);
+    let extraction: PDFExtractionResult;
+
+    if (docType === "pdf") {
+      extraction = await this.extractTextFromUrl(url);
+    } else if (docType === "docx" || docType === "xlsx" || docType === "doc") {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch document: ${response.statusText}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      if (docType === "docx") {
+        extraction = await this.extractDocxFromBuffer(buffer);
+      } else if (docType === "xlsx") {
+        extraction = await this.extractXlsxFromBuffer(buffer);
+      } else {
+        extraction = await this.extractLegacyDocFromBuffer(buffer);
+      }
+    } else {
+      extraction = await this.extractTextFromTextLikeUrl(url);
+    }
+
     return this.chunkText(extraction.pageTexts);
   }
 }

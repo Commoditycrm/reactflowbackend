@@ -257,4 +257,25 @@ ragRouter.delete("/diagram-index/:fileId", async (req, res) => {
   }
 });
 
+ragRouter.delete("/document-embeddings/:externalFileId", async (req, res) => {
+  try {
+    const { userId } = await authenticateRequest(req);
+    const { externalFileId } = req.params;
+
+    if (!externalFileId) {
+      return res.status(400).json({
+        success: false,
+        error: "externalFileId is required",
+      });
+    }
+
+    const result = await ragService.deleteDocumentEmbeddings(externalFileId, userId);
+    return res.status(result.success ? 200 : 500).json(result);
+  } catch (error: any) {
+    logger?.error("RAG delete document embeddings endpoint failed", { error });
+    const statusCode = error?.extensions?.code === "UNAUTHENTICATED" ? 401 : 500;
+    return res.status(statusCode).json({ success: false, error: error.message || "Internal server error" });
+  }
+});
+
 export default ragRouter;
