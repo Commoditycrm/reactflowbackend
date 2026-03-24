@@ -2261,6 +2261,7 @@ const typeDefs = gql`
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
         NOT coalesce(cfg.enabled, false)
+        OR hasStatusFilter
         OR NOT EXISTS {
           MATCH (bi)-[:HAS_STATUS]->(cs:Status)
           WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
@@ -2394,6 +2395,7 @@ const typeDefs = gql`
         WITH bi, tab, f, cfg, hasStatusFilter
         WHERE
         NOT coalesce(cfg.enabled, false)
+        OR hasStatusFilter
         OR NOT EXISTS {
           MATCH (bi)-[:HAS_STATUS]->(cs:Status)
           WHERE toLower(trim(coalesce(cs.defaultName, cs.name))) = 'completed'
