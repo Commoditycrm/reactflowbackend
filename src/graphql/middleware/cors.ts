@@ -14,7 +14,7 @@ const ALLOW_ORIGINS = new Set(
 
 export const corsMiddleware = cors({
   credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
   optionsSuccessStatus: 204,
 
   origin(origin, callback) {
