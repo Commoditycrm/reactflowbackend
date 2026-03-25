@@ -194,6 +194,13 @@ const typeDefs = gql`
       @populatedBy(callback: "userRoleSetter", operations: [CREATE])
       @settable(onCreate: true, onUpdate: false)
     showHelpText: Boolean! @default(value: true)
+    favoriteProjects: [Project!]!
+      @relationship(
+        type: "FAVORITE_PROJECT"
+        direction: OUT
+        aggregate: false
+        nestedOperations: []
+      )
     memberOfOrganizations: [Organization!]!
       @relationship(
         type: "MEMBER_OF"
@@ -6457,6 +6464,50 @@ const typeDefs = gql`
       projectId: ID
       topK: Int = 5
     ): [RAGSource!]!
+
+    getProjectListForCurrentUser(
+      orgId: ID
+      searchTerm: String
+      limit: Int = 10
+      offset: Int = 0
+    ): [Project!]!
+      @cypher(
+        statement: """
+        MATCH (u:User {externalId: $jwt.sub})
+
+        CALL {
+          WITH u
+          MATCH (p:Project)
+          WHERE p.deletedAt IS NULL
+            AND (
+              ($orgId IS NOT NULL AND (
+                EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization {id: $orgId})<-[:OWNS]-(u) }
+                OR EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization {id: $orgId})<-[:MEMBER_OF]-(u) WHERE u.role = 'ADMIN' }
+              ))
+              OR
+              ($orgId IS NULL AND (
+                EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(u) }
+                OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(u) }
+              ))
+            )
+            AND (
+              $searchTerm IS NULL
+              OR trim($searchTerm) = ""
+              OR toLower(p.name) CONTAINS toLower($searchTerm)
+            )
+          RETURN DISTINCT p
+        }
+
+        WITH u, p,
+             EXISTS { MATCH (u)-[:FAVORITE_PROJECT]->(p) } AS isFavorite
+
+        RETURN p AS projects
+        ORDER BY isFavorite DESC, p.createdAt DESC
+        SKIP $offset
+        LIMIT $limit
+        """
+        columnName: "projects"
+      )
   }
 `;
 
