@@ -905,7 +905,9 @@ CALL apoc.periodic.iterate(
   ON CREATE SET 
     newFile.createdAt = datetime(),
     newFile.name = $name,
-    newFile.id = randomUUID()
+    newFile.id = randomUUID(),
+    newFile.fontSize = sourceFile.fontSize,
+    newFile.textDecoration = sourceFile.textDecoration
 MERGE (user)-[:CREATED_FILE]->(newFile)
 MERGE(parent)-[:HAS_CHILD_FILE]->(newFile)
 ",{
