@@ -3476,8 +3476,58 @@ const typeDefs = gql`
         #   }
         # }
         {
+          when: [AFTER]
+          operations: [CREATE, UPDATE]
+          where: {
+            node: {
+              OR: [
+                {
+                  parentConnection: {
+                    Project: {
+                      node: {
+                        organization: {
+                          OR: [
+                            { createdBy: { externalId: "$jwt.sub" } }
+                            {
+                              memberUsers_SINGLE: {
+                                externalId: "$jwt.sub"
+                                role_IN: ["ADMIN", "SUPER_USER"]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+                {
+                  parentConnection: {
+                    Folder: {
+                      node: {
+                        project: {
+                          organization: {
+                            OR: [
+                              { createdBy: { externalId: "$jwt.sub" } }
+                              {
+                                memberUsers_SINGLE: {
+                                  externalId: "$jwt.sub"
+                                  role_IN: ["ADMIN", "SUPER_USER"]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        {
+          operations: [DELETE]
           when: [BEFORE]
-          operations: [DELETE, UPDATE, CREATE]
           where: {
             node: {
               OR: [
@@ -3493,17 +3543,7 @@ const typeDefs = gql`
                           }
                           {
                             organization: {
-                              memberUsers_SINGLE: {
-                                externalId: "$jwt.sub"
-                                role: "ADMIN"
-                              }
-                            }
-                          }
-                          { createdBy: { externalId: "$jwt.sub" } }
-                          {
-                            assignedUsers_SINGLE: {
-                              externalId: "$jwt.sub"
-                              role: "SUPER_USER"
+                              memberUsers_SINGLE: { externalId: "$jwt.sub" }
                             }
                           }
                         ]
@@ -3515,59 +3555,24 @@ const typeDefs = gql`
                   parentConnection: {
                     Folder: {
                       node: {
-                        OR: [
-                          {
-                            project: {
-                              organization: {
-                                createdBy: { externalId: "$jwt.sub" }
-                              }
-                            }
-                          }
-                          { project: { createdBy: { externalId: "$jwt.sub" } } }
-                          {
-                            project: {
-                              assignedUsers_SINGLE: {
-                                externalId: "$jwt.sub"
-                                role_NOT: "USER"
-                              }
-                            }
-                          }
-                          {
-                            project: {
-                              organization: {
+                        project: {
+                          organization: {
+                            OR: [
+                              { createdBy: { externalId: "$jwt.sub" } }
+                              {
                                 memberUsers_SINGLE: {
                                   externalId: "$jwt.sub"
-                                  role: "ADMIN"
+                                  role_IN: ["ADMIN"]
                                 }
                               }
-                            }
+                            ]
                           }
-                        ]
-                      }
-                    }
-                  }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-                # need to validate by project level
-                {
-                  backlogItem: {
-                    project: {
-                      organization: {
-                        memberUsers_SINGLE: {
-                          externalId: "$jwt.sub"
-                          role_NOT: "USER"
                         }
                       }
                     }
                   }
                 }
-                {
-                  backlogItem: {
-                    project: {
-                      organization: { createdBy: { externalId: "$jwt.sub" } }
-                    }
-                  }
-                }
+                { createdBy: { externalId: "$jwt.sub" } }
               ]
             }
           }
