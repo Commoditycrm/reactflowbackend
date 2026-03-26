@@ -534,6 +534,7 @@ CALL apoc.periodic.iterate(
     AND bi.scheduleDays IS NOT NULL
     AND bi.scheduleDays > 0
     AND bi.startDate IS NOT NULL
+    AND bi.endDate => datetime()
 
   WITH bi, p, coalesce(bi.lastRecurringCreatedAt, bi.startDate) AS baseDate
   WHERE date(datetime()) >= date(baseDate) + duration({days: bi.scheduleDays})
