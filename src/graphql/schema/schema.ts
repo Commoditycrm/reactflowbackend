@@ -1575,37 +1575,11 @@ const typeDefs = gql`
     @query(read: true, aggregate: false) {
     id: ID! @id
     name: String!
-      @authorization(
-        validate: [
-          {
-            when: [BEFORE]
-            operations: [UPDATE]
-            where: {
-              node: {
-                organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
-              }
-            }
-          }
-        ]
-      )
     description: String
     budget: Float
     isDescriptionEditable: Boolean! @default(value: false)
     isTemplate: Boolean! @default(value: false)
     lastVisitedAt: DateTime
-      @authorization(
-        validate: [
-          {
-            when: [BEFORE]
-            operations: [UPDATE]
-            where: {
-              node: {
-                organization: { memberUsers_SOME: { externalId: "$jwt.sub" } }
-              }
-            }
-          }
-        ]
-      )
     uniqueProject: String!
       @unique
       @populatedBy(
