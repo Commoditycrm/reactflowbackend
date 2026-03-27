@@ -6324,15 +6324,49 @@ const typeDefs = gql`
              trim(coalesce($nameContains, "")) AS nc
 
         WHERE
-           (ec = "" AND nc = "")
-           OR (ec <> "" AND toLower(orgMembers.email) CONTAINS toLower(ec))
-           OR (nc <> "" AND toLower(orgMembers.name) CONTAINS toLower(nc))
-
+          orgMembers.name <> "Deleted Account"
+        AND (
+          (ec = "" AND nc = "")
+          OR (ec <> "" AND toLower(orgMembers.email) CONTAINS toLower(ec))
+          OR (nc <> "" AND toLower(orgMembers.name) CONTAINS toLower(nc))
+        )
         RETURN orgMembers
         ORDER BY orgMembers.isOwner DESC, orgMembers.createdAt DESC
         SKIP $offset LIMIT $limit
         """
         columnName: "orgMembers"
+      )
+
+    orgMembersCount(
+      orgId: ID!
+      emailContains: String
+      nameContains: String
+    ): Int!
+      @cypher(
+        statement: """
+                MATCH (org:Organization {id: $orgId})
+                CALL (org) {
+                  WITH org
+                  MATCH (org)<-[:INVITE_FOR]-(invitees:Invite)
+                  RETURN invitees AS results
+                  UNION
+                  MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
+                  RETURN users AS results
+                }
+
+                WITH DISTINCT results,
+                     trim(coalesce($emailContains, "")) AS ec,
+                     trim(coalesce($nameContains, "")) AS nc
+
+                WHERE
+                  orgMembers.name <> "Deleted Account"
+                   AND((ec = "" AND nc = "")
+                   OR (ec <> "" AND toLower(results.email) CONTAINS toLower(ec))
+                   OR (nc <> "" AND toLower(results.name) CONTAINS toLower(nc))
+        )
+                RETURN COUNT(results) AS orgMembersCount
+        """
+        columnName: "orgMembersCount"
       )
 
     eventSummaryByAsset(
@@ -6384,37 +6418,6 @@ const typeDefs = gql`
         RETURN { name: name, hours: hours } AS eventSummary
         """
         columnName: "eventSummary"
-      )
-
-    orgMembersCount(
-      orgId: ID!
-      emailContains: String
-      nameContains: String
-    ): Int!
-      @cypher(
-        statement: """
-        MATCH (org:Organization {id: $orgId})
-        CALL (org) {
-          WITH org
-          MATCH (org)<-[:INVITE_FOR]-(invitees:Invite)
-          RETURN invitees AS results
-          UNION
-          MATCH(org)<-[:MEMBER_OF|OWNS]-(users:User)
-          RETURN users AS results
-        }
-
-        WITH DISTINCT results,
-             trim(coalesce($emailContains, "")) AS ec,
-             trim(coalesce($nameContains, "")) AS nc
-
-        WHERE
-           (ec = "" AND nc = "")
-           OR (ec <> "" AND toLower(results.email) CONTAINS toLower(ec))
-           OR (nc <> "" AND toLower(results.name) CONTAINS toLower(nc))
-
-        RETURN COUNT(results) AS orgMembersCount
-        """
-        columnName: "orgMembersCount"
       )
 
     getFirebaseStorage(orgId: String!): FirebaseStorage!
