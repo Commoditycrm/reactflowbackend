@@ -4,7 +4,7 @@ import logger from "../../logger";
 
 const rateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
@@ -14,7 +14,7 @@ const rateLimiter = rateLimit({
     if (token) {
       try {
         const payload = JSON.parse(
-          Buffer.from(token.split(".")[1] ?? "", "base64").toString()
+          Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
         );
         const key = payload.sub ?? payload.uid ?? req.ip ?? "unknown";
         logger.info(`Rate limit key: ${key}`);
@@ -23,7 +23,7 @@ const rateLimiter = rateLimit({
         logger.warn(
           `Rate limit keyGenerator JWT parse failed: ${
             err instanceof Error ? err.message : String(err)
-          }`
+          }`,
         );
       }
     }
@@ -36,7 +36,9 @@ const rateLimiter = rateLimit({
     error: "Too many requests. Please try again!",
   },
   handler: (req: Request, res: Response, next: NextFunction, options: any) => {
-    logger.warn(`Blocked request by rate limiter: path=${req.path}, ip=${req.ip}, max=${options.max}`);
+    logger.warn(
+      `Blocked request by rate limiter: path=${req.path}, ip=${req.ip}, max=${options.max}`,
+    );
     res.status(options.statusCode).json(options.message);
   },
 });
