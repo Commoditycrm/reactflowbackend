@@ -869,9 +869,7 @@ CALL apoc.periodic.iterate(
   ON CREATE SET 
     newFile.createdAt = datetime(),
     newFile.name = $name,
-    newFile.id = randomUUID(),
-    newFile.fontSize = sourceFile.fontSize,
-    newFile.textDecoration = sourceFile.textDecoration
+    newFile.id = randomUUID()
 MERGE (user)-[:CREATED_FILE]->(newFile)
 MERGE(parent)-[:HAS_CHILD_FILE]->(newFile)
 ",{
@@ -911,7 +909,9 @@ CALL apoc.periodic.iterate(
          newFlowNode.width = sourceFlowNode.width,
          newFlowNode.height = sourceFlowNode.height,
          newFlowNode.type = sourceFlowNode.type,
-         newFlowNode.createdAt = datetime()
+         newFlowNode.createdAt = datetime(),
+         newFlowNode.fontSize = sourceFlowNode.fontSize,
+         newFlowNode.textDecoration = sourceFlowNode.textDecoration
      WITH newFlowNode,newFile,user
      CALL apoc.lock.nodes([newFlowNode])
      MERGE (newFile)-[:HAS_FLOW_NODE]->(newFlowNode)
