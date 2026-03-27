@@ -13,6 +13,7 @@ import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHt
 import { expressMiddleware } from "@apollo/server/express4";
 import { Router } from "express";
 import { ApolloServerPluginLandingPageDisabled } from "@apollo/server/plugin/disabled";
+import rateLimiter from "../middleware/rateLimiting";
 
 export const initializeApolloServer = async (
   httpServer: ReturnType<typeof import("http").createServer>
@@ -103,6 +104,7 @@ export const initializeApolloServer = async (
 
   router.use(
     "/graphql",
+    rateLimiter,
     expressMiddleware(server, {
       context: async ({ req }) => {
         const body = (req as any).body;
