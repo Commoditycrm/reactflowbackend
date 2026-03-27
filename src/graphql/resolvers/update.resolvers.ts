@@ -5,7 +5,6 @@ import { OGMConnection } from "../init/ogm.init";
 import { User } from "../../interfaces";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { getFirebaseAdminAuth } from "../firebase/admin";
-import { DateTime } from "neo4j-driver";
 
 const updateUserRole = async (
   _source: Record<string, any>,
