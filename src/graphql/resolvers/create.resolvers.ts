@@ -2,10 +2,12 @@ import { GraphQLError } from "graphql";
 import {
   CLONE_BACKLOGITEM,
   CLONE_FLOWNODE,
+  CLONE_NESTED_BACKLOGITEMS,
   CLONE_ROOT_FILES,
   CLONE_SUB_FILES,
   CLONE_SUB_FOLDERS,
   CLONE_SUB_ITEM,
+  CLONE_TOP_LEVEL_BACKLOGITEMS,
   CONNECT_DEPENDENCY_CQL,
   COPY_FILE_CQL,
   COPY_FILE_GROUP_CHILD_CONNECTION_CQL,
@@ -36,7 +38,7 @@ const firebaseFunctions = FirebaseFunctions.getInstance();
 const createBacklogItemWithUID = async (
   _source: Record<string, any>,
   { input }: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const BacklogItem = await (
@@ -52,7 +54,7 @@ const createBacklogItemWithUID = async (
       SET counter.counter = counter.counter + 1
       RETURN org.id AS orgId, counter.counter AS newCounter
       `,
-      { externalId: _context.jwt.sub }
+      { externalId: _context.jwt.sub },
     );
 
     if (orgCounterResult.records.length === 0) {
@@ -147,7 +149,7 @@ const createProjectWithTemplate = async (
     startDate: string;
     orgId: string;
   },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
@@ -163,7 +165,7 @@ const createProjectWithTemplate = async (
     const rootProject = await tx.run(CREATE_PROJECT_FROM_TEMPLATE, params);
     logger?.info(`Created Project using ${templateProjectId} in org:${orgId}`);
     const errorMessages = rootProject.records?.[0]?.get(
-      "errorMessages"
+      "errorMessages",
     ) as Record<string, Integer | null>;
 
     if (errorMessages && Object.keys(errorMessages).length > 0) {
@@ -195,15 +197,15 @@ const createProjectWithTemplate = async (
     await tx.run(LINK_TO_FLOWNODE, { templateProjectId });
     logger?.info(`Cloned flownodes and connected their links`);
 
-    await tx.run(CLONE_BACKLOGITEM, params);
-    await tx.run(CLONE_SUB_ITEM, params);
+    await tx.run(CLONE_TOP_LEVEL_BACKLOGITEMS, params);
+    await tx.run(CLONE_NESTED_BACKLOGITEMS, params);
     logger?.info(`Cloned parent and sub backlogItem`);
 
     await tx.run(CONNECT_DEPENDENCY_CQL, { templateProjectId });
 
     const result = await tx.run(
       `MATCH (newProject:Project {refId:$rootId}) RETURN newProject`,
-      { rootId: templateProjectId }
+      { rootId: templateProjectId },
     );
 
     await tx.run(UPDATE_INDEPENDENT_TASK_DATE_CQL, {
@@ -250,7 +252,7 @@ const cloneCanvas = async (
     parentId: string;
     name: string;
   },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
@@ -266,7 +268,7 @@ const cloneCanvas = async (
     `,
       {
         externalId: uid,
-      }
+      },
     );
 
     if (response.records.length === 0) {
@@ -288,7 +290,7 @@ const cloneCanvas = async (
     logger.info("edges created successfully");
     const result = await tx.run(
       `MATCH (newFile:File {refId:$fileId}) RETURN newFile`,
-      { fileId }
+      { fileId },
     );
     const files =
       result.records.map((record) => record.get("newFile").properties) || [];
@@ -324,7 +326,7 @@ const finishInviteSignup = async (
     phoneNumber: string;
     uniqueInvite: string;
   },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
@@ -369,7 +371,7 @@ const finishInviteSignup = async (
 const finishInviteSignupInOrgPage = async (
   _source: Record<string, any>,
   _arg: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const uid = _context?.jwt?.uid;
 
@@ -412,15 +414,15 @@ const finishInviteSignupInOrgPage = async (
             user.uid,
             user.email,
             UserRole.SuperUser,
-            true
-          )
+            true,
+          ),
         );
 
         logger.info("Custom claims updated successfully", { uid: user.uid });
       } catch (claimsError) {
         logger.error(
           "Failed to set custom claims even after retries",
-          claimsError
+          claimsError,
         );
       }
     }
@@ -442,7 +444,7 @@ const finishInviteSignupInOrgPage = async (
 export const createSheetItems = async (
   _source: Record<string, any>,
   args: { projectId: string; rows: Record<string, any>[]; batchSize?: number },
-  context: Record<string, any>
+  context: Record<string, any>,
 ): Promise<ImportSheetResult> => {
   const projectId = args.projectId;
   const rows = args.rows || [];
@@ -499,7 +501,7 @@ export const createSheetItems = async (
       {
         projectId,
         batchSize,
-      }
+      },
     );
 
     const parentsResult = parentsRes.records?.[0]?.get("result") ?? null;
