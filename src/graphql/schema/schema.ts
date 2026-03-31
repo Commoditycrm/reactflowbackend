@@ -1678,24 +1678,26 @@ const typeDefs = gql`
 
         CALL {
           WITH p
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
           WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN DISTINCT n
 
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
-          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          UNION
 
-          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
+          WITH p
+          MATCH folderPath = (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL
+            AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN DISTINCT n
         }
 
         CALL {
-          WITH p, nodes
-
-          UNWIND nodes AS n
+          WITH p, n
           MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
             AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
           RETURN DISTINCT bi
 
           UNION
@@ -1703,20 +1705,15 @@ const typeDefs = gql`
           WITH p
           MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
             AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
           RETURN DISTINCT bi
         }
 
-        WITH DISTINCT bi, userIds, p
-        MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
-        MATCH (w)-[:LOGGED_BY]->(u:User)
-
-        WHERE
-          size(userIds) = 0
-          OR u.id IN userIds
-          OR u.externalId IN userIds
-
+        MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)-[:LOGGED_BY]->(u:User)
+        WHERE size(userIds) = 0
+           OR u.id IN userIds
+           OR u.externalId IN userIds
         RETURN DISTINCT w AS workLogs
         ORDER BY w.createdAt DESC
         SKIP $offset LIMIT $limit
@@ -1732,46 +1729,51 @@ const typeDefs = gql`
 
         CALL {
           WITH p
-          OPTIONAL MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
 
-          OPTIONAL MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(n2:FlowNode)
-          WHERE file2.deletedAt IS NULL AND n2.deletedAt IS NULL
-            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-
-          RETURN apoc.coll.toSet(collect(DISTINCT n) + collect(DISTINCT n2)) AS nodes
-        }
-
-        CALL {
-          WITH p, nodes
-
-          UNWIND nodes AS n
-          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
             AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
           RETURN DISTINCT bi
 
           UNION
 
           WITH p
-          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL
+            AND n.deletedAt IS NULL
+
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
           WHERE bi.deletedAt IS NULL
-            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
             AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+          RETURN DISTINCT bi
+
+          UNION
+
+          WITH p
+
+          MATCH folderPath = (p)-[:HAS_CHILD_FOLDER*1..5]->(f:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL
+            AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
           RETURN DISTINCT bi
         }
 
-        WITH DISTINCT bi, userIds, p
-        MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
-        MATCH (w)-[:LOGGED_BY]->(u:User)
+        MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)-[:LOGGED_BY]->(u:User)
+        WHERE size(userIds) = 0
+           OR u.id IN userIds
+           OR u.externalId IN userIds
 
-        WHERE
-          size(userIds) = 0
-          OR u.id IN userIds
-          OR u.externalId IN userIds
-
-        RETURN COUNT(DISTINCT w) AS workLogCount
+        RETURN count(DISTINCT w) AS workLogCount
         """
         columnName: "workLogCount"
       )
