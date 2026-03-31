@@ -1,4 +1,4 @@
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import logger from "../../logger";
 
@@ -16,8 +16,7 @@ const rateLimiter = rateLimit({
         const payload = JSON.parse(
           Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
         );
-        const key = payload.sub ?? payload.uid ?? req.ip ?? "unknown";
-        logger.info(`Rate limit key: ${key}`);
+        const key = payload.sub ?? payload.uid ?? ipKeyGenerator(req.ip ?? "unknown") ?? "unknown";
         return key;
       } catch (err) {
         logger.warn(
@@ -28,7 +27,7 @@ const rateLimiter = rateLimit({
       }
     }
 
-    const ip = req.ip ?? "unknown";
+    const ip = ipKeyGenerator(req.ip ?? "unknown") ?? "unknown";
     logger.info(`Rate limit key (IP fallback): ${ip}`);
     return ip;
   },
