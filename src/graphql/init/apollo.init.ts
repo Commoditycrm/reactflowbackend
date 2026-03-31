@@ -16,7 +16,7 @@ import { ApolloServerPluginLandingPageDisabled } from "@apollo/server/plugin/dis
 import rateLimiter from "../middleware/rateLimiting";
 
 export const initializeApolloServer = async (
-  httpServer: ReturnType<typeof import("http").createServer>
+  httpServer: ReturnType<typeof import("http").createServer>,
 ) => {
   const router = Router();
   const neo4jInstance = await Neo4JConnection.getInstance();
@@ -25,14 +25,14 @@ export const initializeApolloServer = async (
     typeDefs,
     neo4jInstance.driver,
     NeoConnection.getFeatures(),
-    NeoConnection.getResolvers()
+    NeoConnection.getResolvers(),
   );
   const schema = await neoInstance.init();
 
   await OGMConnection.init(
     typeDefs,
     neo4jInstance.driver,
-    NeoConnection.getFeatures()
+    NeoConnection.getFeatures(),
   );
 
   const wsServer = new WebSocketServer({
@@ -49,8 +49,17 @@ export const initializeApolloServer = async (
         const authorization = (ctx.connectionParams?.authorization ||
           ctx.connectionParams?.Authorization ||
           "") as string;
-        const mockReq = { headers: { authorization } } as any;
-        return await NeoConnection.authorizeUserOnContext(mockReq);
+
+        const mockReq = {
+          headers: { authorization },
+        } as any;
+
+        const authContext = await NeoConnection.authorizeUserOnContext(mockReq);
+
+        return {
+          req: mockReq,
+          ...authContext,
+        };
       },
       onConnect(ctx) {
         logger?.info("WS connected");
@@ -60,11 +69,11 @@ export const initializeApolloServer = async (
       },
       onError(ctx, message, errors) {
         logger?.error(
-          `[GraphQL Subscription Error]: ${message}, Errors: ${errors}`
+          `[GraphQL Subscription Error]: ${message}, Errors: ${errors}`,
         );
       },
     },
-    wsServer
+    wsServer,
   );
 
   const plugins = [
@@ -109,12 +118,21 @@ export const initializeApolloServer = async (
       context: async ({ req }) => {
         const body = (req as any).body;
         const operationName = body?.operationName;
+
         if (operationName === "IntrospectionQuery") {
           return { jwt: null };
         }
-        return await NeoConnection.authorizeUserOnContext(req as any);
+
+        const authContext = await NeoConnection.authorizeUserOnContext(req);
+
+        // console.log('Apollo context set:', { req: !!req, ...authContext });
+
+        return {
+          req,
+          ...authContext,
+        };
       },
-    })
+    }),
   );
 
   return router;
