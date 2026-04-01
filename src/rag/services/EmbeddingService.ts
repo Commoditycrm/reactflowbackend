@@ -232,12 +232,6 @@ export class EmbeddingService {
     tokensUsed: number;
   }> {
     try {
-      logger?.info("EmbeddingService.chatWithTools called", {
-        model: RAG_CONFIG.CHAT_MODEL,
-        toolCount: tools.length,
-        messageCount: messages.length,
-      });
-
       const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
