@@ -6,6 +6,7 @@ import {
   DiagramGroup,
   DiagramListItem,
   DiagramNode,
+  RAG_CONFIG,
 } from "../types/rag.types";
 
 /**
@@ -284,7 +285,11 @@ export class DiagramService {
   /**
    * Serialize a diagram into Mermaid + structured text for LLM context.
    */
-  serializeForLLM(data: DiagramData): string {
+  serializeForLLM(data: DiagramData, mode: "full" | "minimal" = "full"): string {
+    if (mode === "minimal") {
+      return this.serializeMinimalForLLM(data);
+    }
+
     const sections: string[] = [];
     const nodeIdMap = new Map<string, string>();
 
@@ -371,6 +376,54 @@ export class DiagramService {
         );
       }
       sections.push("");
+    }
+
+    return sections.join("\n");
+  }
+
+  private serializeMinimalForLLM(data: DiagramData): string {
+    const sections: string[] = [];
+
+    sections.push(`## Diagram: "${data.fileName}"`);
+    sections.push("");
+    sections.push("### High-Level Structure:");
+    sections.push(
+      `- Nodes: ${data.nodes.length}, Relationships: ${data.edges.length}, Groups: ${data.groups.length}`
+    );
+
+    const nodeLimit = RAG_CONFIG.DIAGRAM_MINIMAL_MAX_NODES;
+    const edgeLimit = RAG_CONFIG.DIAGRAM_MINIMAL_MAX_EDGES;
+
+    const topNodeNames = data.nodes
+      .slice(0, nodeLimit)
+      .map((n) => n.name)
+      .filter(Boolean);
+
+    if (topNodeNames.length > 0) {
+      sections.push("### Key Entities/Steps:");
+      sections.push(`- ${topNodeNames.join(", ")}`);
+      if (data.nodes.length > nodeLimit) {
+        sections.push(`- ...and ${data.nodes.length - nodeLimit} more nodes`);
+      }
+    }
+
+    if (data.edges.length > 0) {
+      sections.push("### Key Relationships:");
+      for (const edge of data.edges.slice(0, edgeLimit)) {
+        const arrow = edge.bidirectional ? "<->" : "->";
+        const label = edge.label ? ` (${edge.label})` : "";
+        sections.push(`- ${edge.sourceName} ${arrow} ${edge.targetName}${label}`);
+      }
+      if (data.edges.length > edgeLimit) {
+        sections.push(`- ...and ${data.edges.length - edgeLimit} more relationships`);
+      }
+    }
+
+    if (data.groups.length > 0) {
+      sections.push("### Groups:");
+      for (const group of data.groups) {
+        sections.push(`- ${group.name}: ${group.childNodeIds.length} child nodes`);
+      }
     }
 
     return sections.join("\n");
