@@ -39,6 +39,26 @@ export class EmbeddingService {
     return EmbeddingService.instance;
   }
 
+  private isPayloadTooLargeError(error: any): boolean {
+    const message =
+      error?.error?.message ||
+      error?.message ||
+      "";
+
+    return (
+      error?.status === 413 ||
+      /request too large|requested\s+\d+/i.test(String(message))
+    );
+  }
+
+  private compactToolContent(content: string, maxChars = 1800): string {
+    if (content.length <= maxChars) return content;
+
+    const head = content.slice(0, Math.floor(maxChars * 0.8));
+    const tail = content.slice(-Math.floor(maxChars * 0.15));
+    return `${head}\n\n[Tool context compacted due to token budget]\n\n${tail}`;
+  }
+
   // ─── Embeddings (ngrok / local model) ─────────────────────────────────
 
   async generateEmbedding(text: string): Promise<EmbeddingResult> {
@@ -212,12 +232,6 @@ export class EmbeddingService {
     tokensUsed: number;
   }> {
     try {
-      logger?.info("EmbeddingService.chatWithTools called", {
-        model: RAG_CONFIG.CHAT_MODEL,
-        toolCount: tools.length,
-        messageCount: messages.length,
-      });
-
       const response = await this.chatClient.chat.completions.create({
         model: RAG_CONFIG.CHAT_MODEL,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -292,11 +306,52 @@ export class EmbeddingService {
         content: response.choices[0]?.message?.content ?? "",
         tokensUsed: response.usage?.total_tokens ?? 0,
       };
-    } catch (error) {
-      logger?.error("EmbeddingService.continueWithToolResults failed", {
-        error,
-      });
-      throw error;
+    } catch (error: any) {
+      if (!this.isPayloadTooLargeError(error)) {
+        logger?.error("EmbeddingService.continueWithToolResults failed", {
+          error,
+        });
+        throw error;
+      }
+
+      logger?.warn(
+        "EmbeddingService.continueWithToolResults retrying with compacted tool context",
+        {
+          toolResultCount: toolResults.length,
+        }
+      );
+
+      const compactedToolMessages: ChatCompletionToolMessageParam[] =
+        toolResults.map((result, index) => ({
+          role: "tool" as const,
+          tool_call_id: toolCallIds[index]!,
+          content: this.compactToolContent(result.content),
+        }));
+
+      try {
+        const retryResponse = await this.chatClient.chat.completions.create({
+          model: RAG_CONFIG.CHAT_MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages,
+            assistantMessage,
+            ...compactedToolMessages,
+          ],
+          max_tokens: RAG_CONFIG.MAX_TOKENS,
+          temperature: 0.7,
+        });
+
+        return {
+          content: retryResponse.choices[0]?.message?.content ?? "",
+          tokensUsed: retryResponse.usage?.total_tokens ?? 0,
+        };
+      } catch (retryError) {
+        logger?.error("EmbeddingService.continueWithToolResults failed", {
+          error: retryError,
+        });
+        throw retryError;
+      }
+
     }
   }
 
