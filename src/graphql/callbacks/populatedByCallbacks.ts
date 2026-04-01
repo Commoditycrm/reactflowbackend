@@ -100,7 +100,7 @@ const uniqueProjectExtractor = async (
   let orgId = _parent?.organization?.connect?.where?.node?.id;
   const projectName = _parent?.name?.trim().toLowerCase().replace(/\s+/g, "");
   const externalId = _context?.jwt?.uid;
-  if(externalId) return 
+  if (!externalId) return;
   if (!orgId) {
     const session = (await Neo4JConnection.getInstance()).driver.session();
     try {
@@ -130,7 +130,7 @@ const updateOrgLastModified = async (
 ) => {
   const userId = context?.jwt?.uid;
   const session = (await Neo4JConnection.getInstance()).driver.session();
-  if(userId) return
+  if (!userId) return;
   try {
     const tx = session.beginTransaction();
     await tx.run(
