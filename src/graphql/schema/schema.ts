@@ -2218,7 +2218,7 @@ const typeDefs = gql`
             OR (tab = 'WORK_ITEMS' AND NOT isExpense)
             OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
             OR (tab = 'EXPENSE'    AND isExpense)
-            OR (tab = 'HIERARCHY')
+            OR (tab = 'HIERARCHY' AND NOT isExpense)
           )
         AND (
             tab <> 'EXPENSE'
@@ -2361,7 +2361,7 @@ const typeDefs = gql`
             OR (tab = 'WORK_ITEMS' AND NOT isExpense)
             OR (tab = 'MY_ITEMS'   AND isMine AND NOT isExpense)
             OR (tab = 'EXPENSE'    AND isExpense)
-            OR (tab = 'HIERARCHY')
+            OR (tab = 'HIERARCHY' AND NOT isExpense)
           )
         AND (
             tab <> 'EXPENSE'
