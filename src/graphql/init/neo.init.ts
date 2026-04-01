@@ -41,7 +41,7 @@ export class NeoConnection {
       typeDefs,
       driver,
       resolvers,
-      debug: !isProduction(),
+      // debug: !isProduction(),
     };
     if (features) {
       options.features = features;
@@ -60,16 +60,15 @@ export class NeoConnection {
 
   static async authorizeUserOnContext(
     req: Request
-  ): Promise<{ token: string } | { jwt: Record<string, any> }> {
+  ): Promise<{ jwt: Record<string, any>; authorization?: { jwt: Record<string, any> } }> {
     if (req.headers["x-warmup"] === "true") {
-      return {
-        jwt: {
-          uid: "warmup-user",
-          email: "warmup@internal.com",
-          role: "SYSTEM",
-          warmup: true,
-        },
+      const warmupJwt = {
+        uid: "warmup-user",
+        email: "warmup@internal.com",
+        role: "SYSTEM",
+        warmup: true,
       };
+      return { jwt: warmupJwt, authorization: { jwt: warmupJwt } };
     }
     const token: string | null = getTokenFromHeader(req.headers.authorization);
     if (!token) {
@@ -88,7 +87,7 @@ export class NeoConnection {
         });
       }
 
-      return { jwt: decodedToken };
+      return { jwt: decodedToken, authorization: { jwt: decodedToken } };
     } catch (e: any) {
       if (
         e?.code === "auth/id-token-revoked" ||
@@ -113,7 +112,13 @@ export class NeoConnection {
       if (decoded.exp < now || decoded.role !== "invitee") {
         throw new Error("Token expired or Unknown user");
       }
-      return { token: token as string };
+
+      const inviteJwt = {
+        ...decoded,
+        token,
+      };
+
+      return { jwt: inviteJwt, authorization: { jwt: inviteJwt } };
     } catch {
       throw new GraphQLError("Token expired or Unknown user", {
         extensions: { code: ApolloServerErrorCode.BAD_REQUEST },

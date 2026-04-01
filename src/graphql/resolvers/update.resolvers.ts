@@ -5,7 +5,6 @@ import { OGMConnection } from "../init/ogm.init";
 import { User } from "../../interfaces";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { getFirebaseAdminAuth } from "../firebase/admin";
-import { DateTime } from "neo4j-driver";
 
 const updateUserRole = async (
   _source: Record<string, any>,
@@ -82,8 +81,16 @@ const updateUserDetail = async (
     logger?.info(`Fetched Firebase user: ${externalId}`);
 
     // --- sanitize phone number ---
-    const cleanedPhone = phoneNumber?.replace(/[^\d+]/g, "") ?? null;
-    if (cleanedPhone && !/^\+\d{7,15}$/.test(cleanedPhone)) {
+    const cleanedPhone =
+      phoneNumber === null
+        ? null
+        : typeof phoneNumber === "string"
+        ? phoneNumber.trim() === ""
+          ? null
+          : phoneNumber.replace(/[^\d+]/g, "")
+        : null;
+
+    if (phoneNumber !== null && cleanedPhone !== null && !/^\+\d{7,15}$/.test(cleanedPhone)) {
       throw new GraphQLError(
         "Invalid phone format. Must be E.164 like +14155552671",
         {
@@ -98,10 +105,14 @@ const updateUserDetail = async (
     if (name && name !== currentUser.displayName) {
       payload.displayName = name;
     }
-    if (cleanedPhone && cleanedPhone !== currentUser.phoneNumber) {
+
+    if (phoneNumber === null) {
+      if (currentUser.phoneNumber !== null) {
+        payload.phoneNumber = null;
+      }
+    } else if (cleanedPhone !== null && cleanedPhone !== currentUser.phoneNumber) {
       payload.phoneNumber = cleanedPhone;
     }
-    console.log(payload, "Hello");
 
     // --- update Firebase if anything changed ---
     if (Object.keys(payload).length > 0) {
@@ -142,7 +153,8 @@ const updateUserDetail = async (
       where: { externalId },
       update: {
         ...(name && { name }),
-        ...(cleanedPhone && { phoneNumber: cleanedPhone }),
+        ...(phoneNumber === null ? { phoneNumber: null } : {}),
+        ...(phoneNumber !== null && cleanedPhone !== null ? { phoneNumber: cleanedPhone } : {}),
       },
       context: _context,
     });
