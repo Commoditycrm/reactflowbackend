@@ -39,7 +39,7 @@ CRITICAL RULES:
 - Always respond in clear, natural language. Describe diagrams by their business meaning and purpose, not by their internal graph structure.
 - Treat diagrams as project knowledge artifacts (workflows, responsibilities, entities, and decisions), not as isolated files.
 - Never frame answers as "only diagram-based" or "I can only infer from diagrams." Instead, state that the explanation is based on available project artifacts.
-- When asked for a project summary/overview (e.g. "summarize this project", "overall summary"), you MUST call get_diagram_context for multiple relevant diagrams (minimum 2 when available) before answering.
+- When asked for a project summary/overview (e.g. "summarize this project", "overall summary"), you MUST call get_diagram_context for multiple relevant diagrams (minimum 2 when available, maximum 3) before answering.
 - For project summaries, synthesize by project entity/workstream (teams, processes, systems, deliverables, dependencies) rather than listing diagram titles.
 - When the user asks about a broad topic, call get_diagram_context on the most relevant diagrams (you can call it multiple times) to build a comprehensive answer.
 - If a user mentions a diagram by name, use get_diagram_context with the matching file ID from the internal list above.
@@ -106,6 +106,16 @@ const TOOLS: ChatCompletionTool[] = [
     },
   },
 ];
+
+type ToolExecutionContext = {
+  intent: QueryIntent;
+  isOverviewRequest: boolean;
+  diagramCallsSeen: number;
+  diagramContextChars: number;
+  usedDiagramIds: Set<string>;
+};
+
+type QueryIntent = "org_overview" | "project_overview" | "specific_question";
 
 export class RAGService {
   private static instance: RAGService;
@@ -200,6 +210,180 @@ export class RAGService {
     const text = message.toLowerCase();
     return /(overall|overview|summary|summarize|high[-\s]?level|organization|portfolio|all projects|projects in|across projects)/.test(
       text
+    );
+  }
+
+  private classifyIntent(message: string, projectId?: string): QueryIntent {
+    const isOverview = this.isOverviewStyleRequest(message);
+    if (!isOverview) return "specific_question";
+    return projectId ? "project_overview" : "org_overview";
+  }
+
+  private getAdaptiveDiagramContextCharLimit(diagramCallsSeen: number): number {
+    if (diagramCallsSeen <= 1) return 15000;
+    if (diagramCallsSeen === 2) return 7000;
+    return 5000;
+  }
+
+  private async buildOrgOverviewEvidence(
+    message: string,
+    orgId: string,
+    userId: string,
+    diagramList: DiagramListItem[]
+  ): Promise<{ context: string; sources: RAGSource[] }> {
+    const sources: RAGSource[] = [];
+    const diagramMap = new Map<string, { fileName: string; score: number; summary: string }>();
+
+    const candidateQueries = [
+      message,
+      "organization overview architecture workflows dependencies systems teams deliverables",
+    ];
+
+    for (const q of candidateQueries) {
+      try {
+        const hits = await this.diagramIndexService.searchDiagrams(
+          q,
+          orgId,
+          userId,
+          12
+        );
+        for (const hit of hits) {
+          const existing = diagramMap.get(hit.fileId);
+          if (!existing || hit.score > existing.score) {
+            diagramMap.set(hit.fileId, {
+              fileName: hit.fileName,
+              score: hit.score,
+              summary: hit.summary,
+            });
+          }
+        }
+      } catch (error) {
+        logger?.warn("RAGService: org overview diagram summary search failed", {
+          query: q,
+          error,
+        });
+      }
+    }
+
+    const rankedDiagramSummaries = Array.from(diagramMap.entries())
+      .sort((a, b) => b[1].score - a[1].score)
+      .slice(0, 12);
+
+    const diagramListMap = new Map(diagramList.map((d) => [d.fileId, d]));
+    const diagramSummaryContext = rankedDiagramSummaries
+      .map(([fileId, item], index) => {
+        const meta = diagramListMap.get(fileId);
+        sources.push({
+          documentId: fileId,
+          documentName: item.fileName,
+          pageNumber: 0,
+          relevanceScore: item.score,
+          snippet: item.summary.slice(0, 240),
+        });
+
+        const projectSuffix = meta?.projectName ? ` [Project: ${meta.projectName}]` : "";
+        return `[Diagram Summary ${index + 1}] ${item.fileName}${projectSuffix}\nRelevance: ${(item.score * 100).toFixed(1)}%\n${item.summary}`;
+      })
+      .join("\n\n---\n\n");
+
+    const docResults = await this.vectorStore.searchSimilar(message, {
+      orgId,
+      userId,
+      projectId: undefined,
+      topK: 4,
+    });
+
+    const docContext = docResults
+      .map((doc, index) => {
+        sources.push({
+          documentId: doc.documentId,
+          documentName: doc.source,
+          pageNumber: doc.pageNumber,
+          relevanceScore: doc.score,
+          snippet: doc.content.slice(0, 240),
+        });
+        return `[Document Evidence ${index + 1}] ${doc.source} (Page ${doc.pageNumber}, Relevance: ${(doc.score * 100).toFixed(1)}%)\n${doc.content}`;
+      })
+      .join("\n\n---\n\n");
+
+    const sections: string[] = [];
+    if (diagramSummaryContext) {
+      sections.push(`## Diagram Summary Evidence\n${diagramSummaryContext}`);
+    }
+    if (docContext) {
+      sections.push(`## Supporting Document Evidence\n${docContext}`);
+    }
+
+    const context = this.truncateContext(sections.join("\n\n"), 22000);
+    return { context, sources };
+  }
+
+  private isToolUseFailedError(error: any): boolean {
+    return (
+      error?.status === 400 &&
+      (error?.code === "tool_use_failed" ||
+        error?.error?.code === "tool_use_failed")
+    );
+  }
+
+  private isLikelyValidDiagramId(fileId?: string): boolean {
+    if (!fileId) return false;
+    const normalized = fileId.trim();
+    if (!normalized) return false;
+    if (/https?:\/\//i.test(normalized)) return false;
+    if (/\s/.test(normalized)) return false;
+    return /^[a-zA-Z0-9-]{8,}$/.test(normalized);
+  }
+
+  private truncateContext(content: string, maxChars: number): string {
+    if (content.length <= maxChars) return content;
+    return `${content.slice(0, maxChars)}\n\n[Context truncated to fit token budget]`;
+  }
+
+  private buildFallbackDiagramSummary(
+    fileName: string,
+    nodeCount: number,
+    edgeCount: number,
+    groupCount: number
+  ): string {
+    return [
+      `## Diagram: "${fileName}"`,
+      "",
+      "### High-Level Structure:",
+      `- Nodes: ${nodeCount}, Relationships: ${edgeCount}, Groups: ${groupCount}`,
+      "- Detailed graph content omitted due to context budget limits.",
+    ].join("\n");
+  }
+
+  private extractRequestedDiagramIds(
+    toolCalls: Array<{ functionName: string; arguments: string }>
+  ): Set<string> {
+    const ids = new Set<string>();
+
+    for (const tc of toolCalls) {
+      if (tc.functionName !== "get_diagram_context") continue;
+      try {
+        const parsed = JSON.parse(tc.arguments ?? "{}");
+        if (typeof parsed?.fileId === "string" && parsed.fileId.trim()) {
+          ids.add(parsed.fileId.trim());
+        }
+      } catch {
+        // Ignore malformed tool args here; tool execution path handles errors.
+      }
+    }
+
+    return ids;
+  }
+
+  private looksLikeToolPlanOutput(content: string): boolean {
+    const text = content.trim();
+    if (!text) return false;
+
+    return (
+      /^\s*\[\s*\{[\s\S]*"name"\s*:\s*"[a-z_]+"[\s\S]*\}\s*\]\s*$/i.test(
+        text
+      ) ||
+      /"parameters"\s*:\s*\{/i.test(text)
     );
   }
 
@@ -357,6 +541,7 @@ export class RAGService {
   ): Promise<RAGChatResponse> {
     const startTime = Date.now();
     const effectiveMaxChunks = maxChunks ?? RAG_CONFIG.MAX_CONTEXT_CHUNKS;
+    const requestIntent = this.classifyIntent(message, projectId);
 
     try {
       // ── 1. Build system prompt with diagram list injected directly ────
@@ -365,8 +550,9 @@ export class RAGService {
         orgId,
         projectId
       );
-      const diagramListText =
-        this.diagramService.serializeDiagramList(diagramList);
+      const diagramListText = this.diagramService.serializeDiagramList(
+        diagramList
+      );
 
       const scopeDescription = projectId
         ? "You are working within a single project. All searches and diagrams are scoped to that project."
@@ -414,18 +600,210 @@ export class RAGService {
       console.log("-".repeat(80) + "\n");
       
       logger?.info("RAGService: Making first LLM call with tools", {
+        requestIntent,
         systemPromptLength: systemPrompt.length,
         historyCount: historyMessages.length,
         toolsAvailable: TOOLS.map(t => t.function.name),
       });
-      
-      const firstResponse = await this.service.chatWithTools(
-        systemPrompt,
-        historyMessages,
-        TOOLS
-      );
 
+      if (requestIntent === "org_overview") {
+        const evidence = await this.buildOrgOverviewEvidence(
+          message,
+          orgId,
+          userId,
+          diagramList
+        );
+
+        if (evidence.context.trim().length > 0) {
+          const overviewResponse = await this.service.generateChatCompletion(
+            "You are an intelligent project assistant. Synthesize a broad organization-level overview using many diagram summaries as primary evidence and document excerpts as supporting evidence. Group insights by entities/workstreams, major workflows, and cross-project dependencies. Do not output JSON, internal IDs, or tool narration.",
+            message,
+            evidence.context
+          );
+
+          const finalContent = this.sanitizeFinalAnswer(
+            overviewResponse.content,
+            evidence.sources,
+            message
+          );
+
+          conversation.messages.push({
+            role: "assistant",
+            content: finalContent,
+            timestamp: new Date(),
+          });
+          conversation.updatedAt = new Date();
+
+          console.log("\n" + "-".repeat(80));
+          console.log("Final answer generated (org overview path)");
+          console.log("-".repeat(80));
+          console.log(finalContent);
+          console.log("-".repeat(80));
+          console.log(
+            `Tokens used: ${overviewResponse.tokensUsed}, Processing time: ${Date.now() - startTime}ms`
+          );
+          console.log("-".repeat(80) + "\n");
+
+          return {
+            answer: finalContent,
+            sources: evidence.sources,
+            conversationId: convId,
+            metadata: {
+              model: RAG_CONFIG.CHAT_MODEL,
+              chunksUsed: evidence.sources.length,
+              processingTimeMs: Date.now() - startTime,
+              tokensUsed: overviewResponse.tokensUsed,
+            },
+          };
+        }
+      }
+      
       let activeSystemPrompt = systemPrompt;
+      let firstResponse;
+
+      try {
+        firstResponse = await this.service.chatWithTools(
+          systemPrompt,
+          historyMessages,
+          TOOLS
+        );
+      } catch (error: any) {
+        if (!this.isToolUseFailedError(error)) {
+          throw error;
+        }
+
+        const compactDiagramListText = this.diagramService.serializeDiagramList(
+          diagramList.slice(0, 15)
+        );
+        const compactSystemPrompt = SYSTEM_PROMPT_TEMPLATE
+          .replace("{DIAGRAM_LIST}", compactDiagramListText)
+          .replace("{SCOPE_DESCRIPTION}", scopeDescription);
+
+        const toolUseSafePrompt = `${compactSystemPrompt}\n\nFUNCTION CALLING REQUIREMENT:\n- If using tools, emit function calls directly with valid arguments.\n- Do not output planning prose before function calls.`;
+
+        logger?.warn(
+          "RAGService: First tool call failed; retrying with compact prompt",
+          {
+            originalPromptLength: systemPrompt.length,
+            compactPromptLength: toolUseSafePrompt.length,
+          }
+        );
+
+        try {
+          firstResponse = await this.service.chatWithTools(
+            toolUseSafePrompt,
+            historyMessages,
+            TOOLS
+          );
+          activeSystemPrompt = toolUseSafePrompt;
+        } catch (retryError: any) {
+          if (
+            !this.isToolUseFailedError(retryError) ||
+            !this.isOverviewStyleRequest(message)
+          ) {
+            throw retryError;
+          }
+
+          logger?.warn(
+            "RAGService: Falling back to deterministic overview synthesis",
+            {
+              message,
+              diagramCount: diagramList.length,
+            }
+          );
+
+          const fallbackSources: RAGSource[] = [];
+          const candidateIds = new Set<string>();
+          const searchCandidates = await this.diagramIndexService.searchDiagrams(
+            message,
+            orgId,
+            userId,
+            3,
+            projectId
+          );
+
+          for (const c of searchCandidates) {
+            candidateIds.add(c.fileId);
+            if (candidateIds.size >= 2) break;
+          }
+
+          for (const d of diagramList) {
+            if (candidateIds.size >= 2) break;
+            candidateIds.add(d.fileId);
+          }
+
+          const serializedContexts: string[] = [];
+          for (const diagramId of candidateIds) {
+            const diagramData = await this.diagramService.fetchDiagramData(
+              diagramId,
+              userId,
+              orgId,
+              projectId
+            );
+
+            if (!diagramData || diagramData.nodes.length === 0) continue;
+
+            fallbackSources.push({
+              documentId: diagramId,
+              documentName: diagramData.fileName,
+              pageNumber: 0,
+              relevanceScore: 1.0,
+              snippet: `Diagram: ${diagramData.fileName}`,
+            });
+
+            const serialized = this.diagramService.serializeForLLM(
+              diagramData,
+              "minimal"
+            );
+            serializedContexts.push(
+              this.truncateContext(
+                serialized,
+                RAG_CONFIG.MAX_DIAGRAM_CONTEXT_CHARS_PER_RESULT
+              )
+            );
+          }
+
+          if (serializedContexts.length === 0) {
+            throw retryError;
+          }
+
+          const fallbackContext = serializedContexts
+            .map((ctx, i) => `[Diagram Source ${i + 1}]\n${ctx}`)
+            .join("\n\n---\n\n");
+
+          const fallbackResponse = await this.service.generateChatCompletion(
+            "You are a project assistant. Generate a concise project summary from provided diagram sources. Return natural language only. Do not output JSON, function calls, or planning text.",
+            message,
+            fallbackContext
+          );
+
+          const finalContent = this.sanitizeFinalAnswer(
+            fallbackResponse.content,
+            fallbackSources,
+            message
+          );
+
+          conversation.messages.push({
+            role: "assistant",
+            content: finalContent,
+            timestamp: new Date(),
+          });
+          conversation.updatedAt = new Date();
+
+          return {
+            answer: finalContent,
+            sources: fallbackSources,
+            conversationId: convId,
+            metadata: {
+              model: RAG_CONFIG.CHAT_MODEL,
+              chunksUsed: fallbackSources.length,
+              processingTimeMs: Date.now() - startTime,
+              tokensUsed: fallbackResponse.tokensUsed,
+            },
+          };
+        }
+      }
+
       let selectedResponse = firstResponse;
       let tokensUsed = firstResponse.tokensUsed;
 
@@ -436,7 +814,7 @@ export class RAGService {
         this.isOverviewStyleRequest(message) &&
         diagramList.length > 0
       ) {
-        const enforcedSystemPrompt = `${systemPrompt}\n\nMANDATORY OVERRIDE FOR OVERVIEW REQUESTS:\n- Before answering, call get_diagram_context for multiple relevant artifacts (minimum 2 when available).\n- Do not answer from diagram names alone.\n- Return only the final user-facing answer (no planning steps, no tool narration).`;
+        const enforcedSystemPrompt = `${systemPrompt}\n\nMANDATORY OVERRIDE FOR OVERVIEW REQUESTS:\n- Before answering, call get_diagram_context for multiple relevant artifacts (minimum 2 when available, maximum 3).\n- Do not answer from diagram names alone.\n- Return only the final user-facing answer (no planning steps, no tool narration).`;
 
         const retryResponse = await this.service.chatWithTools(
           enforcedSystemPrompt,
@@ -499,7 +877,64 @@ export class RAGService {
       let chunksUsed = 0;
 
       if (selectedResponse.toolCalls && selectedResponse.toolCalls.length > 0) {
+        if (this.isOverviewStyleRequest(message)) {
+          const requestedIds = this.extractRequestedDiagramIds(
+            selectedResponse.toolCalls.map((tc) => ({
+              functionName: tc.functionName,
+              arguments: tc.arguments,
+            }))
+          );
+
+          if (requestedIds.size < 2 && diagramList.length > 1) {
+            const searchCandidates = await this.diagramIndexService.searchDiagrams(
+              message,
+              orgId,
+              userId,
+              3,
+              projectId
+            );
+
+            for (const candidate of searchCandidates) {
+              if (requestedIds.size >= 2) break;
+              if (requestedIds.has(candidate.fileId)) continue;
+
+              selectedResponse.toolCalls.push({
+                id: `auto-diagram-${uuidv4()}`,
+                functionName: "get_diagram_context",
+                arguments: JSON.stringify({ fileId: candidate.fileId }),
+              });
+              requestedIds.add(candidate.fileId);
+            }
+
+            for (const d of diagramList) {
+              if (requestedIds.size >= 2) break;
+              if (requestedIds.has(d.fileId)) continue;
+
+              selectedResponse.toolCalls.push({
+                id: `auto-diagram-${uuidv4()}`,
+                functionName: "get_diagram_context",
+                arguments: JSON.stringify({ fileId: d.fileId }),
+              });
+              requestedIds.add(d.fileId);
+            }
+
+            logger?.info("RAGService: Enforced minimum overview diagram calls", {
+              overviewQuery: true,
+              totalToolCalls: selectedResponse.toolCalls.length,
+              diagramCalls: requestedIds.size,
+            });
+          }
+        }
+
         // ── 4. Execute tool calls in parallel ──────────────────────────
+        const toolExecutionContext: ToolExecutionContext = {
+          intent: requestIntent,
+          isOverviewRequest: this.isOverviewStyleRequest(message),
+          diagramCallsSeen: 0,
+          diagramContextChars: 0,
+          usedDiagramIds: new Set<string>(),
+        };
+
         logger?.info("RAGService: Executing tool calls", {
           toolCalls: selectedResponse.toolCalls.map(tc => ({
             function: tc.functionName,
@@ -507,24 +942,27 @@ export class RAGService {
           })),
         });
         
-        const toolResults = await Promise.all(
-          selectedResponse.toolCalls.map((tc) =>
-            this.executeToolCall(
-              tc.functionName,
-              tc.arguments,
-              orgId,
-              userId,
-              effectiveMaxChunks,
-              diagramList,
-              allSources,
-              projectId
-            )
-          )
-        );
+        const toolResults: ToolCallResult[] = [];
+        for (const tc of selectedResponse.toolCalls) {
+          const result = await this.executeToolCall(
+            tc.functionName,
+            tc.arguments,
+            orgId,
+            userId,
+            effectiveMaxChunks,
+            diagramList,
+            allSources,
+            projectId,
+            toolExecutionContext
+          );
+          toolResults.push(result);
+        }
 
         logger?.info("RAGService: Tool calls executed", {
           resultsCount: toolResults.length,
           sourcesFound: allSources.length,
+          diagramCallsSeen: toolExecutionContext.diagramCallsSeen,
+          diagramContextChars: toolExecutionContext.diagramContextChars,
         });
 
         console.log("\n" + "-".repeat(80));
@@ -570,8 +1008,33 @@ export class RAGService {
         console.log(`Tokens used: ${tokensUsed}, Processing time: ${Date.now() - startTime}ms`);
         console.log("-".repeat(80) + "\n");
 
-        finalContent = finalResponse.content;
+        let resolvedFinalContent = finalResponse.content;
         tokensUsed += finalResponse.tokensUsed;
+
+        if (this.looksLikeToolPlanOutput(resolvedFinalContent)) {
+          const groundedContext = toolResults
+            .map(
+              (tr, i) =>
+                `[Tool Result ${i + 1}: ${tr.toolName}]\n${this.truncateContext(tr.content, 2400)}`
+            )
+            .join("\n\n---\n\n");
+
+          const recovery = await this.service.generateChatCompletion(
+            "You are a project assistant. Rewrite the provided context into a direct user-facing answer. Do not output JSON, tool calls, or code blocks. Synthesize clearly using concise natural language.",
+            message,
+            groundedContext
+          );
+
+          logger?.warn("RAGService: Recovered from tool-plan style final output", {
+            originalLength: finalResponse.content.length,
+            recoveredLength: recovery.content.length,
+          });
+
+          resolvedFinalContent = recovery.content;
+          tokensUsed += recovery.tokensUsed;
+        }
+
+        finalContent = resolvedFinalContent;
       } else {
         // Model answered directly without tools
         logger?.info("RAGService: Model answered directly without tools", {
@@ -625,7 +1088,8 @@ export class RAGService {
     maxChunks: number,
     diagramList: DiagramListItem[],
     sourcesAccumulator: RAGSource[],
-    projectId?: string
+    projectId?: string,
+    executionContext?: ToolExecutionContext
   ): Promise<ToolCallResult> {
     try {
       const args = JSON.parse(argumentsJson);
@@ -649,7 +1113,8 @@ export class RAGService {
             args.fileId,
             args.query,
             sourcesAccumulator,
-            projectId
+            projectId,
+            executionContext
           );
 
         default:
@@ -720,14 +1185,41 @@ export class RAGService {
     fileId?: string,
     query?: string,
     sourcesAccumulator?: RAGSource[],
-    projectId?: string
+    projectId?: string,
+    executionContext?: ToolExecutionContext
   ): Promise<ToolCallResult> {
-    let targetFileId = fileId;
+    let targetFileId = this.isLikelyValidDiagramId(fileId) ? fileId : undefined;
+    const normalizedQuery = query?.trim();
+
+    if (executionContext) {
+      executionContext.diagramCallsSeen += 1;
+      if (
+        executionContext.diagramCallsSeen >
+        RAG_CONFIG.MAX_DIAGRAM_TOOL_CALLS_PER_TURN
+      ) {
+        return {
+          toolName: "get_diagram_context",
+          content:
+            "Diagram context limit reached for this turn. Use the already retrieved diagrams to synthesize the answer.",
+        };
+      }
+    }
+
+    if (!targetFileId && fileId && !normalizedQuery) {
+      logger?.warn("RAGService.toolGetDiagramContext rejected invalid fileId", {
+        fileId,
+      });
+      return {
+        toolName: "get_diagram_context",
+        content:
+          "No relevant sources found for this query in indexed artifacts.",
+      };
+    }
 
     // If no fileId, use query to search diagram summaries
-    if (!targetFileId && query) {
+    if (!targetFileId && normalizedQuery) {
       const searchResults = await this.diagramIndexService.searchDiagrams(
-        query,
+        normalizedQuery,
         orgId,
         userId,
         3,
@@ -755,6 +1247,24 @@ export class RAGService {
       }
     }
 
+    // If fileId is present but not in the known list, fall back to query-mode using the same string.
+    if (
+      targetFileId &&
+      !diagramList.some((d) => d.fileId === targetFileId) &&
+      !normalizedQuery
+    ) {
+      const searchResults = await this.diagramIndexService.searchDiagrams(
+        targetFileId,
+        orgId,
+        userId,
+        3,
+        projectId
+      );
+      if (searchResults.length > 0) {
+        targetFileId = searchResults[0]!.fileId;
+      }
+    }
+
     // If still no fileId and there's only 1 diagram, use it
     if (!targetFileId && diagramList.length === 1) {
       targetFileId = diagramList[0]!.fileId;
@@ -766,6 +1276,18 @@ export class RAGService {
         content:
           "No relevant sources found for this query in indexed artifacts.",
       };
+    }
+
+    if (executionContext?.usedDiagramIds.has(targetFileId)) {
+      const existing = diagramList.find((d) => d.fileId === targetFileId);
+      return {
+        toolName: "get_diagram_context",
+        content: `Diagram already included in this turn: ${existing?.fileName ?? targetFileId}`,
+      };
+    }
+
+    if (executionContext) {
+      executionContext.usedDiagramIds.add(targetFileId);
     }
 
     // Fetch full diagram structure (always live from Neo4j)
@@ -783,6 +1305,35 @@ export class RAGService {
       };
     }
 
+    const diagramMode: "full" | "minimal" =
+      executionContext?.intent === "specific_question"
+        ? "full"
+        : RAG_CONFIG.OVERVIEW_DEFAULT_DIAGRAM_SERIALIZATION;
+
+    const adaptivePerResultCap = this.getAdaptiveDiagramContextCharLimit(
+      executionContext?.diagramCallsSeen ?? 1
+    );
+
+    let serialized = this.diagramService.serializeForLLM(diagramData, diagramMode);
+    serialized = this.truncateContext(
+      serialized,
+      adaptivePerResultCap
+    );
+
+    if (executionContext) {
+      const nextChars = executionContext.diagramContextChars + serialized.length;
+      if (nextChars > RAG_CONFIG.MAX_DIAGRAM_CONTEXT_CHARS_PER_TURN) {
+        serialized = this.buildFallbackDiagramSummary(
+          diagramData.fileName,
+          diagramData.nodes.length,
+          diagramData.edges.length,
+          diagramData.groups.length
+        );
+      }
+
+      executionContext.diagramContextChars += serialized.length;
+    }
+
     // Add diagram as a source
     sourcesAccumulator?.push({
       documentId: targetFileId,
@@ -793,7 +1344,6 @@ export class RAGService {
     });
 
     // Serialize to LLM-friendly format
-    const serialized = this.diagramService.serializeForLLM(diagramData);
     return { toolName: "get_diagram_context", content: serialized };
   }
 
