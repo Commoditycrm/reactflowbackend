@@ -2061,6 +2061,63 @@ const typeDefs = gql`
         """
         columnName: "completedTask"
       )
+    totalBacklogItem: Int!
+      @cypher(
+        statement: """
+        WITH this AS p
+
+        CALL {
+          // -------------------------
+          // A) BacklogItems from FlowNodes
+          // -------------------------
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL
+            AND n.deletedAt IS NULL
+
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+          RETURN DISTINCT bi
+
+          UNION
+
+          // -------------------------
+          // B) BacklogItems from nested folder files -> FlowNodes
+          // -------------------------
+          WITH p
+          MATCH folderPath = (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL
+            AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+
+          MATCH pathBI = (n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+          RETURN DISTINCT bi
+
+          UNION
+
+          // -------------------------
+          // C) BacklogItems directly under Project
+          // -------------------------
+          WITH p
+          MATCH pathBI = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+            AND bi.startDate IS NOT NULL
+            AND ALL(x IN nodes(pathBI) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+          RETURN DISTINCT bi
+        }
+
+        RETURN COUNT(DISTINCT bi) AS totalBacklogItem
+        """
+        columnName: "totalBacklogItem"
+      )
   }
 
   #===================== traversing and getting valide file and folder ==================
