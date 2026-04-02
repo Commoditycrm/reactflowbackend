@@ -1056,7 +1056,8 @@ CALL apoc.periodic.iterate(
                           ELSE NULL
                         END,
       newItem.isTopLevelParentItem = coalesce(bi.isTopLevelParentItem, false),
-      newItem.actualExpense = bi.actualExpense,
+      newItem.projectedExpense = bi.projectedExpense,
+      newItem.occuredOn = datetime(),
       newItem.uid = newValue,
       newItem.uniqueUid = toString(toInteger(newValue)) + '-' + org.id,
       newItem.isRecurringTask = false,
