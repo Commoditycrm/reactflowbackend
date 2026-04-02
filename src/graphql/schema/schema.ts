@@ -2567,6 +2567,7 @@ const typeDefs = gql`
         CALL {
           WITH p
           MATCH (p)-[r:HAS_ASSIGNED_USER]->(u:User)
+          WHERE u.name <> "Deleted Account"
           RETURN u AS member, r AS rel, 'User' AS memberType
 
           UNION
@@ -2670,6 +2671,7 @@ const typeDefs = gql`
         CALL {
           WITH this
           MATCH (this)-[:HAS_ASSIGNED_USER]->(u:User)
+          WHERE u.name <> "Deleted Account"
           RETURN u
 
           UNION
