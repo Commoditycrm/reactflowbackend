@@ -4,7 +4,7 @@ import logger from "../../logger";
 
 const rateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 50,
+  max: 80,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
@@ -16,7 +16,11 @@ const rateLimiter = rateLimit({
         const payload = JSON.parse(
           Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
         );
-        const key = payload.sub ?? payload.uid ?? ipKeyGenerator(req.ip ?? "unknown") ?? "unknown";
+        const key =
+          payload.sub ??
+          payload.uid ??
+          ipKeyGenerator(req.ip ?? "unknown") ??
+          "unknown";
         return key;
       } catch (err) {
         logger.warn(
