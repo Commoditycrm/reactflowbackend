@@ -6353,6 +6353,7 @@ const typeDefs = gql`
           UNION
 
           MATCH (org)<-[:MEMBER_OF]-(users:User)
+          WHERE users.name <> "Deleted Account"
           RETURN users {
             .id,
             .name,
@@ -6381,13 +6382,9 @@ const typeDefs = gql`
              trim(coalesce($emailContains, "")) AS ec,
              trim(coalesce($nameContains, "")) AS nc
 
-        WHERE
-          orgMembers.name <> "Deleted Account"
-        AND (
-          (ec = "" AND nc = "")
+        WHERE (ec = "" AND nc = "")
           OR (ec <> "" AND toLower(orgMembers.email) CONTAINS toLower(ec))
           OR (nc <> "" AND toLower(orgMembers.name) CONTAINS toLower(nc))
-        )
         RETURN orgMembers
         ORDER BY orgMembers.isOwner DESC, orgMembers.createdAt DESC
         SKIP $offset LIMIT $limit
