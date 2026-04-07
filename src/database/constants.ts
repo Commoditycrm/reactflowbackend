@@ -249,555 +249,140 @@ CALL apoc.periodic.iterate(
 );
 `;
 
-export const CLONE_BACKLOGITEM = `
-CALL apoc.periodic.iterate(
-    "
-    MATCH (newRoot:Project {refId:$templateProjectId}) 
-    OPTIONAL MATCH (newRoot)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)
-     MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
-     MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
-     MATCH (org)-[:HAS_STATUS]->(status:Status)
-     WHERE toLower(status.name) CONTAINS 'not started'  
-     CALL (newRoot,folders){
-        WITH newRoot , folders
-        OPTIONAL MATCH(newRoot)-[:HAS_CHILD_FILE]->(rootFiles:File)
-        WHERE rootFiles IS NOT NULL AND rootFiles.deletedAt IS NULL
-        RETURN rootFiles AS newFile
-        UNION 
-        OPTIONAL MATCH(folders)-[:HAS_CHILD_FILE]->(nestedFiles:File)
-        WHERE nestedFiles IS NOT NULL AND nestedFiles.deletedAt IS NULL
-        RETURN nestedFiles AS newFile
-     }
-     MATCH (newFile)-[:HAS_FLOW_NODE]->(newFlowNode:FlowNode)
-     MATCH (originalFile:File {id: newFile.refId})
-     MATCH (originalFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode {id: newFlowNode.refId})
-     MATCH (sourceFlowNode)-[:HAS_CHILD_ITEM]->(sourceBacklogItem:BacklogItem)
-     MATCH (sourceBacklogItem)-[:HAS_BACKLOGITEM_TYPE]->(backlogItemType:BacklogItemType)
-     MATCH(sourceBacklogItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-     WHERE sourceBacklogItem.deletedAt IS NULL
-     RETURN org, newRoot, orgCounter, sourceBacklogItem, backlogItemType,riskLevel, newFlowNode, status",
-    "
-     WITH org, newRoot, orgCounter, sourceBacklogItem, backlogItemType,riskLevel, newFlowNode, status
-     MATCH (user:User {externalId: $userId})
-
-    CALL {
-      WITH org, backlogItemType
-      OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(matchType:BacklogItemType)
-      WHERE toLower(matchType.name) = toLower(backlogItemType.name)
-      WITH collect(matchType) AS types
-      RETURN coalesce(head([t IN types WHERE t IS NOT NULL]), head(types)) AS itemType
-    }
-
-    CALL {
-      WITH org, riskLevel
-      OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(matchRisk:RiskLevel)
-      WHERE toLower(matchRisk.name) = toLower(riskLevel.name)
-      WITH collect(matchRisk) AS risks
-      RETURN coalesce(head([r IN risks WHERE r IS NOT NULL]), head(risks)) AS itemRiskLevel
-    }
-
-     WITH org, newRoot, orgCounter, itemType,itemRiskLevel, user, status, 
-        collect({sourceItem: sourceBacklogItem, flowNode: newFlowNode}) AS itemsWithFlowNodes
-    WHERE itemType IS NOT NULL AND itemRiskLevel IS NOT NULL
-     UNWIND itemsWithFlowNodes AS itemData
-     
-     CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue AS newUid
-
-     MERGE (newBacklogItem:BacklogItem {refId: itemData.sourceItem.id, projectId: newRoot.id})
-     ON CREATE SET
-        newBacklogItem.id = randomUUID(),
-        newBacklogItem.label = itemData.sourceItem.label,
-        newBacklogItem.description = itemData.sourceItem.description,
-        newBacklogItem.createdAt = datetime(),
-        newBacklogItem.isTopLevelParentItem = itemData.sourceItem.isTopLevelParentItem,
-        newBacklogItem.actualExpense = itemData.sourceItem.actualExpense,
-        newBacklogItem.uid = newUid,
-        newBacklogItem.isRecurringTask = itemData.sourceItem.isRecurringTask,
-        newBacklogItem.uniqueUid = toString(toInteger(newUid)) + '-' + org.id
-
-     MERGE (newBacklogItem)<-[:CREATED_ITEM]-(user)
-     MERGE (newBacklogItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
-     MERGE(newBacklogItem)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
-     MERGE (newBacklogItem)-[:HAS_STATUS]->(status)
-     MERGE(newBacklogItem)-[:ITEM_IN_PROJECT]->(newRoot)
-     WITH itemData.flowNode AS sourceFlowNode, newBacklogItem
-     MERGE (sourceFlowNode)-[:HAS_CHILD_ITEM]->(newBacklogItem)
-    ",
-    {batchSize: 35, parallel:true, retries: 3, params: { templateProjectId: $templateProjectId, userId:$userId }}
-);
-`;
-export const CLONE_TOP_LEVEL_BACKLOGITEMS = `
+export const CLONE_BACKLOGITEMS_ALL_LEVELS = `
 CALL apoc.periodic.iterate(
   "
-  MATCH (sourceRoot:Project {id: $templateProjectId})
-  MATCH (newRoot:Project {refId: sourceRoot.id})
-  MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
-  MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
-  MATCH (org)-[:HAS_STATUS]->(status:Status)
-  WHERE toLower(coalesce(status.defaultName, status.name, '')) CONTAINS 'not started'
+  MATCH (srcProject:Project {id: $templateProjectId})
 
   CALL {
-    WITH sourceRoot, newRoot
+    WITH srcProject
+    OPTIONAL MATCH (srcProject)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(fn:FlowNode)
+    WHERE file.deletedAt IS NULL
+      AND fn.deletedAt IS NULL
 
-    // 1) top-level items directly under project
-    MATCH (sourceRoot)-[:HAS_CHILD_ITEM]->(sourceItem:BacklogItem)
-    WHERE sourceItem.deletedAt IS NULL
-    MATCH (sourceItem)-[:HAS_BACKLOGITEM_TYPE]->(backlogItemType:BacklogItemType)
-    MATCH (sourceItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-    RETURN sourceItem, backlogItemType, riskLevel, 'PROJECT' AS parentKind, newRoot.id AS parentRefId, null AS newFlowNode
-
-    UNION
-
-    WITH sourceRoot, newRoot
-
-    // 2) top-level items directly under flow nodes of project root files
-    MATCH (sourceRoot)-[:HAS_CHILD_FILE]->(sourceFile:File)
-    WHERE sourceFile.deletedAt IS NULL
-    MATCH (sourceFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode)
-    WHERE sourceFlowNode.deletedAt IS NULL
-    MATCH (newRoot)-[:HAS_CHILD_FILE]->(newFile:File {refId: sourceFile.id})
-    WHERE newFile.deletedAt IS NULL
-    MATCH (newFile)-[:HAS_FLOW_NODE]->(newFlowNode:FlowNode {refId: sourceFlowNode.id})
-    WHERE newFlowNode.deletedAt IS NULL
-    MATCH (sourceFlowNode)-[:HAS_CHILD_ITEM]->(sourceItem:BacklogItem)
-    WHERE sourceItem.deletedAt IS NULL
-    MATCH (sourceItem)-[:HAS_BACKLOGITEM_TYPE]->(backlogItemType:BacklogItemType)
-    MATCH (sourceItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-    RETURN sourceItem, backlogItemType, riskLevel, 'FLOWNODE' AS parentKind, sourceFlowNode.id AS parentRefId, newFlowNode
-
-    UNION
-
-    WITH sourceRoot, newRoot
-
-    // 3) top-level items directly under flow nodes inside folders (up to 5 folder levels)
-    MATCH folderPath = (sourceRoot)-[:HAS_CHILD_FOLDER*1..5]->(sourceFolder:Folder)
-    WHERE sourceFolder.deletedAt IS NULL
+    OPTIONAL MATCH folderPath = (srcProject)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)
+      -[:HAS_CHILD_FILE]->(file2:File)-[:HAS_FLOW_NODE]->(fn2:FlowNode)
+    WHERE file2.deletedAt IS NULL
+      AND fn2.deletedAt IS NULL
       AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
 
-    MATCH (sourceFolder)-[:HAS_CHILD_FILE]->(sourceFile:File)
-    WHERE sourceFile.deletedAt IS NULL
-    MATCH (sourceFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode)
-    WHERE sourceFlowNode.deletedAt IS NULL
-
-    MATCH (newFile:File {refId: sourceFile.id})
-    WHERE newFile.deletedAt IS NULL
-    MATCH (newFile)-[:FILE_IN_PROJECT]->(newRoot)
-
-    MATCH (newFile)-[:HAS_FLOW_NODE]->(newFlowNode:FlowNode {refId: sourceFlowNode.id})
-    WHERE newFlowNode.deletedAt IS NULL
-
-    MATCH (sourceFlowNode)-[:HAS_CHILD_ITEM]->(sourceItem:BacklogItem)
-    WHERE sourceItem.deletedAt IS NULL
-    MATCH (sourceItem)-[:HAS_BACKLOGITEM_TYPE]->(backlogItemType:BacklogItemType)
-    MATCH (sourceItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-    RETURN sourceItem, backlogItemType, riskLevel, 'FLOWNODE' AS parentKind, sourceFlowNode.id AS parentRefId, newFlowNode
+    RETURN apoc.coll.toSet(collect(DISTINCT fn) + collect(DISTINCT fn2)) AS flowNodes
   }
 
-  RETURN org, newRoot, orgCounter, status, sourceItem, backlogItemType, riskLevel, parentKind, parentRefId, newFlowNode
+  CALL {
+    WITH srcProject, flowNodes
+    UNWIND flowNodes AS fn
+
+    MATCH p = (fn)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(srcProject)
+    WHERE bi.deletedAt IS NULL
+      AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+    WITH bi, fn, p, nodes(p) AS ns, length(p) AS relLen
+    RETURN
+      bi,
+      CASE
+        WHEN relLen = 2 THEN fn
+        ELSE ns[size(ns) - 3]
+      END AS originalParent,
+      relLen - 1 AS level
+
+    UNION
+
+    WITH srcProject
+    MATCH p = (srcProject)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(srcProject)
+    WHERE bi.deletedAt IS NULL
+      AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+
+    WITH bi, p, nodes(p) AS ns, length(p) AS relLen, srcProject
+    RETURN
+      bi,
+      CASE
+        WHEN relLen = 2 THEN srcProject
+        ELSE ns[size(ns) - 3]
+      END AS originalParent,
+      relLen - 1 AS level
+  }
+
+  RETURN DISTINCT bi, originalParent, level
+  ORDER BY level ASC
   ",
   "
-  WITH org, newRoot, orgCounter, status, sourceItem, backlogItemType, riskLevel, parentKind, parentRefId, newFlowNode
+  WITH bi, originalParent, level
+
+  MATCH (newProject:Project {refId: $templateProjectId})
   MATCH (user:User {externalId: $userId})
 
-  CALL {
-    WITH org, backlogItemType
-    OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(matchType:BacklogItemType)
-    WHERE toLower(matchType.name) = toLower(backlogItemType.name)
-    RETURN head(collect(matchType)) AS itemType
-  }
-
-  CALL {
-    WITH org, riskLevel
-    OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(matchRisk:RiskLevel)
-    WHERE toLower(matchRisk.name) = toLower(riskLevel.name)
-    RETURN head(collect(matchRisk)) AS itemRiskLevel
-  }
-
-  WITH org, newRoot, orgCounter, status, sourceItem, parentKind, newFlowNode, user, itemType, itemRiskLevel
-  WHERE itemType IS NOT NULL AND itemRiskLevel IS NOT NULL
-
-  CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue AS newUid
-
-  MERGE (newBacklogItem:BacklogItem {refId: sourceItem.id, projectId: newRoot.id})
+  MERGE (clonedBI:BacklogItem {refId: bi.id})
   ON CREATE SET
-    newBacklogItem.id = randomUUID(),
-    newBacklogItem.label = sourceItem.label,
-    newBacklogItem.description = sourceItem.description,
-    newBacklogItem.createdAt = datetime(),
-    newBacklogItem.updatedAt = datetime(),
-    newBacklogItem.isTopLevelParentItem = coalesce(sourceItem.isTopLevelParentItem, true),
-    newBacklogItem.actualExpense = sourceItem.actualExpense,
-    newBacklogItem.uid = newUid,
-    newBacklogItem.isRecurringTask = sourceItem.isRecurringTask,
-    newBacklogItem.startDate = sourceItem.startDate,
-    newBacklogItem.endDate = sourceItem.endDate,
-    newBacklogItem.occuredOn = sourceItem.occuredOn,
-    newBacklogItem.paidOn = sourceItem.paidOn,
-    newBacklogItem.uniqueUid = toString(toInteger(newUid)) + '-' + org.id
+    clonedBI.id = randomUUID(),
+    clonedBI.uniqueUid = randomUUID(),
+    clonedBI.uid = bi.uid,
+    clonedBI.label = bi.label,
+    clonedBI.description = bi.description,
+    clonedBI.startDate = bi.startDate,
+    clonedBI.endDate = bi.endDate,
+    clonedBI.occuredOn = bi.occuredOn,
+    clonedBI.paidOn = bi.paidOn,
+    clonedBI.projectedExpense = bi.projectedExpense,
+    clonedBI.actualExpense = bi.actualExpense,
+    clonedBI.isRecurringTask = bi.isRecurringTask,
+    clonedBI.scheduleDays = bi.scheduleDays,
+    clonedBI.isTopLevelParentItem = bi.isTopLevelParentItem,
+    clonedBI.createdAt = datetime(),
+    clonedBI.updatedAt = datetime()
 
-  MERGE (newBacklogItem)<-[:CREATED_ITEM]-(user)
-  MERGE (newBacklogItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
-  MERGE (newBacklogItem)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
-  MERGE (newBacklogItem)-[:HAS_STATUS]->(status)
-  MERGE (newBacklogItem)-[:ITEM_IN_PROJECT]->(newRoot)
+  MERGE (user)-[:CREATED_ITEM]->(clonedBI)
+  MERGE (clonedBI)-[:ITEM_IN_PROJECT]->(newProject)
 
-  FOREACH (_ IN CASE WHEN parentKind = 'PROJECT' THEN [1] ELSE [] END |
-    MERGE (newRoot)-[:HAS_CHILD_ITEM]->(newBacklogItem)
+  WITH bi, clonedBI, originalParent, newProject
+
+  OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+  FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (clonedBI)-[:HAS_STATUS]->(s)
   )
 
-  FOREACH (_ IN CASE WHEN parentKind = 'FLOWNODE' AND newFlowNode IS NOT NULL THEN [1] ELSE [] END |
-    MERGE (newFlowNode)-[:HAS_CHILD_ITEM]->(newBacklogItem)
+  WITH bi, clonedBI, originalParent, newProject
+
+  OPTIONAL MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(bit:BacklogItemType)
+  FOREACH (_ IN CASE WHEN bit IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (clonedBI)-[:HAS_BACKLOGITEM_TYPE]->(bit)
+  )
+
+  WITH bi, clonedBI, originalParent, newProject
+
+  OPTIONAL MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
+  FOREACH (_ IN CASE WHEN rl IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (clonedBI)-[:HAS_RISK_LEVEL]->(rl)
+  )
+
+  WITH clonedBI, originalParent, newProject
+
+  OPTIONAL MATCH (newParentFN:FlowNode {refId: originalParent.id})
+  OPTIONAL MATCH (newParentBI:BacklogItem {refId: originalParent.id})
+
+  FOREACH (_ IN CASE WHEN originalParent:Project THEN [1] ELSE [] END |
+    MERGE (newProject)-[:HAS_CHILD_ITEM]->(clonedBI)
+  )
+
+  FOREACH (_ IN CASE WHEN originalParent:FlowNode AND newParentFN IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (newParentFN)-[:HAS_CHILD_ITEM]->(clonedBI)
+  )
+
+  FOREACH (_ IN CASE WHEN originalParent:BacklogItem AND newParentBI IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (newParentBI)-[:HAS_CHILD_ITEM]->(clonedBI)
   )
   ",
   {
     batchSize: 25,
     parallel: false,
     iterateList: true,
-    retries: 1,
-    params: { templateProjectId: $templateProjectId, userId: $userId }
-  }
-);
-`;
-export const CLONE_NESTED_BACKLOGITEMS = `
-CALL apoc.periodic.iterate(
-  "
-  MATCH (sourceRoot:Project {id: $templateProjectId})
-  MATCH (newRoot:Project {refId: sourceRoot.id})
-  MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
-  MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
-  MATCH (org)-[:HAS_STATUS]->(status:Status)
-  WHERE toLower(coalesce(status.defaultName, status.name, '')) CONTAINS 'not started'
-
-  CALL {
-    WITH sourceRoot
-
-    // descendants under project-level top items
-    MATCH (sourceRoot)-[:HAS_CHILD_ITEM]->(topItem:BacklogItem)
-    WHERE topItem.deletedAt IS NULL
-    MATCH itemPath = (topItem)-[:HAS_CHILD_ITEM*1..5]->(sourceSubItem:BacklogItem)
-    WHERE sourceSubItem.deletedAt IS NULL
-      AND ALL(x IN nodes(itemPath) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-    WITH sourceSubItem, itemPath, length(itemPath) AS level,
-         last(nodes(itemPath)[..-1]) AS sourceParentItem
-    MATCH (sourceSubItem)-[:HAS_BACKLOGITEM_TYPE]->(subItemType:BacklogItemType)
-    MATCH (sourceSubItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-
-    RETURN sourceSubItem, sourceParentItem.id AS sourceParentId, subItemType, riskLevel, level
-
-    UNION
-
-    WITH sourceRoot
-
-    // descendants under flownode-level top items in root files
-    MATCH (sourceRoot)-[:HAS_CHILD_FILE]->(sourceFile:File)
-    WHERE sourceFile.deletedAt IS NULL
-    MATCH (sourceFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode)
-    WHERE sourceFlowNode.deletedAt IS NULL
-    MATCH (sourceFlowNode)-[:HAS_CHILD_ITEM]->(topItem:BacklogItem)
-    WHERE topItem.deletedAt IS NULL
-    MATCH itemPath = (topItem)-[:HAS_CHILD_ITEM*1..5]->(sourceSubItem:BacklogItem)
-    WHERE sourceSubItem.deletedAt IS NULL
-      AND ALL(x IN nodes(itemPath) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-    WITH sourceSubItem, itemPath, length(itemPath) AS level,
-         last(nodes(itemPath)[..-1]) AS sourceParentItem
-    MATCH (sourceSubItem)-[:HAS_BACKLOGITEM_TYPE]->(subItemType:BacklogItemType)
-    MATCH (sourceSubItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-
-    RETURN sourceSubItem, sourceParentItem.id AS sourceParentId, subItemType, riskLevel, level
-
-    UNION
-
-    WITH sourceRoot
-
-    // descendants under flownode-level top items in nested folders
-    MATCH folderPath = (sourceRoot)-[:HAS_CHILD_FOLDER*1..5]->(sourceFolder:Folder)
-    WHERE sourceFolder.deletedAt IS NULL
-      AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-    MATCH (sourceFolder)-[:HAS_CHILD_FILE]->(sourceFile:File)
-    WHERE sourceFile.deletedAt IS NULL
-    MATCH (sourceFile)-[:HAS_FLOW_NODE]->(sourceFlowNode:FlowNode)
-    WHERE sourceFlowNode.deletedAt IS NULL
-    MATCH (sourceFlowNode)-[:HAS_CHILD_ITEM]->(topItem:BacklogItem)
-    WHERE topItem.deletedAt IS NULL
-    MATCH itemPath = (topItem)-[:HAS_CHILD_ITEM*1..5]->(sourceSubItem:BacklogItem)
-    WHERE sourceSubItem.deletedAt IS NULL
-      AND ALL(x IN nodes(itemPath) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-    WITH sourceSubItem, itemPath, length(itemPath) AS level,
-         last(nodes(itemPath)[..-1]) AS sourceParentItem
-    MATCH (sourceSubItem)-[:HAS_BACKLOGITEM_TYPE]->(subItemType:BacklogItemType)
-    MATCH (sourceSubItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-
-    RETURN sourceSubItem, sourceParentItem.id AS sourceParentId, subItemType, riskLevel, level
-  }
-
-  RETURN org, newRoot, orgCounter, status, sourceSubItem, sourceParentId, subItemType, riskLevel, level
-  ORDER BY level
-  ",
-  "
-  WITH org, newRoot, orgCounter, status, sourceSubItem, sourceParentId, subItemType, riskLevel, level
-  MATCH (user:User {externalId: $userId})
-  MATCH (newParent:BacklogItem {refId: sourceParentId, projectId: newRoot.id})
-
-  CALL {
-    WITH org, subItemType
-    OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(matchType:BacklogItemType)
-    WHERE toLower(matchType.name) = toLower(subItemType.name)
-    RETURN head(collect(matchType)) AS itemType
-  }
-
-  CALL {
-    WITH org, riskLevel
-    OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(matchRisk:RiskLevel)
-    WHERE toLower(matchRisk.name) = toLower(riskLevel.name)
-    RETURN head(collect(matchRisk)) AS itemRiskLevel
-  }
-
-  WITH org, newRoot, orgCounter, status, sourceSubItem, newParent, user, itemType, itemRiskLevel
-  WHERE itemType IS NOT NULL AND itemRiskLevel IS NOT NULL
-
-  CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue AS newSubUid
-
-  MERGE (newSubItem:BacklogItem {refId: sourceSubItem.id, projectId: newRoot.id})
-  ON CREATE SET
-    newSubItem.id = randomUUID(),
-    newSubItem.label = sourceSubItem.label,
-    newSubItem.description = sourceSubItem.description,
-    newSubItem.createdAt = datetime(),
-    newSubItem.updatedAt = datetime(),
-    newSubItem.isTopLevelParentItem = false,
-    newSubItem.actualExpense = sourceSubItem.actualExpense,
-    newSubItem.uid = newSubUid,
-    newSubItem.isRecurringTask = sourceSubItem.isRecurringTask,
-    newSubItem.startDate = sourceSubItem.startDate,
-    newSubItem.endDate = sourceSubItem.endDate,
-    newSubItem.occuredOn = sourceSubItem.occuredOn,
-    newSubItem.paidOn = sourceSubItem.paidOn,
-    newSubItem.uniqueUid = toString(toInteger(newSubUid)) + '-' + org.id
-
-  MERGE (newSubItem)<-[:CREATED_ITEM]-(user)
-  MERGE (newSubItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
-  MERGE (newSubItem)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
-  MERGE (newSubItem)-[:HAS_STATUS]->(status)
-  MERGE (newSubItem)-[:ITEM_IN_PROJECT]->(newRoot)
-  MERGE (newParent)-[:HAS_CHILD_ITEM]->(newSubItem)
-  ",
-  {
-    batchSize: 25,
-    parallel: false,
-    iterateList: true,
-    retries: 1,
-    params: { templateProjectId: $templateProjectId, userId: $userId }
-  }
-);
-`;
-export const CLONE_SUB_ITEM = `
-CALL apoc.periodic.iterate(
-    "
-     MATCH (newRoot:Project {refId:$templateProjectId}) 
-     OPTIONAL MATCH(newRoot)-[:HAS_CHILD_FOLDER*1..]->(folders:Folder)
-     MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
-     MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
-     MATCH (org)-[:HAS_STATUS]->(status:Status)
-     WHERE toLower(status.name) CONTAINS 'not started' AND folders.deletedAt IS NULL
-     CALL(newRoot,folders) {
-     OPTIONAL MATCH(newRoot)-[:HAS_CHILD_FILE]->(rootFiles:File)
-     WHERE rootFiles IS NOT NULL AND rootFiles.deletedAt IS NULL
-       RETURN rootFiles AS newFile
-       UNION
-       MATCH(folders)-[:HAS_CHILD_FILE]->(nestedFiles:File)
-       WHERE nestedFiles IS NOT NULL AND nestedFiles.deletedAt IS NULL
-       RETURN nestedFiles AS newFile
-     }
-     MATCH (newFile)-[:HAS_FLOW_NODE]->(newFlowNode:FlowNode)
-     MATCH (newFlowNode)-[:HAS_CHILD_ITEM]->(newBacklogItem:BacklogItem)
-     MATCH (sourceBacklogItem:BacklogItem {id: newBacklogItem.refId})
-     MATCH (sourceBacklogItem)-[:HAS_CHILD_ITEM]->(sourceSubItem:BacklogItem)
-     MATCH (sourceSubItem)-[:HAS_BACKLOGITEM_TYPE]->(subItemType:BacklogItemType)
-     MATCH(sourceSubItem)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
-     WHERE sourceSubItem.deletedAt IS NULL
-     RETURN org, newRoot, orgCounter, sourceSubItem, subItemType,riskLevel, newBacklogItem, status",
-    "
-     WITH org, newRoot, orgCounter, sourceSubItem, subItemType,riskLevel, newBacklogItem, status
-     MATCH (user:User {externalId: $userId}) 
-
-    CALL {
-      WITH org, subItemType
-      OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(matchType:BacklogItemType)
-      WHERE toLower(matchType.name) = toLower(subItemType.name)
-      WITH collect(matchType) AS types
-      RETURN coalesce(head([t IN types WHERE t IS NOT NULL]), head(types)) AS itemType
+    retries: 3,
+    params: {
+      templateProjectId: $templateProjectId,
+      userId: $userId
     }
-
-    CALL {
-      WITH org, riskLevel
-      OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(matchRisk:RiskLevel)
-      WHERE toLower(matchRisk.name) = toLower(riskLevel.name)
-      WITH collect(matchRisk) AS risks
-      RETURN coalesce(head([r IN risks WHERE r IS NOT NULL]), head(risks)) AS itemRiskLevel
-    }
-
-     WITH org, newRoot, orgCounter, itemType,itemRiskLevel, user, status, 
-          collect({subItem: sourceSubItem, parent: newBacklogItem}) AS allSubItemsWithParents
-
-     UNWIND allSubItemsWithParents AS subItemData
-     
-     CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue AS newSubUid
-
-     MERGE (newSubItem:BacklogItem {refId: subItemData.subItem.id})
-     ON CREATE SET
-         newSubItem.id = randomUUID(),
-         newSubItem.label = subItemData.subItem.label,
-         newSubItem.description = subItemData.subItem.description,
-         newSubItem.createdAt = datetime(),
-         newSubItem.isTopLevelParentItem = false,
-         newSubItem.actualExpense = subItemData.subItem.actualExpense,
-         newSubItem.uid = newSubUid,
-         newSubItem.isRecurringTask = subItemData.subItem.isRecurringTask,
-         newSubItem.uniqueUid = toString(toInteger(newSubUid)) + '-' + org.id
-     MERGE (newSubItem)<-[:CREATED_ITEM]-(user)
-     MERGE (newSubItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
-     MERGE (newSubItem)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
-     MERGE (newSubItem)-[:HAS_STATUS]->(status)
-     MERGE(newSubItem)-[:ITEM_IN_PROJECT]->(newRoot)
-     WITH subItemData.parent AS parentBacklogItem, newSubItem
-     MERGE (parentBacklogItem)-[:HAS_CHILD_ITEM]->(newSubItem)
-    ",
-    {batchSize: 35, parallel:true, retries:3, params: { templateProjectId: $templateProjectId, userId:$userId }}
+  }
 );
-`;
-
-export const CLONE_ALL_BACKLOG_ITEMS = `
-MATCH (newRoot:Project {refId: $templateProjectId})
-MATCH (sourceRoot:Project {id: $templateProjectId})
-MATCH (newRoot)<-[:HAS_PROJECTS]-(org:Organization)
-MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
-MATCH (user:User {externalId: $userId})
-
-CALL {
-  WITH org
-  MATCH (org)-[:HAS_STATUS]->(s:Status)
-  WHERE toLower(coalesce(s.defaultName, s.name, '')) CONTAINS 'not started'
-  RETURN s
-  ORDER BY s.createdAt ASC
-  LIMIT 1
-}
-WITH newRoot, sourceRoot, org, orgCounter, user, s AS defaultStatus
-
-CALL {
-  // -------------------------
-  // A) items under FlowNode up to 5 levels
-  // -------------------------
-  WITH sourceRoot
-  OPTIONAL MATCH (sourceRoot)-[:HAS_CHILD_FILE]->(rf:File)-[:HAS_FLOW_NODE]->(rfn:FlowNode)
-  WHERE rf.deletedAt IS NULL AND rfn.deletedAt IS NULL
-
-  OPTIONAL MATCH pathFolder=(sourceRoot)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(nf:File)-[:HAS_FLOW_NODE]->(nfn:FlowNode)
-  WHERE nf.deletedAt IS NULL AND nfn.deletedAt IS NULL
-    AND ALL(x IN nodes(pathFolder) WHERE NOT x:Folder OR x.deletedAt IS NULL)
-
-  WITH apoc.coll.toSet(collect(DISTINCT rfn) + collect(DISTINCT nfn)) AS sourceFlowNodes
-  UNWIND sourceFlowNodes AS sourceFlowNode
-
-  MATCH p=(sourceFlowNode)-[:HAS_CHILD_ITEM*1..5]->(sourceItem:BacklogItem)
-  WHERE sourceItem.deletedAt IS NULL
-    AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-  MATCH (directParent)-[:HAS_CHILD_ITEM]->(sourceItem)
-  WHERE directParent:FlowNode OR directParent:BacklogItem
-
-  OPTIONAL MATCH (sourceItem)-[:HAS_BACKLOGITEM_TYPE]->(sourceType:BacklogItemType)
-  OPTIONAL MATCH (sourceItem)-[:HAS_RISK_LEVEL]->(sourceRisk:RiskLevel)
-
-  RETURN DISTINCT
-    sourceItem,
-    sourceType,
-    sourceRisk,
-    labels(directParent)[0] AS parentLabel,
-    directParent.id AS parentId
-
-  UNION
-
-  // -------------------------
-  // B) items directly under Project up to 5 levels
-  // -------------------------
-  WITH sourceRoot
-  MATCH p=(sourceRoot)-[:HAS_CHILD_ITEM*1..5]->(sourceItem:BacklogItem)-[:ITEM_IN_PROJECT]->(sourceRoot)
-  WHERE sourceItem.deletedAt IS NULL
-    AND ALL(x IN nodes(p) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
-
-  MATCH (directParent)-[:HAS_CHILD_ITEM]->(sourceItem)
-  WHERE directParent:Project OR directParent:BacklogItem
-
-  OPTIONAL MATCH (sourceItem)-[:HAS_BACKLOGITEM_TYPE]->(sourceType:BacklogItemType)
-  OPTIONAL MATCH (sourceItem)-[:HAS_RISK_LEVEL]->(sourceRisk:RiskLevel)
-
-  RETURN DISTINCT
-    sourceItem,
-    sourceType,
-    sourceRisk,
-    labels(directParent)[0] AS parentLabel,
-    directParent.id AS parentId
-}
-WITH DISTINCT newRoot, org, orgCounter, user, defaultStatus,
-     sourceItem, sourceType, sourceRisk, parentLabel, parentId
-
-CALL {
-  WITH org, sourceType
-  OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(targetType:BacklogItemType)
-  WHERE sourceType IS NOT NULL
-    AND toLower(coalesce(targetType.defaultName, targetType.name, '')) =
-        toLower(coalesce(sourceType.defaultName, sourceType.name, ''))
-  RETURN head(collect(targetType)) AS itemType
-}
-
-CALL {
-  WITH org, sourceRisk
-  OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(targetRisk:RiskLevel)
-  WHERE sourceRisk IS NOT NULL
-    AND toLower(coalesce(targetRisk.defaultName, targetRisk.name, '')) =
-        toLower(coalesce(sourceRisk.defaultName, sourceRisk.name, ''))
-  RETURN head(collect(targetRisk)) AS itemRiskLevel
-}
-
-WITH *
-WHERE defaultStatus IS NOT NULL
-  AND itemType IS NOT NULL
-  AND itemRiskLevel IS NOT NULL
-
-CALL apoc.atomic.add(orgCounter, 'counter', 1) YIELD newValue
-
-MERGE (newItem:BacklogItem {refId: sourceItem.id, projectId: newRoot.id})
-ON CREATE SET
-  newItem.id = randomUUID(),
-  newItem.createdAt = datetime(),
-  newItem.uid = newValue,
-  newItem.uniqueUid = toString(toInteger(newValue)) + '-' + org.id
-
-SET
-  newItem.label = sourceItem.label,
-  newItem.description = sourceItem.description,
-  newItem.updatedAt = sourceItem.updatedAt,
-  newItem.deletedAt = NULL,
-  newItem.isTopLevelParentItem = parentLabel IN ['FlowNode', 'Project'],
-  newItem.actualExpense = sourceItem.actualExpense,
-  newItem.isRecurringTask = sourceItem.isRecurringTask,
-  newItem.startDate = sourceItem.startDate,
-  newItem.endDate = sourceItem.endDate,
-  newItem.occuredOn = sourceItem.occuredOn,
-  newItem.paidOn = sourceItem.paidOn,
-  newItem.parentSourceId = parentId,
-  newItem.parentSourceLabel = parentLabel
-
-MERGE (newItem)<-[:CREATED_ITEM]-(user)
-MERGE (newItem)-[:HAS_BACKLOGITEM_TYPE]->(itemType)
-MERGE (newItem)-[:HAS_RISK_LEVEL]->(itemRiskLevel)
-MERGE (newItem)-[:HAS_STATUS]->(defaultStatus)
-MERGE (newItem)-[:ITEM_IN_PROJECT]->(newRoot)
-
-RETURN count(DISTINCT newItem) AS clonedBacklogItems
 `;
 
 export const LINK_CLONED_BACKLOG_ITEMS = `
