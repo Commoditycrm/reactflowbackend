@@ -1,13 +1,10 @@
 import { GraphQLError } from "graphql";
 import {
-  CLONE_BACKLOGITEM,
+  CLONE_BACKLOGITEMS_ALL_LEVELS,
   CLONE_FLOWNODE,
-  CLONE_NESTED_BACKLOGITEMS,
   CLONE_ROOT_FILES,
   CLONE_SUB_FILES,
   CLONE_SUB_FOLDERS,
-  CLONE_SUB_ITEM,
-  CLONE_TOP_LEVEL_BACKLOGITEMS,
   CONNECT_DEPENDENCY_CQL,
   COPY_FILE_CQL,
   COPY_FILE_GROUP_CHILD_CONNECTION_CQL,
@@ -153,12 +150,16 @@ const createProjectWithTemplate = async (
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
+  const userId = _context?.jwt?.uid || _context?.jwt?.sub;
+  if (!userId) {
+    logger.warn("userId not exist");
+  }
   try {
     const params = {
       templateProjectId,
       name,
       description,
-      userId: _context?.jwt?.sub,
+      userId,
       orgId,
     };
 
@@ -197,9 +198,8 @@ const createProjectWithTemplate = async (
     await tx.run(LINK_TO_FLOWNODE, { templateProjectId });
     logger?.info(`Cloned flownodes and connected their links`);
 
-    await tx.run(CLONE_TOP_LEVEL_BACKLOGITEMS, params);
-    await tx.run(CLONE_NESTED_BACKLOGITEMS, params);
-    logger?.info(`Cloned parent and sub backlogItem`);
+    await tx.run(CLONE_BACKLOGITEMS_ALL_LEVELS, params);
+    logger?.info(`Cloned and connected all BacklogItems (levels 1–5)`);
 
     await tx.run(CONNECT_DEPENDENCY_CQL, { templateProjectId });
 
