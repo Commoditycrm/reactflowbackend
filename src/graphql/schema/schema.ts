@@ -40,6 +40,10 @@ const typeDefs = gql`
     updatedAt: DateTime
   }
 
+  type FavoriteProjectRel @relationshipProperties {
+    pinnedAt: DateTime!
+  }
+
   type User implements Timestamped
     @authorization(
       validate: [
@@ -200,6 +204,7 @@ const typeDefs = gql`
         direction: OUT
         aggregate: false
         nestedOperations: []
+        properties: "FavoriteProjectRel"
       )
     memberOfOrganizations: [Organization!]!
       @relationship(
@@ -2117,6 +2122,14 @@ const typeDefs = gql`
         RETURN COUNT(DISTINCT bi) AS totalBacklogItem
         """
         columnName: "totalBacklogItem"
+      )
+    isFavorite: Boolean!
+      @cypher(
+        statement: """
+        MATCH (u:User {externalId: $jwt.sub})
+        RETURN EXISTS { MATCH (u)-[:FAVORITE_PROJECT]->(this) } AS result
+        """
+        columnName: "result"
       )
   }
 
@@ -5329,6 +5342,25 @@ const typeDefs = gql`
       )
 
     deleteOrg(orgId: String): Boolean!
+    togglePinProject(projectId: ID!): Boolean!
+      @cypher(
+        statement: """
+        MATCH (u:User {externalId: $jwt.sub})
+        MATCH (p:Project {id: $projectId})
+        WHERE p.deletedAt IS NULL
+
+        OPTIONAL MATCH (u)-[r:FAVORITE_PROJECT]->(p)
+        FOREACH (_ IN CASE WHEN r IS NULL THEN [1] ELSE [] END |
+          CREATE (u)-[:FAVORITE_PROJECT { pinnedAt: datetime() }]->(p)
+        )
+        FOREACH (_ IN CASE WHEN r IS NOT NULL THEN [1] ELSE [] END |
+          DELETE r
+        )
+
+        RETURN EXISTS { MATCH (u)-[:FAVORITE_PROJECT]->(p) } AS result
+        """
+        columnName: "result"
+      )
   }
 
   type Query {
@@ -6603,10 +6635,9 @@ const typeDefs = gql`
     ): [RAGSource!]!
 
     getProjectListForCurrentUser(
-      orgId: ID
       searchTerm: String
-      limit: Int = 10
-      offset: Int = 0
+      limit: Int! = 10
+      offset: Int! = 0
     ): [Project!]!
       @cypher(
         statement: """
@@ -6614,36 +6645,104 @@ const typeDefs = gql`
 
         CALL {
           WITH u
-          MATCH (p:Project)
-          WHERE p.deletedAt IS NULL
-            AND (
-              ($orgId IS NOT NULL AND (
-                EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization {id: $orgId})<-[:OWNS]-(u) }
-                OR EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization {id: $orgId})<-[:MEMBER_OF]-(u) WHERE u.role = 'ADMIN' }
-              ))
-              OR
-              ($orgId IS NULL AND (
-                EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(u) }
-                OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(u) }
-              ))
-            )
-            AND (
-              $searchTerm IS NULL
-              OR trim($searchTerm) = ""
-              OR toLower(p.name) CONTAINS toLower($searchTerm)
-            )
+
+          CALL {
+            WITH u
+            MATCH (u)-[:OWNS|MEMBER_OF]->(:Organization)-[:HAS_PROJECTS]->(p:Project)
+            WHERE p.deletedAt IS NULL
+              AND coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+
+            UNION
+
+            WITH u
+            MATCH (u)-[:CREATED_PROJECT]->(p:Project)
+            WHERE p.deletedAt IS NULL
+              AND NOT coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+
+            UNION
+
+            WITH u
+            MATCH (p:Project)-[:HAS_ASSIGNED_USER]->(u)
+            WHERE p.deletedAt IS NULL
+              AND NOT coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+          }
+
           RETURN DISTINCT p
         }
 
-        WITH u, p,
-             EXISTS { MATCH (u)-[:FAVORITE_PROJECT]->(p) } AS isFavorite
+        WITH u, p
+        WHERE
+          $searchTerm IS NULL
+          OR trim($searchTerm) = ""
+          OR toLower(p.name) CONTAINS toLower($searchTerm)
+
+        OPTIONAL MATCH (u)-[fav:FAVORITE_PROJECT]->(p)
+
+        WITH p,
+             CASE WHEN fav IS NULL THEN false ELSE true END AS isFavorite,
+             fav.pinnedAt AS pinnedAt
 
         RETURN p AS projects
-        ORDER BY isFavorite DESC, p.createdAt DESC
+        ORDER BY isFavorite DESC, pinnedAt DESC, p.createdAt DESC
         SKIP $offset
         LIMIT $limit
         """
         columnName: "projects"
+      )
+
+    getProjectListCount(searchTerm: String): Int!
+      @cypher(
+        statement: """
+        MATCH (u:User {externalId: $jwt.sub})
+
+        CALL {
+          WITH u
+
+          CALL {
+            WITH u
+            MATCH (u)-[:OWNS|MEMBER_OF]->(:Organization)-[:HAS_PROJECTS]->(p:Project)
+            WHERE p.deletedAt IS NULL
+              AND coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+
+            UNION
+
+            WITH u
+            MATCH (u)-[:CREATED_PROJECT]->(p:Project)
+            WHERE p.deletedAt IS NULL
+              AND NOT coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+
+            UNION
+
+            WITH u
+            MATCH (p:Project)-[:HAS_ASSIGNED_USER]->(u)
+            WHERE p.deletedAt IS NULL
+              AND NOT coalesce(u.role, 'USER') IN ['COMPANY_ADMIN', 'ADMIN']
+            RETURN DISTINCT p
+          }
+
+          RETURN DISTINCT p
+        }
+
+        WITH u, p
+        WHERE
+          $searchTerm IS NULL
+          OR trim($searchTerm) = ""
+          OR toLower(p.name) CONTAINS toLower($searchTerm)
+
+        OPTIONAL MATCH (u)-[fav:FAVORITE_PROJECT]->(p)
+
+        WITH p,
+             CASE WHEN fav IS NULL THEN false ELSE true END AS isFavorite,
+             fav.pinnedAt AS pinnedAt
+
+        RETURN COUNT(p) AS getProjectListCount
+        """
+        columnName: "getProjectListCount"
       )
   }
 `;
