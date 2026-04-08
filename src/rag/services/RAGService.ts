@@ -206,6 +206,23 @@ export class RAGService {
     return [cleaned.slice(0, 180)];
   }
 
+  private deduplicateSources(sources: RAGSource[]): RAGSource[] {
+    const uniqueByFile = new Map<string, RAGSource>();
+
+    for (const source of sources) {
+      const key = source.documentId?.trim() || source.documentName.trim().toLowerCase();
+      const existing = uniqueByFile.get(key);
+
+      if (!existing || source.relevanceScore > existing.relevanceScore) {
+        uniqueByFile.set(key, source);
+      }
+    }
+
+    return Array.from(uniqueByFile.values()).sort(
+      (a, b) => b.relevanceScore - a.relevanceScore
+    );
+  }
+
   private isOverviewStyleRequest(message: string): boolean {
     const text = message.toLowerCase();
     return /(overall|overview|summary|summarize|high[-\s]?level|organization|portfolio|all projects|projects in|across projects)/.test(
@@ -615,6 +632,7 @@ export class RAGService {
         );
 
         if (evidence.context.trim().length > 0) {
+          const uniqueEvidenceSources = this.deduplicateSources(evidence.sources);
           const overviewResponse = await this.service.generateChatCompletion(
             "You are an intelligent project assistant. Synthesize a broad organization-level overview using many diagram summaries as primary evidence and document excerpts as supporting evidence. Group insights by entities/workstreams, major workflows, and cross-project dependencies. Do not output JSON, internal IDs, or tool narration.",
             message,
@@ -623,7 +641,7 @@ export class RAGService {
 
           const finalContent = this.sanitizeFinalAnswer(
             overviewResponse.content,
-            evidence.sources,
+            uniqueEvidenceSources,
             message
           );
 
@@ -646,11 +664,11 @@ export class RAGService {
 
           return {
             answer: finalContent,
-            sources: evidence.sources,
+            sources: uniqueEvidenceSources,
             conversationId: convId,
             metadata: {
               model: RAG_CONFIG.CHAT_MODEL,
-              chunksUsed: evidence.sources.length,
+              chunksUsed: uniqueEvidenceSources.length,
               processingTimeMs: Date.now() - startTime,
               tokensUsed: overviewResponse.tokensUsed,
             },
@@ -779,9 +797,11 @@ export class RAGService {
 
           const finalContent = this.sanitizeFinalAnswer(
             fallbackResponse.content,
-            fallbackSources,
+            this.deduplicateSources(fallbackSources),
             message
           );
+
+          const uniqueFallbackSources = this.deduplicateSources(fallbackSources);
 
           conversation.messages.push({
             role: "assistant",
@@ -792,11 +812,11 @@ export class RAGService {
 
           return {
             answer: finalContent,
-            sources: fallbackSources,
+            sources: uniqueFallbackSources,
             conversationId: convId,
             metadata: {
               model: RAG_CONFIG.CHAT_MODEL,
-              chunksUsed: fallbackSources.length,
+              chunksUsed: uniqueFallbackSources.length,
               processingTimeMs: Date.now() - startTime,
               tokensUsed: fallbackResponse.tokensUsed,
             },
@@ -1044,7 +1064,8 @@ export class RAGService {
         finalContent = selectedResponse.content ?? "";
       }
 
-      finalContent = this.sanitizeFinalAnswer(finalContent, allSources, message);
+      const uniqueSources = this.deduplicateSources(allSources);
+      finalContent = this.sanitizeFinalAnswer(finalContent, uniqueSources, message);
 
       // ── 6. Store response & return ───────────────────────────────────
       conversation.messages.push({
@@ -1056,18 +1077,18 @@ export class RAGService {
 
       logger?.info("RAGService.chat completed successfully", {
         answerLength: finalContent.length,
-        sourcesCount: allSources.length,
+        sourcesCount: uniqueSources.length,
         tokensUsed,
         processingTimeMs: Date.now() - startTime,
       });
 
       return {
         answer: finalContent,
-        sources: allSources,
+        sources: uniqueSources,
         conversationId: convId,
         metadata: {
           model: RAG_CONFIG.CHAT_MODEL,
-          chunksUsed,
+          chunksUsed: uniqueSources.length,
           processingTimeMs: Date.now() - startTime,
           tokensUsed,
         },
@@ -1363,13 +1384,15 @@ export class RAGService {
         topK: effectiveTopK,
       });
 
-      return results.map((r) => ({
+      const rawSources = results.map((r) => ({
         documentId: r.documentId,
         documentName: r.source,
         pageNumber: r.pageNumber,
         relevanceScore: r.score,
         snippet: r.content.slice(0, 300) + "...",
       }));
+
+      return this.deduplicateSources(rawSources);
     } catch (error) {
       logger?.error("RAGService.searchDocuments failed", { error });
       throw error;
