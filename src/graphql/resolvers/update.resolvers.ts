@@ -90,7 +90,11 @@ const updateUserDetail = async (
           : phoneNumber.replace(/[^\d+]/g, "")
         : null;
 
-    if (phoneNumber !== null && cleanedPhone !== null && !/^\+\d{7,15}$/.test(cleanedPhone)) {
+    if (
+      phoneNumber !== null &&
+      cleanedPhone !== null &&
+      !/^\+\d{7,15}$/.test(cleanedPhone)
+    ) {
       throw new GraphQLError(
         "Invalid phone format. Must be E.164 like +14155552671",
         {
@@ -110,7 +114,10 @@ const updateUserDetail = async (
       if (currentUser.phoneNumber !== null) {
         payload.phoneNumber = null;
       }
-    } else if (cleanedPhone !== null && cleanedPhone !== currentUser.phoneNumber) {
+    } else if (
+      cleanedPhone !== null &&
+      cleanedPhone !== currentUser.phoneNumber
+    ) {
       payload.phoneNumber = cleanedPhone;
     }
 
@@ -154,7 +161,9 @@ const updateUserDetail = async (
       update: {
         ...(name && { name }),
         ...(phoneNumber === null ? { phoneNumber: null } : {}),
-        ...(phoneNumber !== null && cleanedPhone !== null ? { phoneNumber: cleanedPhone } : {}),
+        ...(phoneNumber !== null && cleanedPhone !== null
+          ? { phoneNumber: cleanedPhone }
+          : {}),
       },
       context: _context,
     });
@@ -236,66 +245,8 @@ const updatePhoneNumber = async (
   }
 };
 
-const updateProjectLastVisited = async (
-  _source: Record<string, any>,
-  { projectId, lastVisitedAt, name }: Record<string, any>,
-  context: Record<string, any>,
-) => {
-  const ogm = await OGMConnection.getInstance();
-  const Project = ogm.model("Project");
-  const externalId = context?.jwt?.sub;
-
-  try {
-    const projects = await Project.find({
-      where: {
-        id: projectId,
-        OR: [
-          { assignedUsers_SOME: { externalId } },
-          { createdBy: { externalId } },
-          {
-            organization: {
-              memberUsers_SOME: { externalId },
-            },
-          },
-          {
-            organization: {
-              createdBy: {
-                externalId,
-              },
-            },
-          },
-        ],
-      },
-      selectionSet: `{ id }`,
-    });
-
-    if (!projects.length) {
-      throw new Error("Forbidden");
-    }
-
-    await Project.update({
-      where: {
-        id: projectId,
-      },
-      update: {
-        lastVisitedAt,
-        name,
-      },
-    });
-
-    return true;
-  } catch (error) {
-    logger?.error(
-      `Failed to update lastVisited project=${projectId}: ${error}`,
-      { uid: context?.jwt?.sub },
-    );
-    throw error;
-  }
-};
-
 export const updateOperationMutations = {
   updateUserRole,
   updateUserDetail,
   updatePhoneNumber,
-  updateProjectLastVisited,
 };

@@ -5168,11 +5168,6 @@ const typeDefs = gql`
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
     updatePhoneNumber(phoneNumber: String!): Boolean!
-    updateProjectLastVisited(
-      projectId: ID!
-      lastVisitedAt: DateTime!
-      name: String!
-    ): Boolean
     createBacklogItemWithUID(
       input: BacklogItemCreateInput!
     ): CreateBacklogItemsMutationResponse!
