@@ -577,6 +577,7 @@ CALL apoc.periodic.iterate(
   MATCH (org)-[:HAS_PROJECTS]->(p)
   MATCH (org)-[:HAS_COUNTER]->(orgCounter:Counter)
   MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(type:BacklogItemType)
+  WHERE toLower(coalesce(type.defaultName, type.name, '')) <> 'expense'
   MATCH (bi)-[:HAS_RISK_LEVEL]->(level:RiskLevel)
   MATCH (org)-[:HAS_STATUS]->(status:Status)
   WHERE toLower(coalesce(status.defaultName, status.name, '')) CONTAINS 'not started'
