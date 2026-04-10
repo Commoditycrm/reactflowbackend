@@ -1225,3 +1225,81 @@ CALL apoc.periodic.iterate(
 YIELD batches, total, failedBatches, failedOperations, errorMessages
 RETURN {batches:batches, total:total, failedBatches:failedBatches, failedOperations:failedOperations, errorMessages:errorMessages} AS result
 `;
+
+export const IMPORT_CONTACTS_QUERY = `
+CALL apoc.periodic.iterate(
+  "
+  UNWIND $rows AS row
+  RETURN row
+  ",
+  "
+  // 1) Find organization
+  MATCH (org:Organization {id: row.organizationId})
+
+  // 2) Create or update contact
+  MERGE (c:Contact {
+    organizationRowKey: row.organizationId + '|' + coalesce(row.email, row.name)
+  })
+  ON CREATE SET
+    c.id = randomUUID(),
+    c.createdAt = datetime(),
+    c.lastModified = datetime()
+  SET
+    c.resourceType = row.resourceType,
+    c.firstName = row.firstName,
+    c.lastName = coalesce(row.lastName, ''),
+    c.middleName = row.middleName,
+    c.name = coalesce(row.name, trim(coalesce(row.firstName,'') + ' ' + coalesce(row.lastName,''))),
+    c.email = row.email,
+    c.phone = row.phone,
+    c.role = row.role,
+    c.linkedin = row.linkedin,
+    c.updatedAt = datetime(),
+    c.lastModified = datetime()
+
+  // 3) Connect organization -> contact
+  MERGE (org)-[:HAS_RESOURCE]->(c)
+
+  // 4) Create/update address only if at least one address field exists
+  FOREACH (_ IN CASE
+    WHEN row.address IS NOT NULL AND (
+      row.address.street IS NOT NULL OR
+      row.address.city IS NOT NULL OR
+      row.address.state IS NOT NULL OR
+      row.address.country IS NOT NULL OR
+      row.address.postalCode IS NOT NULL
+    )
+    THEN [1] ELSE [] END |
+
+    MERGE (a:Address {
+      contactAddressKey:
+        c.id + '|' +
+        coalesce(row.address.street,'') + '|' +
+        coalesce(row.address.city,'') + '|' +
+        coalesce(row.address.state,'') + '|' +
+        coalesce(row.address.country,'') + '|' +
+        coalesce(row.address.postalCode,'')
+    })
+    ON CREATE SET
+      a.id = randomUUID(),
+      a.createdAt = datetime(),
+      a.lastModified = datetime()
+    SET
+      a.street = row.address.street,
+      a.city = row.address.city,
+      a.state = row.address.state,
+      a.country = row.address.country,
+      a.postalCode = row.address.postalCode,
+      a.updatedAt = datetime(),
+      a.lastModified = datetime()
+
+    MERGE (c)-[:HAS_ADDRESS]->(a)
+  )
+  ",
+  {
+    batchSize: 100,
+    parallel: false,
+    params: { rows:$rows }
+  }
+);
+`;

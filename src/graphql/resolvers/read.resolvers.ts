@@ -17,7 +17,7 @@ import { Neo4JConnection } from "../../database/connection";
 import { GeneratedTask } from "../../interfaces/types";
 export const getModelWhereClause = (
   modelName: string,
-  loggedInUser: User
+  loggedInUser: User,
 ): Record<string, any> => {
   const commonOrgWhere = {
     organization: {
@@ -137,7 +137,7 @@ const fetchSoftDeletedItems = async (
   loggedInUser: User,
   { limit, offset }: { limit: number; offset: number },
   context: Record<string, any>,
-  selectionSet: string
+  selectionSet: string,
 ) => {
   const Model = await (await OGMConnection.getInstance()).model(modelName);
   const whereClause = getModelWhereClause(modelName, loggedInUser);
@@ -163,7 +163,7 @@ const fetchSoftDeletedItemsByType = async (
   _source: Record<string, any>,
   { limit, offset }: { limit: number; offset: number },
   _context: Record<string, any>,
-  selectionSet: string
+  selectionSet: string,
 ) => {
   try {
     const loggedInUser = await getLoggedInUser(_context);
@@ -172,7 +172,7 @@ const fetchSoftDeletedItemsByType = async (
       loggedInUser,
       { limit, offset },
       _context,
-      selectionSet
+      selectionSet,
     );
     logger?.info(`Reading soft deleted ${modelName} items completed`);
     return deletedItems;
@@ -186,14 +186,14 @@ const fetchSoftDeletedItemsByType = async (
 const softDeletedFolders = async (
   _source: Record<string, any>,
   { limit, offset }: { limit: number; offset: number },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "Folder",
     _source,
     { limit, offset },
     _context,
-    `{ id name deletedAt createdBy { id name email role }}`
+    `{ id name deletedAt createdBy { id name email role }}`,
   );
 };
 
@@ -201,14 +201,14 @@ const softDeletedFolders = async (
 const softDeletedFiles = async (
   _source: Record<string, any>,
   { limit, offset }: { limit: number; offset: number },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "File",
     _source,
     { limit, offset },
     _context,
-    `{ id name deletedAt createdBy { id name email role } }`
+    `{ id name deletedAt createdBy { id name email role } }`,
   );
 };
 
@@ -216,14 +216,14 @@ const softDeletedFiles = async (
 const softDeletedBacklogItems = async (
   _source: Record<string, any>,
   { limit, offset }: { limit: number; offset: number },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "BacklogItem",
     _source,
     { limit, offset },
     _context,
-    `{ id label deletedAt createdBy { id name email role } type { id name } }`
+    `{ id label deletedAt createdBy { id name email role } type { id name } }`,
   );
 };
 
@@ -235,14 +235,14 @@ const softDeletedFlowNodes = async (
     offset,
     where,
   }: { limit: number; offset: number; where: SprintWhere },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "FlowNode",
     _source,
     { limit, offset },
     _context,
-    `{ id name  deletedAt createdBy { id name email role }}`
+    `{ id name  deletedAt createdBy { id name email role }}`,
   );
 };
 
@@ -253,14 +253,14 @@ const softDeleteSprints = async (
     offset,
     where,
   }: { limit: number; offset: number; where: SprintWhere },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "Sprint",
     _source,
     { limit, offset },
     _context,
-    `{ id name deletedAt createdBy { id name email role }}`
+    `{ id name deletedAt createdBy { id name email role }}`,
   );
 };
 
@@ -271,21 +271,21 @@ const softDeleteProjects = async (
     offset,
     where,
   }: { limit: number; offset: number; where: SprintWhere },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   return fetchSoftDeletedItemsByType(
     "Project",
     _source,
     { limit, offset },
     _context,
-    `{ id name deletedAt createdBy { id name email role }}`
+    `{ id name deletedAt createdBy { id name email role }}`,
   );
 };
 
 const countSoftDeletedItems = async (
   modelName: string,
   loggedInUser: User,
-  context: Record<string, any>
+  context: Record<string, any>,
 ): Promise<number> => {
   const Model = await (await OGMConnection.getInstance()).model(modelName);
   const whereClause = getModelWhereClause(modelName, loggedInUser);
@@ -306,7 +306,7 @@ const countSoftDeletedItems = async (
 const countAllSoftDeletedItems = async (
   _source: Record<string, any>,
   _args: Record<string, any>,
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   try {
     const loggedInUser = await getLoggedInUser(_context);
@@ -324,7 +324,7 @@ const countAllSoftDeletedItems = async (
       models.map(async (modelName) => ({
         type: modelName,
         count: await countSoftDeletedItems(modelName, loggedInUser, _context),
-      }))
+      })),
     );
     return counts;
   } catch (error) {
@@ -336,7 +336,7 @@ const countAllSoftDeletedItems = async (
 const generateTask = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ): Promise<GeneratedTask[]> => {
   const openai = new OpenAI({ apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY") });
   const uid = _context?.jwt?.uid;
@@ -344,7 +344,6 @@ const generateTask = async (
   const session = (await Neo4JConnection.getInstance()).driver.session();
 
   try {
-
     const result = await session.executeRead((tx) =>
       tx.run(
         `
@@ -352,8 +351,8 @@ const generateTask = async (
         MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType)
         RETURN t { .* } AS type
         `,
-        { uid }
-      )
+        { uid },
+      ),
     );
 
     if (result.records.length === 0) {
@@ -362,7 +361,9 @@ const generateTask = async (
       });
     }
 
-    const orgTypes = result.records.map((r) => r.get("type")) as BacklogItemType[];
+    const orgTypes = result.records.map((r) =>
+      r.get("type"),
+    ) as BacklogItemType[];
 
     const promptLower = prompt.toLowerCase();
 
@@ -419,7 +420,8 @@ const generateTask = async (
           {
             id: "1",
             content: "No tasks could be generated",
-            description: "Please refine the prompt to generate meaningful tasks.",
+            description:
+              "Please refine the prompt to generate meaningful tasks.",
             type: matchedTypeData,
           },
         ];
@@ -434,7 +436,7 @@ const generateTask = async (
 const getFirebaseStorage = async (
   _source: Record<string, any>,
   { orgId }: { orgId: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const app = getFirebaseAdminAuth();
   const userRole = _context?.jwt?.roles;
