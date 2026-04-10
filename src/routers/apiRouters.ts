@@ -8,6 +8,8 @@ import ragRouter from "./ragRouter";
 
 import multer from "multer";
 import { readEpicSheet } from "../controllers/xlsheet/readSheet";
+import { readContactSheetAsJson } from "../controllers/xlsheet/readContact";
+import { readContactSheet } from "../controllers/xlsheet/readContactSheet";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -28,6 +30,8 @@ const apiRouter = async (
   router.use("/notification", notificationRouter);
   router.use("/rag", ragRouter);
   router.post("/sheet/read", upload.single("file"), readEpicSheet);
+  router.post("/sheet/readContact", upload.single("file"), readContactSheet);
+
 
   return router;
 };
