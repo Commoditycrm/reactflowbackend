@@ -42,8 +42,34 @@ const createBacklogItemWithUID = async (
     await OGMConnection.getInstance()
   ).model("BacklogItem");
 
+  const parentId = input?.parent?.BacklogItem?.connect?.where?.node?.id
+
+  let parentLevel = 0;
+
   try {
     const tx = session.beginTransaction();
+
+    if (parentId) {
+      const levelResult = await tx.run(
+        `
+        MATCH (parent:BacklogItem {id: $parentId})
+        OPTIONAL MATCH p = (:BacklogItem)-[:HAS_CHILD_ITEM*]->(parent)
+        RETURN COALESCE(max(length(p)), 0) AS parentLevel
+        `,
+        { parentId: input?.parent?.BacklogItem?.connect?.where?.node?.id }
+      );
+      parentLevel = Number(
+        levelResult.records[0]?.get("parentLevel") ?? 0
+      );
+    }
+    if (parentLevel >= 4) {
+      await tx.rollback();
+      throw new GraphQLError("Cannot create child item. Maximum hierarchy depth of 5 exceeded.", {
+        extensions: {
+          code: ApolloServerErrorCode.GRAPHQL_VALIDATION_FAILED,
+        },
+      });
+    }
 
     const orgCounterResult = await tx.run(
       `
@@ -117,6 +143,7 @@ const createBacklogItemWithUID = async (
           }
         }
       }`,
+
     });
 
     // Commit the transaction
@@ -441,7 +468,7 @@ const finishInviteSignupInOrgPage = async (
   }
 };
 
-export const createSheetItems = async (
+const createSheetItems = async (
   _source: Record<string, any>,
   args: { projectId: string; rows: Record<string, any>[]; batchSize?: number },
   context: Record<string, any>,
