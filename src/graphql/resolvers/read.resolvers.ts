@@ -1,13 +1,11 @@
 import logger from "../../logger";
 import { OGMConnection } from "../init/ogm.init";
-import OpenAI from "openai";
 import { v4 as uuidv4 } from "uuid";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import {
   BacklogItemType,
-  OpenAiResponse,
   SprintWhere,
   User,
   UserRole,
@@ -15,6 +13,14 @@ import {
 import { EnvLoader } from "../../util/EnvLoader";
 import { Neo4JConnection } from "../../database/connection";
 import { GeneratedTask } from "../../interfaces/types";
+import Anthropic from "@anthropic-ai/sdk";
+
+
+const anthropic = new Anthropic({
+  apiKey: EnvLoader.getOrThrow("ANTHROPIC_API_KEY"),
+});
+
+
 export const getModelWhereClause = (
   modelName: string,
   loggedInUser: User,
@@ -333,23 +339,33 @@ const countAllSoftDeletedItems = async (
   }
 };
 
-const generateTask = async (
+export const generateTask = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
   _context: Record<string, any>,
 ): Promise<GeneratedTask[]> => {
-  const openai = new OpenAI({ apiKey: EnvLoader.getOrThrow("OPENAI_API_KEY") });
   const uid = _context?.jwt?.uid;
 
-  const session = (await Neo4JConnection.getInstance()).driver.session();
+  if (!uid) {
+    throw new GraphQLError("UNAUTHORIZED", {
+      extensions: { code: "UNAUTHORIZED" },
+    });
+  }
+
+  const neo4j = await Neo4JConnection.getInstance();
+  const session = neo4j.driver.session();
 
   try {
     const result = await session.executeRead((tx) =>
       tx.run(
         `
-        MATCH (u:User {externalId:$uid})-[:OWNS|MEMBER_OF]->(org:Organization)
+        MATCH (u:User {externalId: $uid})-[:OWNS|MEMBER_OF]->(org:Organization)
         MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType)
-        RETURN t { .* } AS type
+        RETURN {
+          id: t.id,
+          name: t.name,
+          defaultName: t.defaultName
+        } AS type
         `,
         { uid },
       ),
@@ -357,77 +373,133 @@ const generateTask = async (
 
     if (result.records.length === 0) {
       throw new GraphQLError("UNAUTHORIZED", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+        extensions: { code: "UNAUTHORIZED" },
       });
     }
 
-    const orgTypes = result.records.map((r) =>
-      r.get("type"),
-    ) as BacklogItemType[];
+    const orgTypes = result.records.map((record) => {
+      const type = record.get("type");
+      return {
+        id: type.id,
+        name: type.name,
+        defaultName: type.defaultName,
+      } as BacklogItemType;
+    });
 
-    const promptLower = prompt.toLowerCase();
+    const normalizedPrompt = (prompt || "").toLowerCase().trim();
 
     const matchedType =
       orgTypes
-        .map((t) => ({
-          ...t,
-          _matchName: (t.defaultName ?? t.name ?? "").trim(),
+        .map((type) => ({
+          ...type,
+          _matchName: (type.defaultName ?? type.name ?? "").trim(),
         }))
-        .filter((t) => t._matchName.length > 0)
-        .sort((a, b) => b._matchName.length - a._matchName.length) // prefer longer matches
-        .find((t) => promptLower.includes(t._matchName.toLowerCase())) ?? null;
+        .filter((type) => type._matchName.length > 0)
+        .sort((a, b) => b._matchName.length - a._matchName.length)
+        .find((type) =>
+          normalizedPrompt.includes(type._matchName.toLowerCase()),
+        ) ?? null;
 
-    const matchedTypeData: BacklogItemType | null = matchedType
-      ? (() => {
-          const { _matchName, ...rest } = matchedType;
-          return rest;
-        })()
+    const matchedTypeData = matchedType
+      ? {
+        id: matchedType.id,
+        name: matchedType.name,
+        defaultName: matchedType.defaultName,
+        createdAt: new Date(),
+        updatedAt: undefined,
+      } as BacklogItemType
       : null;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const safePrompt = (prompt || "").trim().slice(0, 1000);
+    const detectedTypeName =
+      matchedTypeData?.defaultName || matchedTypeData?.name || "General";
+
+    const completion = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 180,
+      temperature: 0.3,
+      system: "Generate concise task lists.",
       messages: [
         {
-          role: "system",
-          content:
-            "You are a helpful assistant. Your goal is to generate a task list based on any user input. Each task must be accompanied by a detailed description (max 300 characters). The output should follow this format: 'Task: <task name> | Description: <description>'. If the input is vague, generate general-purpose tasks with relevant descriptions.",
+          role: "user",
+          content: `
+            Input: ${safePrompt}
+            Detected task type: ${detectedTypeName}
+
+            Rules:
+             - Generate 4 to 6 tasks only
+             - Each task must be actionable
+             - Each description must be under 120 characters
+             - Output valid JSON only
+             - Do not include markdown
+             - Do not include explanation
+             - Use this exact format
+
+            [
+              { "task": "...", "description": "..." }
+            ]
+            `.trim(),
         },
-        { role: "user", content: prompt },
       ],
-      max_tokens: 1000,
     });
 
-    const tasksRaw = completion.choices[0]?.message?.content || "";
+    const textBlock = completion.content.find(
+      (block): block is Anthropic.TextBlock => block.type === "text",
+    );
 
-    const tasks = tasksRaw
-      .split("\n")
-      .map((line) => {
-        const match = line.match(/^Task:\s*(.+?)\s*\|\s*Description:\s*(.+)$/);
-        return match
-          ? {
-              id: uuidv4(),
-              content: match[1]?.trim() ?? "",
-              description: match[2]?.trim() ?? "",
-              type: matchedTypeData, // ✅ full type object
-            }
-          : null;
-      })
-      .filter((t): t is GeneratedTask => t !== null);
+    const rawText = textBlock?.text?.trim() || "";
 
-    return tasks.length > 0
-      ? tasks
-      : [
-          {
-            id: "1",
-            content: "No tasks could be generated",
-            description:
-              "Please refine the prompt to generate meaningful tasks.",
-            type: matchedTypeData,
-          },
-        ];
+    // Extract JSON array safely in case model adds accidental text
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    const jsonString = jsonMatch ? jsonMatch[0] : "[]";
+
+    let parsedTasks: Array<{ task: string; description: string }> = [];
+
+    try {
+      const parsed = JSON.parse(jsonString);
+
+      if (Array.isArray(parsed)) {
+        parsedTasks = parsed;
+      }
+    } catch (parseError) {
+      logger?.error("Failed to parse Anthropic JSON response", parseError);
+    }
+
+    const tasks: GeneratedTask[] = parsedTasks
+      .filter(
+        (item) =>
+          item &&
+          typeof item.task === "string" &&
+          typeof item.description === "string" &&
+          item.task.trim().length > 0 &&
+          item.description.trim().length > 0,
+      )
+      .slice(0, 6)
+      .map((item) => ({
+        id: uuidv4(),
+        content: item.task.trim(),
+        description: item.description.trim().slice(0, 120),
+        type: matchedTypeData,
+      }));
+
+    if (tasks.length > 0) {
+      return tasks;
+    }
+
+    return [
+      {
+        id: uuidv4(),
+        content: "No tasks could be generated",
+        description: "Please refine the prompt to generate meaningful tasks.",
+        type: matchedTypeData,
+      },
+    ];
   } catch (error: any) {
-    logger?.error(error);
-    throw new Error("Failed to fetch response from OpenAI.");
+    logger?.error("generateTask error", error);
+
+    throw new GraphQLError("Failed to fetch response from Anthropic.", {
+      extensions: { code: "INTERNAL_SERVER_ERROR" },
+    });
   } finally {
     await session.close();
   }

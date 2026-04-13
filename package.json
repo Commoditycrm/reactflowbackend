@@ -6,6 +6,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "@apollo/server": "^4.12.2",
     "@neo4j/graphql": "^5.12.8",
     "@neo4j/graphql-ogm": "^5.11.4",
