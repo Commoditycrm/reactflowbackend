@@ -1018,7 +1018,6 @@ const typeDefs = gql`
   }
 
   enum ResourceType {
-    HUMAN_RESOURCES
     CONTACTS
     ASSETS
     ACCOUNTS
@@ -1046,97 +1045,97 @@ const typeDefs = gql`
     street: String
   }
 
-  type Human implements Resource & Timestamped
-    @authorization(
-      validate: [
-        {
-          when: [AFTER]
-          operations: [CREATE, UPDATE, DELETE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: {
-                      externalId: "$jwt.sub"
-                      role: "ADMIN"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        # {
-        #   when: [BEFORE]
-        #   operations: [READ]
-        #   where: {
-        #     node: {
-        #       OR: [
-        #         {
-        #           projects_SINGLE: {
-        #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
-        #           }
-        #         }
-        #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
-        #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
-        #       ]
-        #     }
-        #   }
-        # }
-      ]
-    ) {
-    id: ID! @id
-    name: String!
-      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
-      @settable(onCreate: false, onUpdate: false)
-    resourceType: ResourceType!
-    firstName: String!
-    lastName: String!
-    middleName: String
-    email: String
-    phone: String
-    role: String
-    organization: Organization!
-      @relationship(
-        type: "HAS_RESOURCE"
-        direction: IN
-        nestedOperations: [CONNECT]
-        aggregate: false
-      )
-    address: Address
-      @relationship(
-        type: "HAS_ADDRESS"
-        direction: OUT
-        nestedOperations: [CREATE, UPDATE]
-        aggregate: false
-      )
-    attachedFiles: [ExternalFile!]!
-      @relationship(
-        type: "HAS_ATTACHED_FILE"
-        direction: OUT
-        aggregate: false
-        nestedOperations: []
-      )
-    projects: [Project!]!
-      @relationship(
-        type: "HAS_RESOURCE"
-        direction: IN
-        nestedOperations: []
-        aggregate: false
-      )
-    notes: [Comment!]!
-      @relationship(
-        type: "HAS_COMMENT"
-        direction: OUT
-        nestedOperations: [CREATE]
-        aggregate: false
-      )
-    lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
-    createdAt: DateTime! @timestamp(operations: [CREATE])
-    updatedAt: DateTime @timestamp(operations: [UPDATE])
-  }
+  # type Human implements Resource & Timestamped
+  #   @authorization(
+  #     validate: [
+  #       {
+  #         when: [AFTER]
+  #         operations: [CREATE, UPDATE, DELETE]
+  #         where: {
+  #           node: {
+  #             OR: [
+  #               { organization: { createdBy: { externalId: "$jwt.sub" } } }
+  #               {
+  #                 organization: {
+  #                   memberUsers_SINGLE: {
+  #                     externalId: "$jwt.sub"
+  #                     role: "ADMIN"
+  #                   }
+  #                 }
+  #               }
+  #             ]
+  #           }
+  #         }
+  #       }
+  #       # {
+  #       #   when: [BEFORE]
+  #       #   operations: [READ]
+  #       #   where: {
+  #       #     node: {
+  #       #       OR: [
+  #       #         {
+  #       #           projects_SINGLE: {
+  #       #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+  #       #           }
+  #       #         }
+  #       #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
+  #       #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
+  #       #       ]
+  #       #     }
+  #       #   }
+  #       # }
+  #     ]
+  #   ) {
+  #   id: ID! @id
+  #   name: String!
+  #     @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
+  #     @settable(onCreate: false, onUpdate: false)
+  #   resourceType: ResourceType!
+  #   firstName: String!
+  #   lastName: String!
+  #   middleName: String
+  #   email: String
+  #   phone: String
+  #   role: String
+  #   organization: Organization!
+  #     @relationship(
+  #       type: "HAS_RESOURCE"
+  #       direction: IN
+  #       nestedOperations: [CONNECT]
+  #       aggregate: false
+  #     )
+  #   address: Address
+  #     @relationship(
+  #       type: "HAS_ADDRESS"
+  #       direction: OUT
+  #       nestedOperations: [CREATE, UPDATE]
+  #       aggregate: false
+  #     )
+  #   attachedFiles: [ExternalFile!]!
+  #     @relationship(
+  #       type: "HAS_ATTACHED_FILE"
+  #       direction: OUT
+  #       aggregate: false
+  #       nestedOperations: []
+  #     )
+  #   projects: [Project!]!
+  #     @relationship(
+  #       type: "HAS_RESOURCE"
+  #       direction: IN
+  #       nestedOperations: []
+  #       aggregate: false
+  #     )
+  #   notes: [Comment!]!
+  #     @relationship(
+  #       type: "HAS_COMMENT"
+  #       direction: OUT
+  #       nestedOperations: [CREATE]
+  #       aggregate: false
+  #     )
+  #   lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
+  #   createdAt: DateTime! @timestamp(operations: [CREATE])
+  #   updatedAt: DateTime @timestamp(operations: [UPDATE])
+  # }
 
   type Contact implements Resource & Timestamped
     @authorization(
@@ -4589,8 +4588,7 @@ const typeDefs = gql`
 
   union CommentParent =
       FlowNode
-    | BacklogItem
-    | Human
+    | BacklogItem # | Human
     | Contact
     | Asset
     | Account
@@ -4634,12 +4632,23 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
-    reactions: [Reaction!]!
-      @relationship(
-        type: "REACTED_TO"
-        direction: IN
-        aggregate: false
-        nestedOperations: []
+    reactionsSummary: [ReactionSummary!]!
+      @cypher(
+        statement: """
+        MATCH (this)<-[:REACTED_TO]-(r:Reaction)-[:REACTED_BY]->(u:User)
+        WITH r.emoji AS emoji,
+             collect({
+               id: u.externalId,
+               name: u.name
+             }) AS users
+        RETURN {
+          emoji: emoji,
+          count: size(users),
+          users: users
+        } AS result
+        ORDER BY result.count DESC, result.emoji ASC
+        """
+        columnName: "result"
       )
     triggerLastModified: Boolean
       @populatedBy(
@@ -4654,9 +4663,26 @@ const typeDefs = gql`
       @settable(onCreate: false, onUpdate: true)
   }
 
-  type Reaction implements Timestamped {
+  type ReactionUser
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID!
+    name: String
+  }
+
+  type ReactionSummary
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    emoji: String!
+    count: Int!
+    users: [ReactionUser!]!
+  }
+
+  type Reaction implements Timestamped
+    @query(read: false, aggregate: false)
+    @mutation(operations: [DELETE]) {
     id: ID! @id
-    type: String!
+    emoji: String!
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
     user: User!
@@ -4859,7 +4885,7 @@ const typeDefs = gql`
       )
   }
 
-  union ExternalFileParent = BacklogItem | Human | Contact | Asset | Account
+  union ExternalFileParent = BacklogItem | Contact | Asset | Account
 
   type ExternalFile implements TimestampedCreatable & Timestamped
     @mutation(operations: [CREATE, DELETE])
@@ -5353,6 +5379,39 @@ const typeDefs = gql`
         )
 
         RETURN EXISTS { MATCH (u)-[:FAVORITE_PROJECT]->(p) } AS result
+        """
+        columnName: "result"
+      )
+    toggleReaction(commentId: ID!, emoji: String!): Boolean!
+      @cypher(
+        statement: """
+        MATCH (u:User {externalId: $jwt.sub})
+        MATCH (c:Comment {id: $commentId})
+
+        // correct match (same reaction node)
+        OPTIONAL MATCH (r:Reaction)-[:REACTED_BY]->(u)
+                                  -[:REACTED_TO]->(c)
+
+        WITH u, c, r,
+             CASE WHEN r IS NOT NULL AND r.emoji = $emoji THEN true ELSE false END AS sameEmoji
+
+        // delete old reaction ALWAYS if exists
+        FOREACH (_ IN CASE WHEN r IS NOT NULL THEN [1] ELSE [] END |
+          DETACH DELETE r
+        )
+
+        // create only if different emoji
+        FOREACH (_ IN CASE WHEN sameEmoji = false THEN [1] ELSE [] END |
+          CREATE (newR:Reaction {
+            id: randomUUID(),
+            emoji: $emoji,
+            createdAt: datetime()
+          })
+          CREATE (newR)-[:REACTED_BY]->(u)
+          CREATE (newR)-[:REACTED_TO]->(c)
+        )
+
+        RETURN true AS result
         """
         columnName: "result"
       )
