@@ -37,7 +37,7 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
     { email, sub: email, role: "invitee", orgId },
     jwtSecret,
     {
-      expiresIn: "1d",
+      expiresIn: "7d",
     }
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
