@@ -4638,7 +4638,7 @@ const typeDefs = gql`
         MATCH (this)<-[:REACTED_TO]-(r:Reaction)-[:REACTED_BY]->(u:User)
         WITH r.emoji AS emoji,
              collect({
-               id: u.externalId,
+               id: u.id,
                name: u.name
              }) AS users
         RETURN {
