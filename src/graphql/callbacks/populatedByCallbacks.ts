@@ -322,17 +322,6 @@ const uniqueEventExtractor = async (
   }
 };
 
-const resourceNameSetter = (
-  _parent: Record<string, any>,
-  _args: Record<string, any>,
-  _context: Record<string, any>,
-) => {
-  const { firstName, lastName, middleName } = _parent;
-  return middleName
-    ? `${firstName} ${middleName} ${lastName}`
-    : `${firstName} ${lastName}`;
-};
-
 const fileLockSetter = (
   _parent: Record<string, any>,
   _args: Record<string, any>,
@@ -359,6 +348,5 @@ export const populatedCallBacks = {
   phoneNumberExtractor,
   messageCounterSetter,
   uniqueEventExtractor,
-  resourceNameSetter,
   fileLockSetter,
 };

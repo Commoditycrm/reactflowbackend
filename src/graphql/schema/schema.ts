@@ -1045,98 +1045,6 @@ const typeDefs = gql`
     street: String
   }
 
-  # type Human implements Resource & Timestamped
-  #   @authorization(
-  #     validate: [
-  #       {
-  #         when: [AFTER]
-  #         operations: [CREATE, UPDATE, DELETE]
-  #         where: {
-  #           node: {
-  #             OR: [
-  #               { organization: { createdBy: { externalId: "$jwt.sub" } } }
-  #               {
-  #                 organization: {
-  #                   memberUsers_SINGLE: {
-  #                     externalId: "$jwt.sub"
-  #                     role: "ADMIN"
-  #                   }
-  #                 }
-  #               }
-  #             ]
-  #           }
-  #         }
-  #       }
-  #       # {
-  #       #   when: [BEFORE]
-  #       #   operations: [READ]
-  #       #   where: {
-  #       #     node: {
-  #       #       OR: [
-  #       #         {
-  #       #           projects_SINGLE: {
-  #       #             assignedUsers_SINGLE: { externalId: "$jwt.sub" }
-  #       #           }
-  #       #         }
-  #       #         { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
-  #       #         { organization: { createdBy: { externalId: "$jwt.sub" } } }
-  #       #       ]
-  #       #     }
-  #       #   }
-  #       # }
-  #     ]
-  #   ) {
-  #   id: ID! @id
-  #   name: String!
-  #     @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
-  #     @settable(onCreate: false, onUpdate: false)
-  #   resourceType: ResourceType!
-  #   firstName: String!
-  #   lastName: String!
-  #   middleName: String
-  #   email: String
-  #   phone: String
-  #   role: String
-  #   organization: Organization!
-  #     @relationship(
-  #       type: "HAS_RESOURCE"
-  #       direction: IN
-  #       nestedOperations: [CONNECT]
-  #       aggregate: false
-  #     )
-  #   address: Address
-  #     @relationship(
-  #       type: "HAS_ADDRESS"
-  #       direction: OUT
-  #       nestedOperations: [CREATE, UPDATE]
-  #       aggregate: false
-  #     )
-  #   attachedFiles: [ExternalFile!]!
-  #     @relationship(
-  #       type: "HAS_ATTACHED_FILE"
-  #       direction: OUT
-  #       aggregate: false
-  #       nestedOperations: []
-  #     )
-  #   projects: [Project!]!
-  #     @relationship(
-  #       type: "HAS_RESOURCE"
-  #       direction: IN
-  #       nestedOperations: []
-  #       aggregate: false
-  #     )
-  #   notes: [Comment!]!
-  #     @relationship(
-  #       type: "HAS_COMMENT"
-  #       direction: OUT
-  #       nestedOperations: [CREATE]
-  #       aggregate: false
-  #     )
-  #   lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
-  #   createdAt: DateTime! @timestamp(operations: [CREATE])
-  #   updatedAt: DateTime @timestamp(operations: [UPDATE])
-  # }
-
   type Contact implements Resource & Timestamped
     @authorization(
       validate: [
@@ -1180,8 +1088,11 @@ const typeDefs = gql`
     ) {
     id: ID! @id
     name: String!
-      @populatedBy(operations: [CREATE, UPDATE], callback: "resourceNameSetter")
-      @settable(onCreate: false, onUpdate: false)
+      @cypher(
+        statement: "RETURN coalesce(this.firstName, '') + ' ' + coalesce(this.middleName, '') + ' ' + coalesce(this.lastName, '') AS name"
+        columnName: "name"
+      )
+
     resourceType: ResourceType!
     firstName: String!
     lastName: String!
@@ -2122,6 +2033,7 @@ const typeDefs = gql`
         """
         columnName: "totalBacklogItem"
       )
+    # consumedHours is calculated based on the work logs linked to backlog items of the project, not directly from the work force hours, as work force hours are more of an allocation rather than actual consumption.
     workedHours: Int!
       @cypher(
         statement: """
