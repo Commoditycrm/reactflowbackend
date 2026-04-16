@@ -5385,23 +5385,19 @@ const typeDefs = gql`
     toggleReaction(commentId: ID!, emoji: String!): Boolean!
       @cypher(
         statement: """
-        MATCH (u:User {externalId: $jwt.sub})
+        MATCH (u:User {externalId:$jwt.sub})
         MATCH (c:Comment {id: $commentId})
 
-        // correct match (same reaction node)
-        OPTIONAL MATCH (r:Reaction)-[:REACTED_BY]->(u)
-                                  -[:REACTED_TO]->(c)
+        OPTIONAL MATCH (u)<-[:REACTED_BY]-(r:Reaction)-[:REACTED_TO]->(c)
 
         WITH u, c, r,
              CASE WHEN r IS NOT NULL AND r.emoji = $emoji THEN true ELSE false END AS sameEmoji
 
-        // delete old reaction ALWAYS if exists
         FOREACH (_ IN CASE WHEN r IS NOT NULL THEN [1] ELSE [] END |
           DETACH DELETE r
         )
 
-        // create only if different emoji
-        FOREACH (_ IN CASE WHEN sameEmoji = false THEN [1] ELSE [] END |
+        FOREACH (_ IN CASE WHEN r IS NULL OR sameEmoji = false THEN [1] ELSE [] END |
           CREATE (newR:Reaction {
             id: randomUUID(),
             emoji: $emoji,
