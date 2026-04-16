@@ -2122,6 +2122,44 @@ const typeDefs = gql`
         """
         columnName: "totalBacklogItem"
       )
+    workedHours: Int!
+      @cypher(
+        statement: """
+         WITH this AS p
+         CALL(p) {
+         WITH p
+         MATCH(p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+         WHERE file.deletedAT IS NULL AND n.deletedAt IS NULL
+         OPTIONAL MATCH path=(n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+         WHERE bi.deletedAt IS NULL
+          AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+         RETURN DISTINCT bi
+
+         UNION
+
+         WITH p
+         MATCH folderPath = (p)-[:HAS_CHILD_FOLDER]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+         WHERE file.deletedAt IS NULL
+          AND ALL(x IN nodes(folderPath) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+         OPTIONAL MATCH path = (file)-[:HAS_FLOW_NODE]->(n:FlowNode)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+         WHERE bi.deletedAt IS NULL
+          AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+
+          UNION
+          WITH p
+          MATCH path = (p)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
+          WHERE bi.deletedAt IS NULL
+          AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
+          RETURN DISTINCT bi
+        }
+        WITH DISTINCT bi
+        MATCH (bi)-[:HAS_WORK_LOG]->(w:WorkLogs)
+        RETURN coalesce(sum(w.hoursWorked), 0) AS workedHours
+        """
+        columnName: "workedHours"
+      )
+
     isFavorite: Boolean!
       @cypher(
         statement: """
