@@ -4680,7 +4680,7 @@ const typeDefs = gql`
 
   type Reaction implements Timestamped
     @query(read: false, aggregate: false)
-    @mutation(operations: [DELETE]) {
+    @mutation(operations: []) {
     id: ID! @id
     emoji: String!
     createdAt: DateTime! @timestamp(operations: [CREATE])
