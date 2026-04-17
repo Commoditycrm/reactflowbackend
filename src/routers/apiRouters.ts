@@ -8,7 +8,6 @@ import ragRouter from "./ragRouter";
 
 import multer from "multer";
 import { readEpicSheet } from "../controllers/xlsheet/readSheet";
-import { readContactSheetAsJson } from "../controllers/xlsheet/readContact";
 import { readContactSheet } from "../controllers/xlsheet/readContactSheet";
 
 const upload = multer({ storage: multer.memoryStorage() });

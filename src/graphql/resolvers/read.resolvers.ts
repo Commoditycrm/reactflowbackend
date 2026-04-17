@@ -4,22 +4,15 @@ import { v4 as uuidv4 } from "uuid";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { GraphQLError } from "graphql";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import {
-  BacklogItemType,
-  SprintWhere,
-  User,
-  UserRole,
-} from "../../interfaces";
+import { BacklogItemType, SprintWhere, User, UserRole } from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
 import { Neo4JConnection } from "../../database/connection";
 import { GeneratedTask } from "../../interfaces/types";
 import Anthropic from "@anthropic-ai/sdk";
 
-
 const anthropic = new Anthropic({
   apiKey: EnvLoader.getOrThrow("ANTHROPIC_API_KEY"),
 });
-
 
 export const getModelWhereClause = (
   modelName: string,
@@ -401,13 +394,13 @@ export const generateTask = async (
         ) ?? null;
 
     const matchedTypeData = matchedType
-      ? {
-        id: matchedType.id,
-        name: matchedType.name,
-        defaultName: matchedType.defaultName,
-        createdAt: new Date(),
-        updatedAt: undefined,
-      } as BacklogItemType
+      ? ({
+          id: matchedType.id,
+          name: matchedType.name,
+          defaultName: matchedType.defaultName,
+          createdAt: new Date(),
+          updatedAt: undefined,
+        } as BacklogItemType)
       : null;
 
     const safePrompt = (prompt || "").trim().slice(0, 1000);
@@ -497,9 +490,25 @@ export const generateTask = async (
   } catch (error: any) {
     logger?.error("generateTask error", error);
 
-    throw new GraphQLError("Failed to fetch response from Anthropic.", {
-      extensions: { code: "INTERNAL_SERVER_ERROR" },
-    });
+    const anthropicMessage =
+      error?.error?.message ||
+      error?.message ||
+      "Failed to fetch response from Anthropic.";
+
+    const isBillingIssue =
+      anthropicMessage.toLowerCase().includes("credit balance is too low") ||
+      anthropicMessage.toLowerCase().includes("billing");
+
+    throw new GraphQLError(
+      isBillingIssue
+        ? "Anthropic API credits are exhausted. Please add credits in Plans & Billing."
+        : anthropicMessage,
+      {
+        extensions: {
+          code: isBillingIssue ? "PAYMENT_REQUIRED" : "INTERNAL_SERVER_ERROR",
+        },
+      },
+    );
   } finally {
     await session.close();
   }

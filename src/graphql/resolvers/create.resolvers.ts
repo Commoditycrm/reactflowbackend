@@ -16,6 +16,7 @@ import {
   getUpdateDependentTaskDatesCQL,
   IMPORT_BACKLOGITEMS_ROWS_CONNECT_PARENTS,
   IMPORT_BACKLOGITEMS_ROWS_CREATE,
+  IMPORT_CONTACTS_QUERY,
   LINK_TO_FLOWNODE,
   REMOVE_REFID_EXISTING_NODE,
   UPDATE_INDEPENDENT_TASK_DATE_CQL,
@@ -42,7 +43,7 @@ const createBacklogItemWithUID = async (
     await OGMConnection.getInstance()
   ).model("BacklogItem");
 
-  const parentId = input?.parent?.BacklogItem?.connect?.where?.node?.id
+  const parentId = input?.parent?.BacklogItem?.connect?.where?.node?.id;
 
   let parentLevel = 0;
 
@@ -56,19 +57,20 @@ const createBacklogItemWithUID = async (
         OPTIONAL MATCH p = (:BacklogItem)-[:HAS_CHILD_ITEM*]->(parent)
         RETURN COALESCE(max(length(p)), 0) AS parentLevel
         `,
-        { parentId: input?.parent?.BacklogItem?.connect?.where?.node?.id }
+        { parentId: input?.parent?.BacklogItem?.connect?.where?.node?.id },
       );
-      parentLevel = Number(
-        levelResult.records[0]?.get("parentLevel") ?? 0
-      );
+      parentLevel = Number(levelResult.records[0]?.get("parentLevel") ?? 0);
     }
     if (parentLevel >= 4) {
       await tx.rollback();
-      throw new GraphQLError("Cannot create child item. Maximum hierarchy depth of 5 exceeded.", {
-        extensions: {
-          code: ApolloServerErrorCode.GRAPHQL_VALIDATION_FAILED,
+      throw new GraphQLError(
+        "Cannot create child item. Maximum hierarchy depth of 5 exceeded.",
+        {
+          extensions: {
+            code: ApolloServerErrorCode.GRAPHQL_VALIDATION_FAILED,
+          },
         },
-      });
+      );
     }
 
     const orgCounterResult = await tx.run(
@@ -143,7 +145,6 @@ const createBacklogItemWithUID = async (
           }
         }
       }`,
-
     });
 
     // Commit the transaction
@@ -550,6 +551,46 @@ const createSheetItems = async (
   }
 };
 
+const cloneContacts = async (
+  _source: Record<string, any>,
+  _args: { records: string[] },
+  _context: Record<string, any>,
+) => {
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
+  const uid = _context?.jwt?.uid;
+  if (!uid) {
+    logger.warn("userId not exist skipping contact clone");
+  }
+  try {
+    const orgData = await tx.run(
+      `
+      MATCH(org:Organization)-[:OWNS]->(user:User {externalId: $uid})
+      RETURN org
+    `,
+      {
+        uid,
+      },
+    );
+    if (orgData.records.length === 0) {
+      throw new GraphQLError(`UNAUTHORIZED`, {
+        extensions: {
+          code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+        },
+      });
+    }
+    await tx.run(IMPORT_CONTACTS_QUERY, {
+      rows: _args?.records,
+    });
+    tx.commit();
+    return _args?.records?.length;
+  } catch (error) {
+    await tx.rollback();
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
@@ -557,4 +598,5 @@ export const createOperationMutations = {
   finishInviteSignupInOrgPage,
   cloneCanvas,
   createSheetItems,
+  cloneContacts,
 };
