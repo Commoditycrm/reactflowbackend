@@ -1063,6 +1063,13 @@ const typeDefs = gql`
                     }
                   }
                 }
+                {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "SvwSeTFCZiYY4DrjWQ0e6gYWP8i2"
+                    }
+                  }
+                }
               ]
             }
           }
