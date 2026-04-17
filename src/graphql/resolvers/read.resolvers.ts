@@ -332,7 +332,7 @@ const countAllSoftDeletedItems = async (
   }
 };
 
-export const generateTask = async (
+const generateTask = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
   _context: Record<string, any>,
@@ -344,6 +344,10 @@ export const generateTask = async (
       extensions: { code: "UNAUTHORIZED" },
     });
   }
+
+  const rawPrompt = (prompt || "").trim();
+  const normalizedPrompt = rawPrompt.toLowerCase();
+  const safePrompt = rawPrompt.slice(0, 1000);
 
   const neo4j = await Neo4JConnection.getInstance();
   const session = neo4j.driver.session();
@@ -370,7 +374,7 @@ export const generateTask = async (
       });
     }
 
-    const orgTypes = result.records.map((record) => {
+    const orgTypes: BacklogItemType[] = result.records.map((record) => {
       const type = record.get("type");
       return {
         id: type.id,
@@ -379,18 +383,16 @@ export const generateTask = async (
       } as BacklogItemType;
     });
 
-    const normalizedPrompt = (prompt || "").toLowerCase().trim();
-
     const matchedType =
       orgTypes
         .map((type) => ({
           ...type,
-          _matchName: (type.defaultName ?? type.name ?? "").trim(),
+          matchName: (type.defaultName ?? type.name ?? "").trim(),
         }))
-        .filter((type) => type._matchName.length > 0)
-        .sort((a, b) => b._matchName.length - a._matchName.length)
+        .filter((type) => type.matchName.length > 0)
+        .sort((a, b) => b.matchName.length - a.matchName.length)
         .find((type) =>
-          normalizedPrompt.includes(type._matchName.toLowerCase()),
+          normalizedPrompt.includes(type.matchName.toLowerCase()),
         ) ?? null;
 
     const matchedTypeData = matchedType
@@ -398,43 +400,60 @@ export const generateTask = async (
           id: matchedType.id,
           name: matchedType.name,
           defaultName: matchedType.defaultName,
-          createdAt: new Date(),
-          updatedAt: undefined,
         } as BacklogItemType)
       : null;
 
-    const safePrompt = (prompt || "").trim().slice(0, 1000);
-    const detectedTypeName =
-      matchedTypeData?.defaultName || matchedTypeData?.name || "General";
+    let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
 
-    const completion = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 180,
-      temperature: 0.3,
-      system: "Generate concise task lists.",
-      messages: [
-        {
-          role: "user",
-          content: `
-            Input: ${safePrompt}
-            Detected task type: ${detectedTypeName}
+    try {
+      completion = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 500,
+        temperature: 0.3,
+        system: "Generate concise task lists.",
+        messages: [
+          {
+            role: "user",
+            content: `
+Input: ${safePrompt}
 
-            Rules:
-             - Generate 4 to 6 tasks only
-             - Each task must be actionable
-             - Each description must be under 120 characters
-             - Output valid JSON only
-             - Do not include markdown
-             - Do not include explanation
-             - Use this exact format
+Rules:
+- Generate 4 to 6 tasks only
+- Each task must be actionable
+- Each description must be under 120 characters
+- Output valid JSON only
+- Do not include markdown
+- Do not include explanation
+- Do not include any field except task and description
 
-            [
-              { "task": "...", "description": "..." }
-            ]
+[
+  { "task": "...", "description": "..." }
+]
             `.trim(),
+          },
+        ],
+      });
+    } catch (error: any) {
+      logger?.error("AI error", error);
+
+      const message =
+        error?.error?.message || error?.message || "AI service failed";
+
+      const isBillingIssue =
+        message.toLowerCase().includes("credit balance is too low") ||
+        message.toLowerCase().includes("billing");
+
+      throw new GraphQLError(
+        isBillingIssue
+          ? "Anthropic API credits are exhausted. Please add credits in Plans & Billing."
+          : message,
+        {
+          extensions: {
+            code: isBillingIssue ? "PAYMENT_REQUIRED" : "INTERNAL_SERVER_ERROR",
+          },
         },
-      ],
-    });
+      );
+    }
 
     const textBlock = completion.content.find(
       (block): block is Anthropic.TextBlock => block.type === "text",
@@ -442,26 +461,36 @@ export const generateTask = async (
 
     const rawText = textBlock?.text?.trim() || "";
 
-    // Extract JSON array safely in case model adds accidental text
-    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-    const jsonString = jsonMatch ? jsonMatch[0] : "[]";
-
     let parsedTasks: Array<{ task: string; description: string }> = [];
 
     try {
-      const parsed = JSON.parse(jsonString);
+      const cleaned = rawText
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+      const parsed = JSON.parse(cleaned);
 
       if (Array.isArray(parsed)) {
         parsedTasks = parsed;
       }
     } catch (parseError) {
-      logger?.error("Failed to parse Anthropic JSON response", parseError);
+      logger?.error("Failed to parse AI JSON response", {
+        parseError,
+        rawText,
+      });
     }
 
     const tasks: GeneratedTask[] = parsedTasks
       .filter(
-        (item) =>
-          item &&
+        (
+          item,
+        ): item is {
+          task: string;
+          description: string;
+        } =>
+          !!item &&
           typeof item.task === "string" &&
           typeof item.description === "string" &&
           item.task.trim().length > 0 &&
@@ -487,28 +516,16 @@ export const generateTask = async (
         type: matchedTypeData,
       },
     ];
-  } catch (error: any) {
+  } catch (error) {
     logger?.error("generateTask error", error);
 
-    const anthropicMessage =
-      error?.error?.message ||
-      error?.message ||
-      "Failed to fetch response from Anthropic.";
+    if (error instanceof GraphQLError) {
+      throw error;
+    }
 
-    const isBillingIssue =
-      anthropicMessage.toLowerCase().includes("credit balance is too low") ||
-      anthropicMessage.toLowerCase().includes("billing");
-
-    throw new GraphQLError(
-      isBillingIssue
-        ? "Anthropic API credits are exhausted. Please add credits in Plans & Billing."
-        : anthropicMessage,
-      {
-        extensions: {
-          code: isBillingIssue ? "PAYMENT_REQUIRED" : "INTERNAL_SERVER_ERROR",
-        },
-      },
-    );
+    throw new GraphQLError("Failed to generate tasks.", {
+      extensions: { code: "INTERNAL_SERVER_ERROR" },
+    });
   } finally {
     await session.close();
   }
