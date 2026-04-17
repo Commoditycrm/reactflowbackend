@@ -5368,6 +5368,8 @@ const typeDefs = gql`
         """
         columnName: "result"
       )
+
+      cloneContacts(records:[String!]!):Int!
   }
 
   type Query {
