@@ -159,26 +159,6 @@ export function readContactSheetAsJson({
           ? parsedRow.lastName
           : field === "middleName"
           ? parsedRow.middleName
-          : field === "email"
-          ? parsedRow.email
-          : field === "phone"
-          ? parsedRow.phone
-          : field === "role"
-          ? parsedRow.role
-          : field === "linkedin"
-          ? parsedRow.linkedin
-          : field === "resourceType"
-          ? parsedRow.resourceType
-          : field === "city"
-          ? parsedRow.address?.city
-          : field === "country"
-          ? parsedRow.address?.country
-          : field === "postalCode"
-          ? parsedRow.address?.postalCode
-          : field === "state"
-          ? parsedRow.address?.state
-          : field === "street"
-          ? parsedRow.address?.street
           : null;
 
       if (!value || String(value).trim() === "") {
