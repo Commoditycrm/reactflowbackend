@@ -23,9 +23,8 @@ export type GeneratedTask = {
   id: string;
   content: string;
   description: string;
-  type:BacklogItemType | null
+  type: BacklogItemType | null;
 };
-
 
 export type ImportSheetResult = {
   createdCount: number;
@@ -33,4 +32,54 @@ export type ImportSheetResult = {
   sprintLinksCreated: number;
   skippedCount: number;
   errors: string[];
+};
+
+export type FlowKind =
+  | "start"
+  | "process"
+  | "decision"
+  | "input"
+  | "storage"
+  | "end";
+
+export type ShapeType =
+  | "rectangle"
+  | "round-rectangle"
+  | "arrow-rectangle"
+  | "circle"
+  | "cylinder"
+  | "diamond"
+  | "hexagon"
+  | "parallelogram"
+  | "plus"
+  | "triangle";
+
+export const kindToShape: Record<FlowKind, ShapeType> = {
+  start: "circle",
+  process: "rectangle",
+  decision: "diamond",
+  input: "parallelogram",
+  storage: "cylinder",
+  end: "circle",
+};
+
+export type GeneratedFlowNode = {
+  id: string;
+  label: string;
+  description?: string;
+  kind: FlowKind;
+  shape: ShapeType;
+};
+
+export type GeneratedFlowEdge = {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+};
+
+export type GeneratedFlowchart = {
+  title: string;
+  nodes: GeneratedFlowNode[];
+  edges: GeneratedFlowEdge[];
 };
