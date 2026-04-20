@@ -29,7 +29,7 @@ export class NeoConnection {
     typeDefs: DocumentNode,
     driver: Driver,
     features: Neo4jFeaturesSettings | undefined,
-    resolvers: IResolvers
+    resolvers: IResolvers,
   ) {
     const options: {
       typeDefs: DocumentNode;
@@ -58,9 +58,10 @@ export class NeoConnection {
     return neoSchema;
   }
 
-  static async authorizeUserOnContext(
-    req: Request
-  ): Promise<{ jwt: Record<string, any>; authorization?: { jwt: Record<string, any> } }> {
+  static async authorizeUserOnContext(req: Request): Promise<{
+    jwt: Record<string, any>;
+    authorization?: { jwt: Record<string, any> };
+  }> {
     if (req.headers["x-warmup"] === "true") {
       const warmupJwt = {
         uid: "warmup-user",
@@ -98,14 +99,14 @@ export class NeoConnection {
           "Your account has been deleted or disabled by the owner/company admin.",
           {
             extensions: { code: "ACCOUNT_DELETED" },
-          }
+          },
         );
       }
     }
 
     try {
       const decoded = JSON.parse(
-        Buffer.from(token.split(".")[1] ?? "", "base64").toString()
+        Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
       );
 
       const now = Math.floor(Date.now() / 1000);
