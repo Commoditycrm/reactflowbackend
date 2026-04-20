@@ -31,16 +31,17 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
       message: "Invalid or incomplete request data.",
     });
   }
-
+  const normalizedEmail = email.toLowerCase();
   // Pre-generate token & link
   const token = jwt.sign(
-    { email, sub: email, role: "invitee", orgId },
+    { email: normalizedEmail, sub: normalizedEmail, role: "invitee", orgId },
     jwtSecret,
     {
       expiresIn: "7d",
-    }
+    },
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
+  logger.info("Generated invite token and link", { invitationLink });
   const hashToken = crypto
     .createHash("sha256")
     .update(token + jwtSecret)
