@@ -1379,78 +1379,78 @@ const typeDefs = gql`
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
       validate: [
-        # {
-        #   operations: [READ]
-        #   when: [BEFORE]
-        #   where: {
-        #     OR: [
-        #       {
-        #         node: {
-        #           organization: { createdBy: { externalId: "$jwt.sub" } }
-        #         }
-        #       }
-        #       {
-        #         node: {
-        #           organization: {
-        #             memberUsers_SINGLE: {
-        #               externalId: "$jwt.sub"
-        #               role: "ADMIN"
-        #             }
-        #           }
-        #         }
-        #       }
-        #       { node: { createdBy: { externalId: "$jwt.sub" } } }
-        #       { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
-        #       {
-        #         node: {
-        #           organization: { invites_SINGLE: { email: "$jwt.sub" } }
-        #         }
-        #       }
-        #       { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        #       { node: { isTemplate: true } }
-        #     ]
-        #   }
-        # }
-        # {
-        #   when: [AFTER]
-        #   operations: [CREATE]
-        #   where: {
-        #     OR: [
-        #       {
-        #         AND: [
-        #           { node: { isTemplate: true } }
-        #           { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        #         ]
-        #       }
-        #       {
-        #         AND: [
-        #           { node: { isTemplate: false } }
-        #           {
-        #             OR: [
-        #               {
-        #                 node: {
-        #                   organization: {
-        #                     createdBy: { externalId: "$jwt.sub" }
-        #                   }
-        #                 }
-        #               }
-        #               {
-        #                 node: {
-        #                   organization: {
-        #                     memberUsers_SINGLE: {
-        #                       externalId: "$jwt.sub"
-        #                       role_IN: ["ADMIN", "SUPER_USER"]
-        #                     }
-        #                   }
-        #                 }
-        #               }
-        #             ]
-        #           }
-        #         ]
-        #       }
-        #     ]
-        #   }
-        # }
+        {
+          operations: [READ]
+          when: [BEFORE]
+          where: {
+            OR: [
+              {
+                node: {
+                  organization: { createdBy: { externalId: "$jwt.sub" } }
+                }
+              }
+              {
+                node: {
+                  organization: {
+                    memberUsers_SINGLE: {
+                      externalId: "$jwt.sub"
+                      role: "ADMIN"
+                    }
+                  }
+                }
+              }
+              { node: { createdBy: { externalId: "$jwt.sub" } } }
+              { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
+              {
+                node: {
+                  organization: { invites_SINGLE: { email: "$jwt.sub" } }
+                }
+              }
+              { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+              { node: { isTemplate: true } }
+            ]
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [CREATE]
+          where: {
+            OR: [
+              {
+                AND: [
+                  { node: { isTemplate: true } }
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                ]
+              }
+              {
+                AND: [
+                  { node: { isTemplate: false } }
+                  {
+                    OR: [
+                      {
+                        node: {
+                          organization: {
+                            createdBy: { externalId: "$jwt.sub" }
+                          }
+                        }
+                      }
+                      {
+                        node: {
+                          organization: {
+                            memberUsers_SINGLE: {
+                              externalId: "$jwt.sub"
+                              role_IN: ["ADMIN", "SUPER_USER"]
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
         {
           when: [BEFORE]
           operations: [DELETE, UPDATE]
