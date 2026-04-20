@@ -7,7 +7,14 @@ import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { BacklogItemType, SprintWhere, User, UserRole } from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
 import { Neo4JConnection } from "../../database/connection";
-import { GeneratedTask } from "../../interfaces/types";
+import {
+  FlowKind,
+  GeneratedFlowchart,
+  GeneratedFlowEdge,
+  GeneratedFlowNode,
+  GeneratedTask,
+  ShapeType,
+} from "../../interfaces/types";
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic({
@@ -576,6 +583,217 @@ const getFirebaseStorage = async (
   }
 };
 
+const kindToShape: Record<FlowKind, ShapeType> = {
+  start: "circle",
+  process: "rectangle",
+  decision: "diamond",
+  input: "parallelogram",
+  storage: "cylinder",
+  end: "circle",
+};
+
+const allowedKinds: FlowKind[] = [
+  "start",
+  "process",
+  "decision",
+  "input",
+  "storage",
+  "end",
+];
+
+const normalizeKind = (value: unknown): FlowKind => {
+  if (typeof value !== "string") return "process";
+  return allowedKinds.includes(value as FlowKind)
+    ? (value as FlowKind)
+    : "process";
+};
+
+export const generateFlowchart = async (
+  _source: Record<string, any>,
+  { prompt }: { prompt: string },
+  _context: Record<string, any>,
+): Promise<GeneratedFlowchart> => {
+  const uid = _context?.jwt?.uid;
+
+  if (!uid) {
+    throw new GraphQLError("UNAUTHORIZED", {
+      extensions: { code: "UNAUTHORIZED" },
+    });
+  }
+
+  const rawPrompt = (prompt || "").trim();
+  const safePrompt = rawPrompt.slice(0, 2000);
+
+  if (!safePrompt) {
+    throw new GraphQLError("Prompt is required.", {
+      extensions: { code: "BAD_USER_INPUT" },
+    });
+  }
+
+  let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
+
+  try {
+    completion = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1200,
+      temperature: 0.2,
+      system:
+        "Convert user prompts into concise flowchart JSON. Return valid JSON only.",
+      messages: [
+        {
+          role: "user",
+          content: `
+          Input: ${safePrompt}
+
+          Rules:
+           - Return valid JSON only
+           - Do not include markdown
+           - Do not include explanation
+           - Keep labels short
+           - Generate 3 to 12 nodes
+           - Each node must have: id, label, kind
+           - kind must be one of: start, process, decision, input, storage, end
+           - Each edge must have: source, target
+           - edge label is optional
+           - Keep flow logical and sequential
+
+          Output format:
+          {
+            "title": "string",
+            "nodes": [
+              {
+                "id": "n1",
+                "label": "string",
+                "kind": "start|process|decision|input|storage|end"
+             }
+            ],
+            "edges": [
+              {
+                "source": "n1",
+                "target": "n2",
+                "label": "optional"
+              }
+           ]
+          }
+          `.trim(),
+        },
+      ],
+    });
+  } catch (error: any) {
+    const message =
+      error?.error?.message || error?.message || "AI service failed";
+
+    const isBillingIssue =
+      message.toLowerCase().includes("credit balance is too low") ||
+      message.toLowerCase().includes("billing");
+
+    throw new GraphQLError(
+      isBillingIssue
+        ? "Anthropic API credits are exhausted. Please add credits in Plans & Billing."
+        : message,
+      {
+        extensions: {
+          code: isBillingIssue ? "PAYMENT_REQUIRED" : "INTERNAL_SERVER_ERROR",
+        },
+      },
+    );
+  }
+
+  const textBlock = completion.content.find(
+    (block): block is Anthropic.TextBlock => block.type === "text",
+  );
+
+  const rawText = textBlock?.text?.trim() || "";
+
+  let parsed: any = null;
+
+  try {
+    const cleaned = rawText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new GraphQLError("Failed to parse AI flowchart response.", {
+      extensions: { code: "INTERNAL_SERVER_ERROR" },
+    });
+  }
+
+  const rawNodes = Array.isArray(parsed?.nodes) ? parsed.nodes : [];
+  const rawEdges = Array.isArray(parsed?.edges) ? parsed.edges : [];
+
+  const nodes: GeneratedFlowNode[] = rawNodes
+    .filter(
+      (item: any) =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.label === "string" &&
+        item.id.trim() &&
+        item.label.trim(),
+    )
+    .slice(0, 12)
+    .map((item: any) => {
+      const kind = normalizeKind(item.kind);
+
+      return {
+        id: item.id.trim(),
+        label: item.label.trim().slice(0, 80),
+        description:
+          typeof item.description === "string"
+            ? item.description.trim().slice(0, 160)
+            : "",
+        kind,
+        shape: kindToShape[kind],
+      };
+    });
+
+  const validNodeIds = new Set(nodes.map((node) => node.id));
+
+  const edges: GeneratedFlowEdge[] = rawEdges
+    .filter(
+      (item: any) =>
+        item &&
+        typeof item.source === "string" &&
+        typeof item.target === "string" &&
+        validNodeIds.has(item.source.trim()) &&
+        validNodeIds.has(item.target.trim()),
+    )
+    .map((item: any, index: number) => ({
+      id: `e-${index + 1}`,
+      source: item.source.trim(),
+      target: item.target.trim(),
+      label:
+        typeof item.label === "string" ? item.label.trim().slice(0, 40) : "",
+    }));
+
+  if (nodes.length === 0) {
+    return {
+      title: "Generated Flowchart",
+      nodes: [
+        {
+          id: uuidv4(),
+          label: "Unable to generate flowchart",
+          description: "Please refine the prompt.",
+          kind: "process",
+          shape: "rectangle",
+        },
+      ],
+      edges: [],
+    };
+  }
+
+  return {
+    title:
+      typeof parsed?.title === "string" && parsed.title.trim()
+        ? parsed.title.trim().slice(0, 120)
+        : "Generated Flowchart",
+    nodes,
+    edges,
+  };
+};
+
 export const readOperationQueries = {
   softDeletedFolders,
   softDeletedFiles,
@@ -586,4 +804,5 @@ export const readOperationQueries = {
   generateTask,
   countAllSoftDeletedItems,
   getFirebaseStorage,
+  generateFlowchart,
 };

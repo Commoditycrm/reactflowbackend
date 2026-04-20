@@ -5147,6 +5147,42 @@ const typeDefs = gql`
     errors: [String!]!
   }
 
+  enum FlowKind {
+    start
+    process
+    decision
+    input
+    storage
+    end
+  }
+
+  type GeneratedFlowNode
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID!
+    label: String!
+    description: String
+    kind: FlowKind!
+    shape: String!
+  }
+
+  type GeneratedFlowEdge
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    id: ID!
+    source: String!
+    target: String!
+    label: String
+  }
+
+  type GeneratedFlowchart
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    title: String!
+    nodes: [GeneratedFlowNode!]!
+    edges: [GeneratedFlowEdge!]!
+  }
+
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
@@ -5369,7 +5405,7 @@ const typeDefs = gql`
         columnName: "result"
       )
 
-      cloneContacts(records:[String!]!):Int!
+    cloneContacts(records: [String!]!): Int!
   }
 
   type Query {
@@ -6753,6 +6789,8 @@ const typeDefs = gql`
         """
         columnName: "getProjectListCount"
       )
+
+    generateFlowchart(prompt: String!): GeneratedFlowchart!
   }
 `;
 
