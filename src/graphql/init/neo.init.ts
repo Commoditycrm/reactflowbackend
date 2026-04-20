@@ -10,7 +10,6 @@ import { deleteOperationMutations } from "../resolvers/delete.resolvers";
 
 import { populatedCallBacks } from "./../callbacks/populatedByCallbacks";
 import { createOperationMutations } from "./../resolvers/create.resolvers";
-import { Neo4jFeaturesSettings } from "@neo4j/graphql/dist/types";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
 import { ragResolvers } from "./../resolvers/rag.resolvers";
@@ -23,6 +22,10 @@ export type IResolvers =
     }
   | undefined;
 
+type Neo4jFeaturesSettings = ConstructorParameters<
+  typeof Neo4jGraphQL
+>[0]["features"];
+
 export class NeoConnection {
   private neo: Neo4jGraphQL;
   constructor(
@@ -31,13 +34,7 @@ export class NeoConnection {
     features: Neo4jFeaturesSettings | undefined,
     resolvers: IResolvers,
   ) {
-    const options: {
-      typeDefs: DocumentNode;
-      driver: Driver;
-      resolvers: IResolvers;
-      features?: Neo4jFeaturesSettings;
-      debug?: boolean;
-    } = {
+    const options: ConstructorParameters<typeof Neo4jGraphQL>[0] = {
       typeDefs,
       driver,
       resolvers,
