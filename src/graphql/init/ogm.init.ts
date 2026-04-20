@@ -23,13 +23,13 @@ export class OGMConnection {
   static async init(
     typeDefs: DocumentNode,
     driver: Driver,
-    features: Record<string, any>
+    features: Record<string, any>,
   ): Promise<OGM> {
     this.ogm = new OGM({
       typeDefs,
       driver,
       features: features,
-      debug: !isProduction(),
+      // debug: !isProduction(),
     });
 
     await this.ogm.init();
@@ -37,7 +37,7 @@ export class OGMConnection {
     if (isDevelopment() && EnvLoader.get("GENERATE_OGM_TYPES")) {
       await generate({
         ogm: this.ogm,
-        outFile: path.resolve(__dirname,'../../interfaces/ogm.types.ts'),
+        outFile: path.resolve(__dirname, "../../interfaces/ogm.types.ts"),
       });
     }
 
