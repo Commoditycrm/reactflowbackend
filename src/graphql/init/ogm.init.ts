@@ -23,12 +23,12 @@ export class OGMConnection {
   static async init(
     typeDefs: DocumentNode,
     driver: Driver,
-    features: Record<string, any>,
+    features?: Record<string, any>,
   ): Promise<OGM> {
     this.ogm = new OGM({
       typeDefs,
       driver,
-      features: features,
+      ...(features ? { features } : {}),
       // debug: !isProduction(),
     });
 
