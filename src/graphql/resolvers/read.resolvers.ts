@@ -607,8 +607,7 @@ const normalizeKind = (value: unknown): FlowKind => {
     ? (value as FlowKind)
     : "process";
 };
-
-export const generateFlowchart = async (
+const generateFlowchart = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
   _context: Record<string, any>,
@@ -643,39 +642,40 @@ export const generateFlowchart = async (
         {
           role: "user",
           content: `
-          Input: ${safePrompt}
+      Input: ${safePrompt}
 
-          Rules:
-           - Return valid JSON only
-           - Do not include markdown
-           - Do not include explanation
-           - Keep labels short
-           - Generate 3 to 12 nodes
-           - Each node must have: id, label, kind
-           - kind must be one of: start, process, decision, input, storage, end
-           - Each edge must have: source, target
-           - edge label is optional
-           - Keep flow logical and sequential
+      Rules:
+       - Return valid JSON only
+       - Do not include markdown
+       - Do not include explanation
+       - Keep labels short
+       - Each node must have: id, label, kind, description
+       - description should be 1 short sentence explaining the step
+       - kind must be one of: start, process, decision, input, storage, end
+       - Each edge must have: source, target
+       - edge label is optional
+       - Keep flow logical and sequential
 
-          Output format:
+      Output format:
+      {
+        "title": "string",
+        "nodes": [
           {
-            "title": "string",
-            "nodes": [
-              {
-                "id": "n1",
-                "label": "string",
-                "kind": "start|process|decision|input|storage|end"
-             }
-            ],
-            "edges": [
-              {
-                "source": "n1",
-                "target": "n2",
-                "label": "optional"
-              }
-           ]
+            "id": "n1",
+            "label": "string",
+            "kind": "start|process|decision|input|storage|end",
+            "description": "string"
+         }
+        ],
+        "edges": [
+          {
+            "source": "n1",
+            "target": "n2",
+            "label": "optional"
           }
-          `.trim(),
+       ]
+      }
+      `.trim(),
         },
       ],
     });
