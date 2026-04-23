@@ -29,7 +29,7 @@ export class OGMConnection {
       typeDefs,
       driver,
       ...(features ? { features } : {}),
-      // debug: !isProduction(),
+      debug: !isProduction(),
     });
 
     await this.ogm.init();

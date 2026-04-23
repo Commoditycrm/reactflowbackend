@@ -8,14 +8,15 @@ import { BacklogItemType, SprintWhere, User, UserRole } from "../../interfaces";
 import { EnvLoader } from "../../util/EnvLoader";
 import { Neo4JConnection } from "../../database/connection";
 import {
-  FlowKind,
   GeneratedFlowchart,
   GeneratedFlowEdge,
   GeneratedFlowNode,
   GeneratedTask,
-  ShapeType,
+  kindToShape,
 } from "../../interfaces/types";
 import Anthropic from "@anthropic-ai/sdk";
+import { normalizeKind } from "../../util/aiFlowChartGen";
+import withTimeout from "../../util/timeOutFuc";
 
 const anthropic = new Anthropic({
   apiKey: EnvLoader.getOrThrow("ANTHROPIC_API_KEY"),
@@ -583,30 +584,6 @@ const getFirebaseStorage = async (
   }
 };
 
-const kindToShape: Record<FlowKind, ShapeType> = {
-  start: "circle",
-  process: "rectangle",
-  decision: "diamond",
-  input: "parallelogram",
-  storage: "cylinder",
-  end: "circle",
-};
-
-const allowedKinds: FlowKind[] = [
-  "start",
-  "process",
-  "decision",
-  "input",
-  "storage",
-  "end",
-];
-
-const normalizeKind = (value: unknown): FlowKind => {
-  if (typeof value !== "string") return "process";
-  return allowedKinds.includes(value as FlowKind)
-    ? (value as FlowKind)
-    : "process";
-};
 const generateFlowchart = async (
   _source: Record<string, any>,
   { prompt }: { prompt: string },
@@ -632,53 +609,55 @@ const generateFlowchart = async (
   let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
 
   try {
-    completion = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 1200,
-      temperature: 0.2,
-      system:
-        "Convert user prompts into concise flowchart JSON. Return valid JSON only.",
-      messages: [
-        {
-          role: "user",
-          content: `
-      Input: ${safePrompt}
-
-      Rules:
-       - Return valid JSON only
-       - Do not include markdown
-       - Do not include explanation
-       - Keep labels short
-       - Each node must have: id, label, kind, description
-       - description should be 1 short sentence explaining the step
-       - kind must be one of: start, process, decision, input, storage, end
-       - Each edge must have: source, target
-       - edge label is optional
-       - Keep flow logical and sequential
-
-      Output format:
-      {
-        "title": "string",
-        "nodes": [
+    completion = await withTimeout(
+      anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 700,
+        temperature: 0.1,
+        system:
+          "Convert user prompts into concise flowchart JSON. Return valid JSON only.",
+        messages: [
           {
-            "id": "n1",
-            "label": "string",
-            "kind": "start|process|decision|input|storage|end",
-            "description": "string"
-         }
+            role: "user",
+            content: `Input: ${safePrompt}
+
+Rules:
+- Return valid JSON only
+- Do not include markdown
+- Do not include explanation
+- Maximum 8 nodes
+- Keep labels short (max 4 words)
+- Keep descriptions short (max 10 words)
+- Each node must have: id, label, kind, description
+- kind must be one of: start, process, decision, input, storage, end
+- Each edge must have: source, target
+- edge label is optional
+- Keep flow logical and sequential
+
+Output format:
+{
+  "title": "string",
+  "nodes": [
+    {
+      "id": "n1",
+      "label": "string",
+      "kind": "start|process|decision|input|storage|end",
+      "description": "string"
+    }
+  ],
+  "edges": [
+    {
+      "source": "n1",
+      "target": "n2",
+      "label": "optional"
+    }
+  ]
+}`,
+          },
         ],
-        "edges": [
-          {
-            "source": "n1",
-            "target": "n2",
-            "label": "optional"
-          }
-       ]
-      }
-      `.trim(),
-        },
-      ],
-    });
+      }),
+      15000,
+    );
   } catch (error: any) {
     const message =
       error?.error?.message || error?.message || "AI service failed";
@@ -699,11 +678,26 @@ const generateFlowchart = async (
     );
   }
 
-  const textBlock = completion.content.find(
+  if (completion?.stop_reason === "max_tokens") {
+    throw new GraphQLError(
+      "AI response was truncated. Please try again with a shorter prompt.",
+      {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      },
+    );
+  }
+
+  const textBlock = completion?.content?.find(
     (block): block is Anthropic.TextBlock => block.type === "text",
   );
 
   const rawText = textBlock?.text?.trim() || "";
+
+  if (!rawText) {
+    throw new GraphQLError("AI returned an empty response.", {
+      extensions: { code: "INTERNAL_SERVER_ERROR" },
+    });
+  }
 
   let parsed: any = null;
 
