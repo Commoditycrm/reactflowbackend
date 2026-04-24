@@ -5457,6 +5457,7 @@ const typeDefs = gql`
     height: Float!
     type: String!
     fileId: ID!
+    description:String
   }
 
   input AiFlowEdgeInput {
