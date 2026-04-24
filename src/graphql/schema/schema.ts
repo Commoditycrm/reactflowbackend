@@ -3885,6 +3885,7 @@ const typeDefs = gql`
     @mutation(operations: []) {
     id: ID! @id
     source: String
+    target: String
     sourceHandle: String
     targetHandle: String
     animated: Boolean
@@ -5612,49 +5613,50 @@ const typeDefs = gql`
     createAiFlow(nodes: [AiFlowNodeInput!]!, edges: [AiFlowEdgeInput!]!): Int!
       @cypher(
         statement: """
-        UNWIND $nodes AS nodeInput
-        MATCH (f:File {id: nodeInput.fileId})
         MATCH (u:User {externalId: $jwt.sub})
 
-        CREATE (n:FlowNode {
-          id: randomUUID(),
-          name: nodeInput.name,
-          color: nodeInput.color,
-          shape: nodeInput.shape,
-          posX: toFloat(nodeInput.posX),
-          posY: toFloat(nodeInput.posY),
-          width: toFloat(nodeInput.width),
-          height: toFloat(nodeInput.height),
-          type: nodeInput.type,
-          textDecoration: "normal",
-          createdAt: datetime()
-        })
+           UNWIND $nodes AS nodeInput
+           MATCH (f:File {id: nodeInput.fileId})
 
-        CREATE (f)-[:HAS_FLOW_NODE]->(n)
-        CREATE (u)-[:CREATED_FLOW_NODE]->(n)
+           CREATE (n:FlowNode {
+             id: randomUUID(),
+             name: nodeInput.name,
+             color: nodeInput.color,
+             shape: nodeInput.shape,
+             posX: toFloat(nodeInput.posX),
+             posY: toFloat(nodeInput.posY),
+             width: toFloat(nodeInput.width),
+             height: toFloat(nodeInput.height),
+             type: nodeInput.type,
+             textDecoration: "normal",
+             createdAt: datetime()
+           })
 
-        WITH collect({ aiId: nodeInput.id, node: n }) AS nodeMap, $edges AS edges
+           CREATE (f)-[:HAS_FLOW_NODE]->(n)
+           CREATE (u)-[:CREATED_FLOW_NODE]->(n)
 
-        UNWIND edges AS edge
+           WITH collect({ aiId: nodeInput.id, node: n }) AS nodeMap
 
-        WITH edge,
-             [x IN nodeMap WHERE x.aiId = edge.source | x.node][0] AS sourceNode,
-             [x IN nodeMap WHERE x.aiId = edge.target | x.node][0] AS targetNode
+           UNWIND $edges AS edge
 
-        WHERE sourceNode IS NOT NULL AND targetNode IS NOT NULL
+           WITH edge,
+             head([x IN nodeMap WHERE x.aiId = edge.source | x.node]) AS sourceNode,
+             head([x IN nodeMap WHERE x.aiId = edge.target | x.node]) AS targetNode
 
-        CREATE (sourceNode)-[:LINKED_TO {
-          id: coalesce(edge.id, randomUUID()),
-          source: edge.source,
-          sourceHandle: coalesce(edge.sourceHandle, "d"),
-          targetHandle: coalesce(edge.targetHandle, "b"),
-          animated: coalesce(edge.animated, false),
-          label: coalesce(edge.label, ""),
-          color: edge.color,
-          bidirectional: false
-        }]->(targetNode)
+           WHERE sourceNode IS NOT NULL AND targetNode IS NOT NULL
 
-        RETURN count(*) AS result
+           CREATE (sourceNode)-[:LINKED_TO {
+             id: coalesce(edge.id, randomUUID()),
+             source: sourceNode.id,
+             sourceHandle: coalesce(edge.sourceHandle, "d"),
+             targetHandle: coalesce(edge.targetHandle, "b"),
+             animated: coalesce(edge.animated, false),
+             label: coalesce(edge.label, ""),
+             color: coalesce(edge.color, '#b0b0b5'),
+             bidirectional: false
+           }]->(targetNode)
+
+           RETURN count(*) AS result
         """
         columnName: "result"
       )
