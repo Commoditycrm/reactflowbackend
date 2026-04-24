@@ -3913,7 +3913,7 @@ const typeDefs = gql`
       validate: [
         {
           when: [AFTER]
-          operations: [UPDATE, DELETE, READ]
+          operations: [UPDATE, DELETE]
           where: {
             node: {
               OR: [
@@ -4045,6 +4045,81 @@ const typeDefs = gql`
                                   memberUsers_SINGLE: {
                                     externalId: "$jwt.sub"
                                     role: "ADMIN"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        {
+          when: [BEFORE]
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { createdBy: { externalId: "$jwt.sub" } }
+                {
+                  file: {
+                    parentConnection: {
+                      Project: {
+                        node: {
+                          OR: [
+                            {
+                              organization: {
+                                createdBy: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            { createdBy: { externalId: "$jwt.sub" } }
+                            { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                            {
+                              organization: {
+                                memberUsers_SOME: {
+                                  externalId: "$jwt.sub"
+                                  role: "ADMIN"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+                {
+                  file: {
+                    parentConnection: {
+                      Folder: {
+                        node: {
+                          OR: [
+                            {
+                              project: {
+                                organization: {
+                                  createdBy: { externalId: "$jwt.sub" }
+                                }
+                              }
+                            }
+                            {
+                              project: { createdBy: { externalId: "$jwt.sub" } }
+                            }
+                            {
+                              project: {
+                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            {
+                              project: {
+                                organization: {
+                                  memberUsers_SINGLE: {
+                                    externalId: "$jwt.sub"
+                                    role_IN: ["", ADMIN, ""]
                                   }
                                 }
                               }
@@ -4362,7 +4437,6 @@ const typeDefs = gql`
       filter: [
         { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
       ]
-
       validate: [
         {
           when: [BEFORE]
@@ -4571,12 +4645,21 @@ const typeDefs = gql`
       )
       @settable(onCreate: true, onUpdate: false)
     parent: BacklogItemParent!
+      @cypher(
+        statement: """
+        MATCH (parent)-[:HAS_CHILD_ITEM]->(this)
+        RETURN parent
+        """
+        columnName: "parent"
+      )
+    parentConnect: BacklogItemParent!
       @relationship(
         type: "HAS_CHILD_ITEM"
         direction: IN
         aggregate: false
         nestedOperations: [CONNECT]
       )
+      @settable(onCreate: true, onUpdate: false)
     project: Project!
       @relationship(
         type: "ITEM_IN_PROJECT"
