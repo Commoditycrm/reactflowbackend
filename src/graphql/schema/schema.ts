@@ -3364,7 +3364,7 @@ const typeDefs = gql`
       ]
       validate: [
         {
-          when: [AFTER]
+          when: [BEFORE]
           operations: [READ]
           where: {
             OR: [
@@ -3581,7 +3581,138 @@ const typeDefs = gql`
       )
   }
 
-  type FileLock @query(aggregate: false) {
+  type FileLock
+    @authorization(
+      validate: [
+        {
+          when: [BEFORE]
+          operations: [READ]
+          where: {
+            node: {
+              file: {
+                OR: [
+                  {
+                    parentConnection: {
+                      Project: {
+                        node: {
+                          OR: [
+                            {
+                              organization: {
+                                createdBy: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            { createdBy: { externalId: "$jwt.sub" } }
+                            { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                            {
+                              organization: {
+                                memberUsers_SOME: {
+                                  externalId: "$jwt.sub"
+                                  role: "ADMIN"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                  {
+                    parentConnection: {
+                      Folder: {
+                        node: {
+                          OR: [
+                            {
+                              project: {
+                                organization: {
+                                  createdBy: { externalId: "$jwt.sub" }
+                                }
+                              }
+                            }
+                            {
+                              project: { createdBy: { externalId: "$jwt.sub" } }
+                            }
+                            {
+                              project: {
+                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                              }
+                            }
+                            {
+                              project: {
+                                organization: {
+                                  memberUsers_SINGLE: {
+                                    externalId: "$jwt.sub"
+                                    role: "ADMIN"
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                  { createdBy: { externalId: "$jwt.sub" } }
+                ]
+              }
+            }
+          }
+        }
+        {
+          when: [AFTER]
+          operations: [CREATE, UPDATE]
+          where: {
+            node: {
+              file: {
+                OR: [
+                  {
+                    parentConnection: {
+                      Project: {
+                        node: {
+                          organization: {
+                            OR: [
+                              { createdBy: { externalId: "$jwt.sub" } }
+                              {
+                                memberUsers_SINGLE: {
+                                  externalId: "$jwt.sub"
+                                  role_IN: ["ADMIN"]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                  {
+                    parentConnection: {
+                      Folder: {
+                        node: {
+                          project: {
+                            organization: {
+                              OR: [
+                                { createdBy: { externalId: "$jwt.sub" } }
+                                {
+                                  memberUsers_SINGLE: {
+                                    externalId: "$jwt.sub"
+                                    role_IN: ["ADMIN"]
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  { createdBy: { externalId: "$jwt.sub" } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    )
+    @query(aggregate: false) {
     id: ID! @id
     createdAt: DateTime! @timestamp(operations: [CREATE])
     lockedAt: DateTime
@@ -5457,7 +5588,7 @@ const typeDefs = gql`
     height: Float!
     type: String!
     fileId: ID!
-    description:String
+    description: String
   }
 
   input AiFlowEdgeInput {
