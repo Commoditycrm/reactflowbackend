@@ -335,24 +335,51 @@ CALL apoc.periodic.iterate(
   MERGE (clonedBI)-[:ITEM_IN_PROJECT]->(newProject)
 
   WITH bi, clonedBI, originalParent, newProject
+  MATCH(newProject)<-[:HAS_PROJECTS]-(org:Organization)
+  MATCH(org)-[:HAS_STATUS]->(matchStatus:Status)
+  CALL {
+    WITH org, bi
+    OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
+    OPTIONAL MATCH (org)-[:HAS_STATUS]->(matchStatus:Status)
+    WHERE s IS NOT NULL 
+      AND toLower(matchStatus.defaultName) = toLower(s.defaultName)
+    WITH collect(matchStatus) AS statuses
+    RETURN head(statuses) AS finalStatus
+  }
 
-  OPTIONAL MATCH (bi)-[:HAS_STATUS]->(s:Status)
-  FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
-    MERGE (clonedBI)-[:HAS_STATUS]->(s)
+  FOREACH (_ IN CASE WHEN finalStatus IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (clonedBI)-[:HAS_STATUS]->(finalStatus)
   )
 
-  WITH bi, clonedBI, originalParent, newProject
+  WITH bi, clonedBI, originalParent, newProject,org
 
-  OPTIONAL MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(bit:BacklogItemType)
-  FOREACH (_ IN CASE WHEN bit IS NOT NULL THEN [1] ELSE [] END |
-    MERGE (clonedBI)-[:HAS_BACKLOGITEM_TYPE]->(bit)
-  )
+  CALL {
+    WITH org, bi
+    OPTIONAL MATCH (bi)-[:HAS_BACKLOGITEM_TYPE]->(bit:BacklogItemType)
+    OPTIONAL MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(matchType:BacklogItemType)
+    WHERE bit IS NOT NULL 
+      AND toLower(matchType.defaultName) = toLower(bit.defaultName)
+    WITH collect(matchType) AS types
+    RETURN head(types) AS finalType
+  }
 
-  WITH bi, clonedBI, originalParent, newProject
+ FOREACH (_ IN CASE WHEN finalType IS NOT NULL THEN [1] ELSE [] END |
+  MERGE (clonedBI)-[:HAS_BACKLOGITEM_TYPE]->(finalType)
+ )
 
-  OPTIONAL MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
-  FOREACH (_ IN CASE WHEN rl IS NOT NULL THEN [1] ELSE [] END |
-    MERGE (clonedBI)-[:HAS_RISK_LEVEL]->(rl)
+  WITH bi, clonedBI, originalParent, newProject,org
+  CALL {
+    WITH org, bi
+    OPTIONAL MATCH (bi)-[:HAS_RISK_LEVEL]->(rl:RiskLevel)
+    OPTIONAL MATCH (org)-[:HAS_RISK_LEVEL]->(matchRisk:RiskLevel)
+    WHERE rl IS NOT NULL 
+      AND toLower(matchRisk.defaultName) = toLower(rl.defaultName)
+    WITH collect(matchRisk) AS risks
+    RETURN head(risks) AS finalRisk
+  }
+
+  FOREACH (_ IN CASE WHEN finalRisk IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (clonedBI)-[:HAS_RISK_LEVEL]->(finalRisk)
   )
 
   WITH clonedBI, originalParent, newProject
