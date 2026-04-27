@@ -1187,7 +1187,7 @@ const typeDefs = gql`
       @relationship(
         type: "HAS_RESOURCE"
         direction: IN
-        nestedOperations: []
+        nestedOperations: [CONNECT]
         aggregate: false
       )
     notes: [Comment!]!
