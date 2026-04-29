@@ -1342,6 +1342,11 @@ const typeDefs = gql`
                 }
                 { projects_SINGLE: { createdBy: { externalId: "$jwt.sub" } } }
                 { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                  }
+                }
                 { createdBy: { externalId: "$jwt.sub" } }
               ]
             }
