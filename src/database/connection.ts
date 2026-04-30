@@ -23,7 +23,7 @@ export class Neo4JConnection {
         neo4j.auth.basic(conn.neo4jUser, conn.neo4jPassword),
         {
           // Increase connection pool for production
-          maxConnectionPoolSize: 100,
+          maxConnectionPoolSize: 20,
 
           // Longer connection lifetime for stability
           maxConnectionLifetime: 60 * 60 * 1000, // 1 hour
@@ -39,7 +39,7 @@ export class Neo4JConnection {
 
           // Enable connection pooling optimizations
           connectionTimeout: 30_000, // 30 seconds
-        }
+        },
       );
 
       try {
