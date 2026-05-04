@@ -49,9 +49,13 @@ export const initializeApolloServer = async (
         const authorization = (ctx.connectionParams?.authorization ||
           ctx.connectionParams?.Authorization ||
           "") as string;
+        const cookie = ctx.extra.request.headers.cookie || "";
 
         const mockReq = {
-          headers: { authorization },
+          headers: {
+            authorization,
+            cookie,
+          },
         } as any;
 
         const authContext = await NeoConnection.authorizeUserOnContext(mockReq);
