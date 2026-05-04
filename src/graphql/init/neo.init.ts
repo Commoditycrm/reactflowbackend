@@ -76,15 +76,10 @@ export class NeoConnection {
 
     const { sessionToken, headerToken } = getAuthTokens(req);
 
-    /**
-     * 1. App session cookie JWT
-     */
+    // 1. Normal logged-in user
     if (sessionToken) {
       try {
         const SESSION_SECRET = EnvLoader.getOrThrow("SESSION_SECRET");
-        if (!SESSION_SECRET) {
-          throw new Error("SESSION_SECRET missing");
-        }
 
         const secret = new TextEncoder().encode(SESSION_SECRET);
         const { payload } = await jwtVerify(sessionToken, secret);
@@ -146,71 +141,36 @@ export class NeoConnection {
       }
     }
 
-    if (!headerToken) {
-      throw new GraphQLError("Authentication token is required", {
-        extensions: { code: "UNAUTHENTICATED" },
-      });
-    }
+    // 2. Invite user
+    if (headerToken) {
+      try {
+        const INVITE_JWT_SECRET = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
 
-    /**
-     * 2. Firebase ID token fallback
-     */
-    try {
-      const decodedToken = await getFirebaseAdminAuth()
-        .auth()
-        .verifyIdToken(headerToken, true);
+        const decoded = jwt.verify(headerToken, INVITE_JWT_SECRET) as Record<
+          string,
+          any
+        >;
 
-      if (!decodedToken?.email_verified) {
-        throw new GraphQLError("Please verify your email first.", {
-          extensions: { code: "EMAIL_NOT_VERIFIED" },
+        if (decoded.role !== "invitee") {
+          throw new Error("Invalid invite role");
+        }
+
+        const inviteJwt = {
+          ...decoded,
+          token: headerToken,
+        };
+
+        return { jwt: inviteJwt, authorization: { jwt: inviteJwt } };
+      } catch {
+        throw new GraphQLError("Token expired or Unknown user", {
+          extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
         });
       }
-
-      return { jwt: decodedToken, authorization: { jwt: decodedToken } };
-    } catch (e: any) {
-      if (
-        e?.code === "auth/id-token-revoked" ||
-        e?.code === "auth/user-disabled" ||
-        e?.code === "auth/user-not-found"
-      ) {
-        throw new GraphQLError(
-          "Your account has been deleted or disabled by the owner/company admin.",
-          {
-            extensions: { code: "ACCOUNT_DELETED" },
-          },
-        );
-      }
     }
 
-    /**
-     * 3. Invite token fallback
-     */
-    /**
-     * 3. Invite token fallback
-     */
-    try {
-      const INVITE_JWT_SECRET = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
-
-      const decoded = jwt.verify(headerToken, INVITE_JWT_SECRET) as Record<
-        string,
-        any
-      >;
-
-      if (decoded.role !== "invitee") {
-        throw new Error("Invalid invite role");
-      }
-
-      const inviteJwt = {
-        ...decoded,
-        token: headerToken,
-      };
-
-      return { jwt: inviteJwt, authorization: { jwt: inviteJwt } };
-    } catch {
-      throw new GraphQLError("Token expired or Unknown user", {
-        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
-      });
-    }
+    throw new GraphQLError("Authentication token is required", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
   }
 
   static getResolvers(): IResolvers | undefined {
