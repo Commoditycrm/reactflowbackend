@@ -1330,3 +1330,49 @@ CALL apoc.periodic.iterate(
   }
 );
 `;
+
+export const CREATE_AI_FLOWNODE_CQL = `
+MATCH (u:User {externalId: $jwt.sub})
+
+UNWIND $nodes AS nodeInput
+MATCH (f:File {id: nodeInput.fileId})
+
+CREATE (n:FlowNode {
+  id: randomUUID(),
+  name: nodeInput.name,
+  color: nodeInput.color,
+  shape: nodeInput.shape,
+  posX: toFloat(nodeInput.posX),
+  posY: toFloat(nodeInput.posY),
+  width: toFloat(nodeInput.width),
+  height: toFloat(nodeInput.height),
+  type: nodeInput.type,
+  textDecoration: "normal",
+  createdAt: datetime()
+})
+
+CREATE (f)-[:HAS_FLOW_NODE]->(n)
+CREATE (u)-[:CREATED_FLOW_NODE]->(n)
+
+WITH collect({ aiId: nodeInput.id, node: n }) AS nodeMap
+
+UNWIND $edges AS edge
+
+WITH edge,
+  head([x IN nodeMap WHERE x.aiId = edge.source | x.node]) AS sourceNode,
+  head([x IN nodeMap WHERE x.aiId = edge.target | x.node]) AS targetNode
+
+WHERE sourceNode IS NOT NULL AND targetNode IS NOT NULL
+
+CREATE (sourceNode)-[:LINKED_TO {
+  id: coalesce(edge.id, randomUUID()),
+  source: sourceNode.id,
+  sourceHandle: coalesce(edge.sourceHandle, "d"),
+  targetHandle: coalesce(edge.targetHandle, "b"),
+  animated: coalesce(edge.animated, false),
+  label: coalesce(edge.label, ""),
+  color: coalesce(edge.color, '#b0b0b5'),
+  bidirectional: false
+}]->(targetNode)
+
+RETURN count(*) AS result`;
