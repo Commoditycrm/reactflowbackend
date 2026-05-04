@@ -11,6 +11,7 @@ import {
   COPY_FILE_GROUP_NODE_CQL,
   COPY_FILE_LINKS_CQL,
   COPY_FILE_NODES_CQL,
+  CREATE_AI_FLOWNODE_CQL,
   CREATE_INVITE_USER_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
   getUpdateDependentTaskDatesCQL,
@@ -30,8 +31,16 @@ import { BacklogItem, ImportSheetResult, UserRole } from "../../interfaces";
 import { FirebaseFunctions } from "../firebase/firebaseFunctions";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import retrySetClaims from "../../util/retrySetCustomClaims";
+import { normalizeKind } from "../../util/aiFlowChartGen";
+import { kindToShape } from "../../interfaces/types";
+import withTimeout from "../../util/timeOutFuc";
+import Anthropic from "@anthropic-ai/sdk";
+import { EnvLoader } from "../../util/EnvLoader";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
+const anthropic = new Anthropic({
+  apiKey: EnvLoader.getOrThrow("ANTHROPIC_API_KEY"),
+});
 
 const createBacklogItemWithUID = async (
   _source: Record<string, any>,
@@ -591,6 +600,136 @@ const cloneContacts = async (
   }
 };
 
+const createAiFlow = async (
+  _source: Record<string, any>,
+  { fileId, prompt }: { fileId: string; prompt: string },
+  _context: Record<string, any>,
+) => {
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
+
+  try {
+    // 🔐 Auth
+    const uid = _context?.jwt?.uid;
+    if (!uid) {
+      throw new GraphQLError("UNAUTHORIZED", {
+        extensions: { code: "UNAUTHORIZED" },
+      });
+    }
+
+    // 🧹 Prompt validation
+    const rawPrompt = (prompt || "").trim();
+    const safePrompt = rawPrompt.slice(0, 2000);
+
+    if (!safePrompt) {
+      throw new GraphQLError("Prompt is required.", {
+        extensions: { code: "BAD_USER_INPUT" },
+      });
+    }
+
+    // 🤖 AI Call
+    let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
+
+    const AI_SYSTEM_PROMPT =
+      "Return only valid compact JSON for a flowchart. No markdown.";
+
+    const AI_USER_PROMPT = `Create flowchart from: ${safePrompt}
+    JSON:{"title":"","nodes":[{"id":"n1","label":"","kind":"start|process|decision|input|storage|end","description":""}],"edges":[{"source":"n1","target":"n2","label":""}]}
+    Rules: max 10 nodes, short labels, short descriptions, logical sequence.`;
+
+    try {
+      completion = await withTimeout(
+        anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 500,
+          temperature: 0,
+          system: AI_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: AI_USER_PROMPT }],
+        }),
+        15000,
+      );
+    } catch (error: any) {
+      const message =
+        error?.error?.message || error?.message || "AI service failed";
+
+      const isBillingIssue =
+        message.toLowerCase().includes("credit balance is too low") ||
+        message.toLowerCase().includes("billing");
+
+      throw new GraphQLError(
+        isBillingIssue ? "Anthropic API credits are exhausted." : message,
+        {
+          extensions: {
+            code: isBillingIssue ? "PAYMENT_REQUIRED" : "INTERNAL_SERVER_ERROR",
+          },
+        },
+      );
+    }
+
+    // 🧾 Extract response
+    const textBlock = completion?.content?.find(
+      (b: any) => b.type === "text",
+    ) as { text: string } | undefined;
+
+    const rawText =
+      textBlock && "text" in textBlock ? textBlock.text.trim() : "";
+    if (!rawText) {
+      throw new GraphQLError("AI returned empty response");
+    }
+
+    // 🧼 Clean + parse JSON
+    let parsed: any;
+    try {
+      const cleaned = rawText
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new GraphQLError("Invalid AI JSON response");
+    }
+
+    const rawNodes = Array.isArray(parsed?.nodes) ? parsed.nodes : [];
+    const rawEdges = Array.isArray(parsed?.edges) ? parsed.edges : [];
+
+    const nodes = rawNodes.slice(0, 10).map((n: any) => ({
+      id: n.id,
+      label: n.label,
+      description: n.description || "",
+      kind: normalizeKind(n.kind),
+      shape: kindToShape[normalizeKind(n.kind)],
+    }));
+
+    const validIds = new Set(nodes.map((n: any) => n.id));
+
+    const edges = rawEdges
+      .filter((e: any) => validIds.has(e.source) && validIds.has(e.target))
+      .map((e: any, i: number) => ({
+        id: `e-${i + 1}`,
+        source: e.source,
+        target: e.target,
+        label: e.label || "",
+      }));
+
+    await tx.run(CREATE_AI_FLOWNODE_CQL, {
+      nodes,
+      edges,
+      fileId,
+    });
+
+    await tx.commit();
+
+    return 1;
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  } finally {
+    await session.close();
+  }
+};
+
 export const createOperationMutations = {
   createBacklogItemWithUID,
   createProjectWithTemplate,
@@ -599,4 +738,5 @@ export const createOperationMutations = {
   cloneCanvas,
   createSheetItems,
   cloneContacts,
+  createAiFlow,
 };
