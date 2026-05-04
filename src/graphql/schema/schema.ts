@@ -213,6 +213,7 @@ const typeDefs = gql`
         aggregate: false
         nestedOperations: [CONNECT, DISCONNECT]
       )
+    sessions: [UserSession!]! @relationship(type: "HAS_SESSION", direction: OUT)
     createdAt: DateTime!
       @timestamp(operations: [CREATE])
       @settable(onCreate: true, onUpdate: false)
@@ -223,6 +224,39 @@ const typeDefs = gql`
       @populatedBy(callback: "updateOrgLastModified", operations: [UPDATE])
   }
 
+  enum DeviceType {
+    DESKTOP
+    MOBILE
+    TABLET
+    BOT
+    UNKNOWN
+  }
+
+  type UserSession
+    @authorization(
+      filter: [
+        { operations: [READ], where: { node: { firebaseUid: "$jwt.sub" } } }
+      ]
+    ) {
+    id: ID! @id
+    firebaseUid: String!
+    email: String
+    ipAddress: String
+    country: String
+    city: String
+    timezone: String
+    userAgent: String
+    browser: String
+    os: String
+    deviceType: DeviceType!
+    deviceModel: String
+    deviceVendor: String
+    deviceKey: String
+    loginAt: DateTime!
+    lastActiveAt: DateTime!
+    logoutAt: DateTime
+    isActive: Boolean!
+  }
   type Counter
     @authorization(
       validate: [
@@ -5574,7 +5608,6 @@ const typeDefs = gql`
     label: String
   }
 
-
   type Mutation {
     updateUserRole(userId: ID!, role: UserRole!): Boolean!
     updateUserDetail(name: String!, phoneNumber: String): [User!]!
@@ -7182,7 +7215,6 @@ const typeDefs = gql`
         """
         columnName: "getProjectListCount"
       )
-
   }
 `;
 

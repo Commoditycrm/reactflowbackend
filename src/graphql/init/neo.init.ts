@@ -4,7 +4,6 @@ import { Request } from "express";
 import { DocumentNode, GraphQLError, GraphQLSchema } from "graphql";
 import { Driver } from "neo4j-driver";
 import { isProduction } from "../../env/detector";
-import { getTokenFromHeader } from "../../util/tokenExtractor";
 import { getFirebaseAdminAuth } from "../firebase/admin";
 import { deleteOperationMutations } from "../resolvers/delete.resolvers";
 
@@ -14,6 +13,10 @@ import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
 import { ragResolvers } from "./../resolvers/rag.resolvers";
 import { EnvLoader } from "../../util/EnvLoader";
+import { jwtVerify as joseJwtVerify } from "jose";
+import { Neo4JConnection } from "../../database/connection";
+import { getAuthTokens } from "../../util/authToken";
+import jwt from "jsonwebtoken";
 
 export type IResolvers =
   | {
@@ -62,22 +65,100 @@ export class NeoConnection {
     if (req.headers["x-warmup"] === "true") {
       const warmupJwt = {
         uid: "warmup-user",
+        sub: "warmup-user",
         email: "warmup@internal.com",
         role: "SYSTEM",
         warmup: true,
       };
+
       return { jwt: warmupJwt, authorization: { jwt: warmupJwt } };
     }
-    const token: string | null = getTokenFromHeader(req.headers.authorization);
-    if (!token) {
+
+    const { sessionToken, headerToken } = getAuthTokens(req);
+
+    /**
+     * 1. App session cookie JWT
+     */
+    if (sessionToken) {
+      try {
+        const SESSION_SECRET = EnvLoader.getOrThrow("SESSION_SECRET");
+        if (!SESSION_SECRET) {
+          throw new Error("SESSION_SECRET missing");
+        }
+
+        const secret = new TextEncoder().encode(SESSION_SECRET);
+        const { payload } = await jwtVerify(sessionToken, secret);
+
+        if (!payload?.email_verified) {
+          throw new GraphQLError("Please verify your email first.", {
+            extensions: { code: "EMAIL_NOT_VERIFIED" },
+          });
+        }
+
+        const sessionId = payload.sessionId as string | undefined;
+
+        if (!sessionId) {
+          throw new GraphQLError("Session id missing", {
+            extensions: { code: "UNAUTHENTICATED" },
+          });
+        }
+
+        const neo4jSession = (
+          await Neo4JConnection.getInstance()
+        ).driver.session();
+
+        try {
+          const result = await neo4jSession.run(
+            `
+          MATCH (s:UserSession {id: $sessionId, isActive: true})
+          RETURN s.id AS id
+          LIMIT 1
+          `,
+            { sessionId },
+          );
+
+          if (result.records.length === 0) {
+            throw new GraphQLError("Session expired or logged out", {
+              extensions: { code: "UNAUTHENTICATED" },
+            });
+          }
+        } finally {
+          await neo4jSession.close();
+        }
+
+        const appJwt = {
+          sub: payload.sub,
+          uid: payload.uid,
+          email: payload.email,
+          email_verified: payload.email_verified,
+          roles: payload.roles || [],
+          orgCreated: payload.orgCreated || false,
+          sessionId,
+        };
+
+        return { jwt: appJwt, authorization: { jwt: appJwt } };
+      } catch (e: any) {
+        if (e instanceof GraphQLError) throw e;
+
+        throw new GraphQLError("Invalid or expired session", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+    }
+
+    if (!headerToken) {
       throw new GraphQLError("Authentication token is required", {
         extensions: { code: "UNAUTHENTICATED" },
       });
     }
+
+    /**
+     * 2. Firebase ID token fallback
+     */
     try {
       const decodedToken = await getFirebaseAdminAuth()
         .auth()
-        .verifyIdToken(token, true);
+        .verifyIdToken(headerToken, true);
 
       if (!decodedToken?.email_verified) {
         throw new GraphQLError("Please verify your email first.", {
@@ -101,19 +182,27 @@ export class NeoConnection {
       }
     }
 
+    /**
+     * 3. Invite token fallback
+     */
+    /**
+     * 3. Invite token fallback
+     */
     try {
-      const decoded = JSON.parse(
-        Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
-      );
+      const INVITE_JWT_SECRET = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
 
-      const now = Math.floor(Date.now() / 1000);
-      if (decoded.exp < now || decoded.role !== "invitee") {
-        throw new Error("Token expired or Unknown user");
+      const decoded = jwt.verify(headerToken, INVITE_JWT_SECRET) as Record<
+        string,
+        any
+      >;
+
+      if (decoded.role !== "invitee") {
+        throw new Error("Invalid invite role");
       }
 
       const inviteJwt = {
         ...decoded,
-        token,
+        token: headerToken,
       };
 
       return { jwt: inviteJwt, authorization: { jwt: inviteJwt } };
@@ -147,8 +236,15 @@ export class NeoConnection {
       },
       subscriptions: true,
       authorization: {
-        key: EnvLoader.getOrThrow("INVITE_JWT_SECRET"),
+        key: EnvLoader.getOrThrow("SESSION_SECRET"),
       },
     };
   }
+}
+async function jwtVerify(
+  token: string,
+  secret: Uint8Array<ArrayBuffer>,
+): Promise<{ payload: any }> {
+  const { payload } = await joseJwtVerify(token, secret);
+  return { payload };
 }
