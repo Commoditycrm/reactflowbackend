@@ -36,6 +36,7 @@ import { kindToShape } from "../../interfaces/types";
 import withTimeout from "../../util/timeOutFuc";
 import Anthropic from "@anthropic-ai/sdk";
 import { EnvLoader } from "../../util/EnvLoader";
+import convertToFlowchartRenderData from "../../util/converFlowNodeRenderData";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
 const anthropic = new Anthropic({
@@ -607,10 +608,12 @@ const createAiFlow = async (
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
+  console.time("AI_CALL");
 
   try {
     // 🔐 Auth
     const uid = _context?.jwt?.uid;
+
     if (!uid) {
       throw new GraphQLError("UNAUTHORIZED", {
         extensions: { code: "UNAUTHORIZED" },
@@ -627,27 +630,43 @@ const createAiFlow = async (
       });
     }
 
+    // 🤖 AI Prompt
+    const AI_SYSTEM_PROMPT =
+      "Return only valid minified JSON. No markdown. No explanation.";
+
+    const AI_USER_PROMPT = `
+   Create a flowchart from this prompt: ${safePrompt}
+   Return this exact JSON structure:
+   {"title":"","nodes":[{"id":"n1","label":"","kind":"start","description":""}],"edges":[{"source":"n1","target":"n2","label":""}]}
+   Rules:
+   - Return only JSON
+   - No markdown
+   - Max 8 nodes
+   - Node ids must be n1,n2,n3...
+   - kind must be one of: start, process, decision, input, storage, end
+   - Keep labels short
+   - Keep descriptions short
+   - Edges must only use existing node ids
+   - Flow should be logical from start to end
+   - Avoid circular edges
+   - If a retry/remake step exists, connect it forward to the next step, not back to an earlier step
+   `;
+
     // 🤖 AI Call
     let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
-
-    const AI_SYSTEM_PROMPT =
-      "Return only valid compact JSON for a flowchart. No markdown.";
-
-    const AI_USER_PROMPT = `Create flowchart from: ${safePrompt}
-    JSON:{"title":"","nodes":[{"id":"n1","label":"","kind":"start|process|decision|input|storage|end","description":""}],"edges":[{"source":"n1","target":"n2","label":""}]}
-    Rules: max 10 nodes, short labels, short descriptions, logical sequence.`;
-
+    console.timeEnd("AI_CALL");
     try {
       completion = await withTimeout(
         anthropic.messages.create({
           model: "claude-haiku-4-5",
-          max_tokens: 500,
+          max_tokens: 1000,
           temperature: 0,
           system: AI_SYSTEM_PROMPT,
           messages: [{ role: "user", content: AI_USER_PROMPT }],
         }),
         15000,
       );
+      console.log(completion);
     } catch (error: any) {
       const message =
         error?.error?.message || error?.message || "AI service failed";
@@ -666,59 +685,144 @@ const createAiFlow = async (
       );
     }
 
-    // 🧾 Extract response
+    // 🛑 Check truncated response
+    if (completion.stop_reason === "max_tokens") {
+      throw new GraphQLError("AI response was incomplete. Please try again.", {
+        extensions: { code: "AI_RESPONSE_TRUNCATED" },
+      });
+    }
+
+    // 🧾 Extract response text
     const textBlock = completion?.content?.find(
       (b: any) => b.type === "text",
     ) as { text: string } | undefined;
 
     const rawText =
       textBlock && "text" in textBlock ? textBlock.text.trim() : "";
+
     if (!rawText) {
-      throw new GraphQLError("AI returned empty response");
+      throw new GraphQLError("AI returned empty response", {
+        extensions: { code: "EMPTY_AI_RESPONSE" },
+      });
     }
 
     // 🧼 Clean + parse JSON
     let parsed: any;
+    console.time("PARSE_AI_JSON");
+
     try {
-      const cleaned = rawText
+      let cleaned = rawText.trim();
+
+      // Remove markdown wrapper if AI still sends it
+      cleaned = cleaned
         .replace(/^```json\s*/i, "")
         .replace(/^```\s*/i, "")
         .replace(/\s*```$/i, "")
         .trim();
 
+      // Extract only JSON object
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        throw new Error("No JSON object found");
+      }
+
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+
       parsed = JSON.parse(cleaned);
-    } catch {
-      throw new GraphQLError("Invalid AI JSON response");
+      console.timeEnd("PARSE_AI_JSON");
+    } catch (err) {
+      console.error("Invalid AI JSON raw response:", rawText);
+
+      throw new GraphQLError("Invalid AI JSON response", {
+        extensions: { code: "INVALID_AI_JSON" },
+      });
     }
 
-    const rawNodes = Array.isArray(parsed?.nodes) ? parsed.nodes : [];
-    const rawEdges = Array.isArray(parsed?.edges) ? parsed.edges : [];
+    // ✅ Validate AI response structure
+    if (!parsed || typeof parsed !== "object") {
+      throw new GraphQLError("AI response must be a JSON object", {
+        extensions: { code: "INVALID_AI_RESPONSE" },
+      });
+    }
 
-    const nodes = rawNodes.slice(0, 10).map((n: any) => ({
-      id: n.id,
-      label: n.label,
-      description: n.description || "",
-      kind: normalizeKind(n.kind),
-      shape: kindToShape[normalizeKind(n.kind)],
-    }));
+    const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+    const rawEdges = Array.isArray(parsed.edges) ? parsed.edges : [];
+
+    if (!rawNodes.length) {
+      throw new GraphQLError("AI did not return any nodes", {
+        extensions: { code: "NO_AI_NODES" },
+      });
+    }
+
+    // 🧩 Normalize nodes
+    const nodes = rawNodes
+      .slice(0, 8)
+      .filter((n: any) => n?.id && n?.label)
+      .map((n: any, index: number) => {
+        const kind = normalizeKind(n.kind);
+
+        return {
+          id: String(n.id || `n${index + 1}`),
+          label: String(n.label || `Step ${index + 1}`).slice(0, 80),
+          description: String(n.description || "").slice(0, 300),
+          kind,
+          shape: kindToShape[kind],
+        };
+      });
+
+    if (!nodes.length) {
+      throw new GraphQLError("AI returned invalid nodes", {
+        extensions: { code: "INVALID_AI_NODES" },
+      });
+    }
 
     const validIds = new Set(nodes.map((n: any) => n.id));
 
+    // 🔗 Normalize edges
     const edges = rawEdges
-      .filter((e: any) => validIds.has(e.source) && validIds.has(e.target))
+      .filter(
+        (e: any) =>
+          e?.source &&
+          e?.target &&
+          validIds.has(String(e.source)) &&
+          validIds.has(String(e.target)),
+      )
       .map((e: any, i: number) => ({
         id: `e-${i + 1}`,
-        source: e.source,
-        target: e.target,
-        label: e.label || "",
+        source: String(e.source),
+        target: String(e.target),
+        label: String(e.label || "").slice(0, 80),
       }));
 
-    await tx.run(CREATE_AI_FLOWNODE_CQL, {
+    // Optional fallback: create sequential edges if AI returns no valid edges
+    if (!edges.length && nodes.length > 1) {
+      for (let i = 0; i < nodes.length - 1; i++) {
+        edges.push({
+          id: `e-${i + 1}`,
+          source: nodes[i].id,
+          target: nodes[i + 1].id,
+          label: "",
+        });
+      }
+    }
+
+    console.time("CONVERT_LAYOUT");
+    const { edges: edgeData, nodes: nodeData } = convertToFlowchartRenderData({
       nodes,
       edges,
       fileId,
     });
+    console.timeEnd("CONVERT_LAYOUT");
 
+    console.time("NEO4J_CREATE");
+    await tx.run(CREATE_AI_FLOWNODE_CQL, {
+      nodes: nodeData,
+      edges: edgeData,
+      jwt: _context.jwt,
+    });
+    console.timeEnd("NEO4J_CREATE");
     await tx.commit();
 
     return 1;
