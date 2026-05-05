@@ -666,7 +666,6 @@ const createAiFlow = async (
         }),
         15000,
       );
-      console.log(completion);
     } catch (error: any) {
       const message =
         error?.error?.message || error?.message || "AI service failed";
