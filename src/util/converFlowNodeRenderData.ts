@@ -99,6 +99,7 @@ function sortEdgesForLayout(edges: RFEdge[]) {
 function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
   const H_SPACING = 220;
   const V_SPACING = 140;
+  const CENTER_X = 300; // all single vertical nodes align to this center
 
   const outgoing = new Map<string, RFEdge[]>();
   const incomingCount = new Map<string, number>();
@@ -139,10 +140,7 @@ function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
     const nextEdges = outgoing.get(currentId) || [];
 
     for (const edge of nextEdges) {
-      // Prevent infinite loop caused by circular AI edges
-      if (visited.has(edge.target)) {
-        continue;
-      }
+      if (visited.has(edge.target)) continue;
 
       levels.set(edge.target, currentLevel + 1);
       visited.add(edge.target);
@@ -150,7 +148,6 @@ function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
     }
   }
 
-  // Put disconnected/cycle-skipped nodes at the end
   let maxLevel = Math.max(...Array.from(levels.values()), 0);
 
   for (const node of nodes) {
@@ -188,11 +185,17 @@ function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
     });
 
     const totalWidth = (levelNodes.length - 1) * H_SPACING;
-    const startX = 200 - totalWidth / 2;
+    const firstCenterX = CENTER_X - totalWidth / 2;
 
     levelNodes.forEach((node, index) => {
+      const nodeWidth = node.style?.width || 130;
+
+      // center point of the node
+      const nodeCenterX = firstCenterX + index * H_SPACING;
+
       positioned.set(node.id, {
-        x: startX + index * H_SPACING,
+        // React Flow position is top-left, so subtract half width
+        x: nodeCenterX - nodeWidth / 2,
         y: 80 + level * V_SPACING,
       });
     });
