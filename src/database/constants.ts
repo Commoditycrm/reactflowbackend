@@ -1346,6 +1346,7 @@ CREATE (n:FlowNode {
   posY: toFloat(nodeInput.posY),
   width: toFloat(nodeInput.width),
   height: toFloat(nodeInput.height),
+  description:nodeInput.description,
   type: nodeInput.type,
   textDecoration: "normal",
   createdAt: datetime()
