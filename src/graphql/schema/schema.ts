@@ -299,7 +299,7 @@ const typeDefs = gql`
                   organization: {
                     memberUsers_SINGLE: {
                       externalId: "$jwt.sub"
-                      role: "ADMIN"
+                      role_IN:["ADMIN"]
                     }
                   }
                 }
