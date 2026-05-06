@@ -4976,12 +4976,7 @@ const typeDefs = gql`
       )
   }
 
-  union CommentParent =
-      FlowNode
-    | BacklogItem # | Human
-    | Contact
-    | Asset
-    | Account
+  union CommentParent = FlowNode | BacklogItem | Contact | Asset | Account
 
   type Comment implements TimestampedCreatable & Timestamped
     @authorization(
@@ -5014,7 +5009,7 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
-    commentParent: CommentParent
+    commentParent: CommentParent!
       @relationship(
         type: "HAS_COMMENT"
         direction: IN
@@ -5022,6 +5017,14 @@ const typeDefs = gql`
         nestedOperations: [CONNECT]
       )
       @settable(onCreate: true, onUpdate: false)
+    parent: CommentParent!
+      @cypher(
+        statement: """
+        MATCH (parent)-[:HAS_COMMENT]->(this)
+        RETURN parent
+        """
+        columnName: "parent"
+      )
     reactionsSummary: [ReactionSummary!]!
       @cypher(
         statement: """
