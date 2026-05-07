@@ -49,7 +49,7 @@ type RFNode = {
   style?: { width?: number; height?: number };
 };
 
-type LayoutDirection = "vertical" | "horizontal" | "horizantal";
+export type LayoutDirection = "vertical" | "horizontal" | "horizantal";
 
 type RFEdge = {
   id: string;
@@ -229,7 +229,7 @@ function convertToFlowchartRenderData(apiResponse: {
   nodes: AINode[];
   edges: AIEdge[];
   fileId: string;
-  layoutDirection?: "vertical" | "horizontal" | "horizantal";
+  layoutDirection?: LayoutDirection;
 }) {
   const { nodes, edges, fileId, layoutDirection } = apiResponse;
 
