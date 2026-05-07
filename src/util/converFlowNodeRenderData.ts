@@ -1,3 +1,5 @@
+import { NodeLayoutType } from "../interfaces";
+
 type AINode = {
   id: string;
   label: string;
@@ -49,7 +51,7 @@ type RFNode = {
   style?: { width?: number; height?: number };
 };
 
-export type LayoutDirection = "vertical" | "horizontal" | "horizantal";
+export type LayoutDirection = NodeLayoutType;
 
 type RFEdge = {
   id: string;
@@ -101,7 +103,7 @@ function sortEdgesForLayout(edges: RFEdge[]) {
 function layoutFlow(
   nodes: RFNode[],
   edges: RFEdge[],
-  layoutDirection: LayoutDirection = "vertical",
+  layoutDirection: LayoutDirection,
 ) {
   const H_SPACING = 220;
   const V_SPACING = 140;
@@ -197,7 +199,7 @@ function layoutFlow(
       const nodeWidth = node.style?.width || 130;
       const nodeHeight = node.style?.height || 55;
 
-      if (layoutDirection === "vertical") {
+      if (layoutDirection === NodeLayoutType.Vertical) {
         const totalWidth = (levelNodes.length - 1) * H_SPACING;
         const firstCenterX = CENTER_X - totalWidth / 2;
         const nodeCenterX = firstCenterX + index * H_SPACING;
@@ -229,7 +231,7 @@ function convertToFlowchartRenderData(apiResponse: {
   nodes: AINode[];
   edges: AIEdge[];
   fileId: string;
-  layoutDirection?: LayoutDirection;
+  layoutDirection?: LayoutDirection | undefined;
 }) {
   const { nodes, edges, fileId, layoutDirection } = apiResponse;
 
@@ -257,8 +259,11 @@ function convertToFlowchartRenderData(apiResponse: {
     };
   });
 
+  const actualLayoutDirection = layoutDirection ?? NodeLayoutType.Vertical;
+
   const isHorizontal =
-    layoutDirection === "horizontal" || layoutDirection === "horizantal";
+    actualLayoutDirection === NodeLayoutType.Horizontal ||
+    actualLayoutDirection === NodeLayoutType.Vertical;
 
   const sourceHandle = isHorizontal ? "c" : "d";
   const targetHandle = "a";
@@ -274,7 +279,11 @@ function convertToFlowchartRenderData(apiResponse: {
     animated: edge.animated || false,
   }));
 
-  const layoutedNodes = layoutFlow(renderNodes, renderEdges, layoutDirection);
+  const layoutedNodes = layoutFlow(
+    renderNodes,
+    renderEdges,
+    actualLayoutDirection,
+  );
 
   const cqlNodes: CqlNodePayload[] = layoutedNodes.map((node) => ({
     id: node.id,
