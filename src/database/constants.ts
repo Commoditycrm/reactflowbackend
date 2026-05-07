@@ -1338,7 +1338,8 @@ UNWIND $nodes AS nodeInput
 MATCH (f:File {id: nodeInput.fileId})
 
 CREATE (n:FlowNode {
-  id: randomUUID(),
+  id: nodeInput.dbId,
+  aiNodeId: nodeInput.aiNodeId,
   name: nodeInput.name,
   color: nodeInput.color,
   shape: nodeInput.shape,
@@ -1346,7 +1347,7 @@ CREATE (n:FlowNode {
   posY: toFloat(nodeInput.posY),
   width: toFloat(nodeInput.width),
   height: toFloat(nodeInput.height),
-  description:nodeInput.description,
+  description: nodeInput.description,
   type: nodeInput.type,
   textDecoration: "normal",
   createdAt: datetime()
@@ -1355,7 +1356,7 @@ CREATE (n:FlowNode {
 CREATE (f)-[:HAS_FLOW_NODE]->(n)
 CREATE (u)-[:CREATED_FLOW_NODE]->(n)
 
-WITH collect({ aiId: nodeInput.id, node: n }) AS nodeMap
+WITH collect({ aiId: nodeInput.aiNodeId, node: n }) AS nodeMap
 
 UNWIND $edges AS edge
 
@@ -1372,8 +1373,87 @@ CREATE (sourceNode)-[:LINKED_TO {
   targetHandle: coalesce(edge.targetHandle, "b"),
   animated: coalesce(edge.animated, false),
   label: coalesce(edge.label, ""),
-  color: coalesce(edge.color, '#b0b0b5'),
+  color: coalesce(edge.color, "#b0b0b5"),
   bidirectional: false
 }]->(targetNode)
 
-RETURN count(*) AS result`;
+RETURN count(*) AS result
+`;
+export const CREATE_AI_BACKLOGITEM_CQL = `
+MATCH (user:User {externalId: $jwt.sub})
+MATCH (file:File {id: $fileId})
+
+CALL {
+  WITH file
+  MATCH (project:Project)-[:HAS_CHILD_FILE]->(file)
+  RETURN project
+
+  UNION
+
+  WITH file
+  MATCH (project:Project)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file)
+  RETURN project
+}
+
+MATCH (org:Organization)-[:HAS_PROJECTS]->(project)
+MATCH (org)-[:HAS_COUNTER]->(counter)
+
+CALL {
+  WITH org
+  MATCH (org)-[:HAS_STATUS]->(status:Status)
+  WHERE status.default = true
+     OR toLower(coalesce(status.defaultName, status.name, "")) IN ["not started", "todo", "open"]
+  RETURN status
+  ORDER BY status.default DESC
+  LIMIT 1
+}
+
+CALL {
+  WITH org
+  MATCH (org)-[:HAS_RISK_LEVEL]->(riskLevel:RiskLevel)
+  WHERE riskLevel.default = true
+     OR toLower(coalesce(riskLevel.defaultName, riskLevel.name, "")) IN ["low", "medium"]
+  RETURN riskLevel
+  ORDER BY riskLevel.default DESC
+  LIMIT 1
+}
+
+CALL {
+  WITH org
+  MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(backlogType:BacklogItemType)
+  WHERE backlogType.default = true
+     OR backlogType.selectable = true
+  RETURN backlogType
+  ORDER BY backlogType.default DESC
+  LIMIT 1
+}
+
+UNWIND $backlogItems AS item
+
+MATCH (file)-[:HAS_FLOW_NODE]->(node:FlowNode {id: item.nodeId})
+WHERE node.id IN $createdNodeIds
+
+CALL apoc.atomic.add(counter, "counter", 1, 10)
+YIELD newValue
+
+CREATE (bi:BacklogItem {
+  id: item.id,
+  uid: newValue,
+  uniqueUid: toString(newValue) + "-" + org.id,
+  label: item.label,
+  description: coalesce(item.description, ""),
+  isRecurringTask: false,
+  isTopLevelParentItem: true,
+  createdAt: datetime(),
+  updatedAt: datetime(),
+  startDate:datetime(),
+  endDate:datetime()
+})
+
+MERGE (node)-[:HAS_CHILD_ITEM]->(bi)
+MERGE (bi)-[:ITEM_IN_PROJECT]->(project)
+MERGE (bi)-[:HAS_STATUS]->(status)
+MERGE (bi)-[:HAS_RISK_LEVEL]->(riskLevel)
+MERGE (bi)-[:HAS_BACKLOGITEM_TYPE]->(backlogType)
+MERGE (user)-[:CREATED_ITEM]->(bi)
+`;

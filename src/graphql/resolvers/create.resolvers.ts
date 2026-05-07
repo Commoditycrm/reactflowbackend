@@ -11,6 +11,7 @@ import {
   COPY_FILE_GROUP_NODE_CQL,
   COPY_FILE_LINKS_CQL,
   COPY_FILE_NODES_CQL,
+  CREATE_AI_BACKLOGITEM_CQL,
   CREATE_AI_FLOWNODE_CQL,
   CREATE_INVITE_USER_CQL,
   CREATE_PROJECT_FROM_TEMPLATE,
@@ -37,6 +38,7 @@ import withTimeout from "../../util/timeOutFuc";
 import Anthropic from "@anthropic-ai/sdk";
 import { EnvLoader } from "../../util/EnvLoader";
 import convertToFlowchartRenderData from "../../util/converFlowNodeRenderData";
+import { randomUUID } from "node:crypto";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
 const anthropic = new Anthropic({
@@ -635,22 +637,47 @@ const createAiFlow = async (
       "Return only valid minified JSON. No markdown. No explanation.";
 
     const AI_USER_PROMPT = `
-   Create a flowchart from this prompt: ${safePrompt}
-   Return this exact JSON structure:
-   {"title":"","nodes":[{"id":"n1","label":"","kind":"start","description":""}],"edges":[{"source":"n1","target":"n2","label":""}]}
-   Rules:
-   - Return only JSON
-   - No markdown
-   - Max 8 nodes
-   - Node ids must be n1,n2,n3...
-   - kind must be one of: start, process, decision, input, storage, end
-   - Keep labels short
-   - Keep descriptions short
-   - Edges must only use existing node ids
-   - Flow should be logical from start to end
-   - Avoid circular edges
-   - If a retry/remake step exists, connect it forward to the next step, not back to an earlier step
-   `;
+    Create a flowchart from this prompt: ${safePrompt}
+    Return this exact JSON structure:
+    {
+    "title": "",
+    "nodes": [
+      {
+        "id": "n1",
+        "label": "",
+        "kind": "start",
+        "description": "",
+        "backlogItems": [
+          {
+            "label": "",
+            "description": ""
+          }
+        ]
+      }
+    ],
+    "edges": [
+    {
+      "source": "n1",
+      "target": "n2",
+      "label": ""
+    }
+  ]
+}
+
+Rules:
+- Return only JSON
+- No markdown
+- Max 8 nodes
+- Max 3 backlogItems per node
+- Node ids must be n1,n2,n3...
+- kind must be one of: start, process, decision, input, storage, end
+- Keep labels short
+- Keep descriptions short
+- Each backlogItem should be a task for that particular node
+- Edges must only use existing node ids
+- Flow should be logical from start to end
+- Avoid circular edges
+`;
 
     // 🤖 AI Call
     let completion: Awaited<ReturnType<typeof anthropic.messages.create>>;
@@ -659,12 +686,12 @@ const createAiFlow = async (
       completion = await withTimeout(
         anthropic.messages.create({
           model: "claude-haiku-4-5",
-          max_tokens: 1000,
+          max_tokens: 2500,
           temperature: 0,
           system: AI_SYSTEM_PROMPT,
           messages: [{ role: "user", content: AI_USER_PROMPT }],
         }),
-        15000,
+        25000,
       );
     } catch (error: any) {
       const message =
@@ -683,6 +710,8 @@ const createAiFlow = async (
         },
       );
     }
+
+    console.log(completion);
 
     // 🛑 Check truncated response
     if (completion.stop_reason === "max_tokens") {
@@ -762,12 +791,23 @@ const createAiFlow = async (
       .map((n: any, index: number) => {
         const kind = normalizeKind(n.kind);
 
+        const backlogItems = Array.isArray(n.backlogItems)
+          ? n.backlogItems
+              .slice(0, 3)
+              .filter((b: any) => b?.label)
+              .map((b: any) => ({
+                label: String(b.label || "").slice(0, 120),
+                description: String(b.description || "").slice(0, 500),
+              }))
+          : [];
+
         return {
           id: String(n.id || `n${index + 1}`),
           label: String(n.label || `Step ${index + 1}`).slice(0, 80),
           description: String(n.description || "").slice(0, 300),
           kind,
           shape: kindToShape[kind],
+          backlogItems,
         };
       });
 
@@ -814,14 +854,41 @@ const createAiFlow = async (
       fileId,
     });
     console.timeEnd("CONVERT_LAYOUT");
+    const nodeDataWithIds = nodeData.map((node: any, index: number) => ({
+      ...node,
+      dbId: randomUUID(),
+      aiNodeId: node.aiNodeId || nodes[index]?.id || node.id,
+    }));
 
-    console.time("NEO4J_CREATE");
+    const backlogItems = nodeDataWithIds.flatMap((node: any) => {
+      const sourceNode = nodes.find((n: any) => n.id === node.aiNodeId);
+
+      return (sourceNode?.backlogItems || []).map((item: any) => ({
+        id: randomUUID(),
+        nodeId: node.dbId,
+        label: item.label,
+        description: item.description || "",
+      }));
+    });
+
+    console.log("nodeDataWithIds", nodeDataWithIds);
+    console.log("edgeData", edgeData);
+    console.log("backlogItems", backlogItems);
+
     await tx.run(CREATE_AI_FLOWNODE_CQL, {
-      nodes: nodeData,
+      nodes: nodeDataWithIds, // IMPORTANT
       edges: edgeData,
       jwt: _context.jwt,
     });
-    console.timeEnd("NEO4J_CREATE");
+
+    if (backlogItems.length) {
+      await tx.run(CREATE_AI_BACKLOGITEM_CQL, {
+        fileId,
+        backlogItems,
+        createdNodeIds: nodeDataWithIds.map((n: any) => n.dbId),
+        jwt: _context.jwt,
+      });
+    }
     await tx.commit();
 
     return 1;
