@@ -37,7 +37,9 @@ import { kindToShape } from "../../interfaces/types";
 import withTimeout from "../../util/timeOutFuc";
 import Anthropic from "@anthropic-ai/sdk";
 import { EnvLoader } from "../../util/EnvLoader";
-import convertToFlowchartRenderData from "../../util/converFlowNodeRenderData";
+import convertToFlowchartRenderData, {
+  LayoutDirection,
+} from "../../util/converFlowNodeRenderData";
 import { randomUUID } from "node:crypto";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
@@ -605,7 +607,11 @@ const cloneContacts = async (
 
 const createAiFlow = async (
   _source: Record<string, any>,
-  { fileId, prompt }: { fileId: string; prompt: string },
+  {
+    fileId,
+    prompt,
+    layoutDirection,
+  }: { fileId: string; prompt: string; layoutDirection: LayoutDirection },
   _context: Record<string, any>,
 ) => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
@@ -852,7 +858,7 @@ Rules:
       nodes,
       edges,
       fileId,
-      layoutDirection: "horizontal",
+      layoutDirection: layoutDirection,
     });
     console.timeEnd("CONVERT_LAYOUT");
     const nodeDataWithIds = nodeData.map((node: any, index: number) => ({

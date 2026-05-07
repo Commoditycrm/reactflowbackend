@@ -299,7 +299,7 @@ const typeDefs = gql`
                   organization: {
                     memberUsers_SINGLE: {
                       externalId: "$jwt.sub"
-                      role_IN:["ADMIN"]
+                      role_IN: ["ADMIN"]
                     }
                   }
                 }
@@ -4691,7 +4691,7 @@ const typeDefs = gql`
                     organization: {
                       memberUsers_SINGLE: {
                         externalId: "$jwt.sub"
-                        role_IN:["ADMIN"]
+                        role_IN: ["ADMIN"]
                       }
                     }
                   }
@@ -5834,7 +5834,11 @@ const typeDefs = gql`
       )
 
     cloneContacts(records: [String!]!): Int!
-    createAiFlow(prompt: String!, fileId: ID!): Int!
+    createAiFlow(
+      prompt: String!
+      fileId: ID!
+      layoutDirection: NodeLayoutType!
+    ): Int!
   }
 
   type Query {
