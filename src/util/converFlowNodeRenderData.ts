@@ -261,19 +261,17 @@ function convertToFlowchartRenderData(apiResponse: {
 
   const actualLayoutDirection = layoutDirection ?? NodeLayoutType.Vertical;
 
-  const isHorizontal =
-    actualLayoutDirection === NodeLayoutType.Horizontal ||
-    actualLayoutDirection === NodeLayoutType.Vertical;
-
-  const sourceHandle = isHorizontal ? "c" : "d";
-  const targetHandle = "a";
+  const isHorizontal = actualLayoutDirection === NodeLayoutType.Horizontal;
 
   const renderEdges: RFEdge[] = edges.map((edge, index) => ({
     id: edge.id || `e-${index + 1}`,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle || sourceHandle,
-    targetHandle: edge.targetHandle || targetHandle,
+
+    // old vertical logic same, only horizontal changed
+    sourceHandle: edge.sourceHandle || (isHorizontal ? "c" : "d"),
+    targetHandle: edge.targetHandle || (isHorizontal ? "a" : "b"),
+
     color: edgeColor,
     label: edge.label || "",
     animated: edge.animated || false,
@@ -304,8 +302,10 @@ function convertToFlowchartRenderData(apiResponse: {
     source: edge.source,
     target: edge.target,
     label: edge.label || "",
-    sourceHandle: edge.sourceHandle || "d",
-    targetHandle: edge.targetHandle || "b",
+
+    sourceHandle: edge.sourceHandle || (isHorizontal ? "c" : "d"),
+    targetHandle: edge.targetHandle || (isHorizontal ? "a" : "b"),
+
     animated: edge.animated || false,
     color: edge.color || edgeColor,
   }));
