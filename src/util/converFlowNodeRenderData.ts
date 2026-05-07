@@ -49,6 +49,8 @@ type RFNode = {
   style?: { width?: number; height?: number };
 };
 
+type LayoutDirection = "vertical" | "horizontal" | "horizantal";
+
 type RFEdge = {
   id: string;
   source: string;
@@ -96,7 +98,11 @@ function sortEdgesForLayout(edges: RFEdge[]) {
   });
 }
 
-function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
+function layoutFlow(
+  nodes: RFNode[],
+  edges: RFEdge[],
+  layoutDirection: LayoutDirection = "vertical",
+) {
   const H_SPACING = 220;
   const V_SPACING = 140;
   const CENTER_X = 300; // all single vertical nodes align to this center
@@ -189,15 +195,27 @@ function layoutFlow(nodes: RFNode[], edges: RFEdge[]) {
 
     levelNodes.forEach((node, index) => {
       const nodeWidth = node.style?.width || 130;
+      const nodeHeight = node.style?.height || 55;
 
-      // center point of the node
-      const nodeCenterX = firstCenterX + index * H_SPACING;
+      if (layoutDirection === "vertical") {
+        const totalWidth = (levelNodes.length - 1) * H_SPACING;
+        const firstCenterX = CENTER_X - totalWidth / 2;
+        const nodeCenterX = firstCenterX + index * H_SPACING;
 
-      positioned.set(node.id, {
-        // React Flow position is top-left, so subtract half width
-        x: nodeCenterX - nodeWidth / 2,
-        y: 80 + level * V_SPACING,
-      });
+        positioned.set(node.id, {
+          x: nodeCenterX - nodeWidth / 2,
+          y: 80 + level * V_SPACING,
+        });
+      } else {
+        const totalHeight = (levelNodes.length - 1) * V_SPACING;
+        const firstCenterY = 300 - totalHeight / 2;
+        const nodeCenterY = firstCenterY + index * V_SPACING;
+
+        positioned.set(node.id, {
+          x: 80 + level * H_SPACING,
+          y: nodeCenterY - nodeHeight / 2,
+        });
+      }
     });
   }
 
@@ -211,8 +229,9 @@ function convertToFlowchartRenderData(apiResponse: {
   nodes: AINode[];
   edges: AIEdge[];
   fileId: string;
+  layoutDirection?: "vertical" | "horizontal" | "horizantal";
 }) {
-  const { nodes, edges, fileId } = apiResponse;
+  const { nodes, edges, fileId, layoutDirection } = apiResponse;
 
   const nodeColor = "#ffffff";
   const edgeColor = "#b0b0b5";
@@ -238,18 +257,24 @@ function convertToFlowchartRenderData(apiResponse: {
     };
   });
 
+  const isHorizontal =
+    layoutDirection === "horizontal" || layoutDirection === "horizantal";
+
+  const sourceHandle = isHorizontal ? "c" : "d";
+  const targetHandle = "a";
+
   const renderEdges: RFEdge[] = edges.map((edge, index) => ({
     id: edge.id || `e-${index + 1}`,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle || "d",
-    targetHandle: edge.targetHandle || "b",
+    sourceHandle: edge.sourceHandle || sourceHandle,
+    targetHandle: edge.targetHandle || targetHandle,
     color: edgeColor,
     label: edge.label || "",
     animated: edge.animated || false,
   }));
 
-  const layoutedNodes = layoutFlow(renderNodes, renderEdges);
+  const layoutedNodes = layoutFlow(renderNodes, renderEdges, layoutDirection);
 
   const cqlNodes: CqlNodePayload[] = layoutedNodes.map((node) => ({
     id: node.id,

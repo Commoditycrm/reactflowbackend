@@ -852,6 +852,7 @@ Rules:
       nodes,
       edges,
       fileId,
+      layoutDirection: "horizontal",
     });
     console.timeEnd("CONVERT_LAYOUT");
     const nodeDataWithIds = nodeData.map((node: any, index: number) => ({
