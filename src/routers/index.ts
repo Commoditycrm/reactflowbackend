@@ -3,7 +3,7 @@ import { createServer } from "http";
 import apiRouter from "./apiRouters";
 
 const initRoutes = async (
-  httpServer: ReturnType<typeof createServer>
+  httpServer: ReturnType<typeof createServer>,
 ): Promise<express.Router> => {
   const router = express.Router();
 
@@ -13,4 +13,4 @@ const initRoutes = async (
   return router;
 };
 
-export default initRoutes
+export default initRoutes;
