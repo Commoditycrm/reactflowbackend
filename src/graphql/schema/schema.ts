@@ -527,6 +527,23 @@ const typeDefs = gql`
     @authorization(
       validate: [
         {
+          operations: [READ]
+          when: [BEFORE]
+          where: {
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                  }
+                }
+                { createdBy: { externalId: "$jwt.sub" } }
+              ]
+            }
+          }
+        }
+        {
           when: [AFTER]
           operations: [CREATE, UPDATE]
           where: {
@@ -539,23 +556,6 @@ const typeDefs = gql`
                       externalId: "$jwt.sub"
                       role: "ADMIN"
                     }
-                  }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
                   }
                 }
                 { createdBy: { externalId: "$jwt.sub" } }
@@ -588,11 +588,11 @@ const typeDefs = gql`
             }
           }
         }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        }
+        # {
+        #   operations: [READ]
+        #   when: [BEFORE]
+        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        # }
       ]
     ) {
     id: ID! @id

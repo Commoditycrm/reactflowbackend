@@ -13,10 +13,13 @@ import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
 import { ragResolvers } from "./../resolvers/rag.resolvers";
 import { EnvLoader } from "../../util/EnvLoader";
-import { jwtVerify as joseJwtVerify } from "jose";
+
 import { Neo4JConnection } from "../../database/connection";
 import { getAuthTokens } from "../../util/authToken";
 import jwt from "jsonwebtoken";
+import { jwtVerify } from "../../util/jwtVerify";
+import { redis } from "../../database/redisClient";
+import logger from "../../logger";
 
 export type IResolvers =
   | {
@@ -76,7 +79,6 @@ export class NeoConnection {
 
     const { sessionToken, headerToken } = getAuthTokens(req);
 
-    // 1. Normal logged-in user
     if (sessionToken) {
       try {
         const SESSION_SECRET = EnvLoader.getOrThrow("SESSION_SECRET");
@@ -98,36 +100,48 @@ export class NeoConnection {
           });
         }
 
-        const neo4jSession = (
-          await Neo4JConnection.getInstance()
-        ).driver.session();
+        logger.info("SESSION ID FROM JWT:", { sessionId });
+
+        const redisKey = `session:${sessionId}`;
+        logger.info("REDIS KEY:", { redisKey });
+
+        const redisSession = await redis.get(redisKey);
+        logger.info("REDIS SESSION FOUND:", { redisSession: !!redisSession });
+
+        if (!redisSession) {
+          throw new GraphQLError("Session expired or logged out", {
+            extensions: { code: "UNAUTHENTICATED" },
+          });
+        }
+
+        if (!sessionId) {
+          throw new GraphQLError("Session id missing", {
+            extensions: { code: "UNAUTHENTICATED" },
+          });
+        }
+
+        let parsedSession: Record<string, any>;
 
         try {
-          const result = await neo4jSession.run(
-            `
-          MATCH (s:UserSession {id: $sessionId, isActive: true})
-          RETURN s.id AS id
-          LIMIT 1
-          `,
-            { sessionId },
-          );
+          parsedSession = JSON.parse(redisSession);
+        } catch {
+          await redis.del(`session:${sessionId}`);
 
-          if (result.records.length === 0) {
-            throw new GraphQLError("Session expired or logged out", {
-              extensions: { code: "UNAUTHENTICATED" },
-            });
-          }
-        } finally {
-          await neo4jSession.close();
+          throw new GraphQLError("Invalid session data", {
+            extensions: { code: "UNAUTHENTICATED" },
+          });
         }
 
         const appJwt = {
-          sub: payload.sub,
-          uid: payload.uid,
-          email: payload.email,
-          email_verified: payload.email_verified,
-          roles: payload.roles || [],
-          orgCreated: payload.orgCreated || false,
+          sub: payload.sub || parsedSession.sub,
+          uid: payload.uid || parsedSession.uid,
+          email: payload.email || parsedSession.email,
+          email_verified:
+            payload.email_verified ?? parsedSession.email_verified ?? false,
+          roles: Array.isArray(payload.roles)
+            ? payload.roles
+            : parsedSession.roles || [],
+          orgCreated: payload.orgCreated ?? parsedSession.orgCreated ?? false,
           sessionId,
         };
 
@@ -141,7 +155,6 @@ export class NeoConnection {
       }
     }
 
-    // 2. Invite user
     if (headerToken) {
       try {
         const INVITE_JWT_SECRET = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
@@ -200,11 +213,4 @@ export class NeoConnection {
       },
     };
   }
-}
-async function jwtVerify(
-  token: string,
-  secret: Uint8Array<ArrayBuffer>,
-): Promise<{ payload: any }> {
-  const { payload } = await joseJwtVerify(token, secret);
-  return { payload };
 }
