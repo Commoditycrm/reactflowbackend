@@ -639,6 +639,12 @@ const typeDefs = gql`
       )
   }
 
+  enum CurrencyCode {
+    USD
+    CAD
+    EUR
+  }
+
   type Organization implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
@@ -703,6 +709,7 @@ const typeDefs = gql`
           }
         ]
       )
+    currency: CurrencyCode @default(value: USD)
     description: String
       @authorization(
         validate: [
