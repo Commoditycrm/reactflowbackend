@@ -678,7 +678,7 @@ Rules:
 - Node ids must be n1,n2,n3...
 - kind must be one of: start, process, decision, input, storage, end
 - Keep labels short
-- Keep descriptions short
+- Keep descriptions 1 to 2 line
 - Each backlogItem should be a task for that particular node
 - Edges must only use existing node ids
 - Flow should be logical from start to end
