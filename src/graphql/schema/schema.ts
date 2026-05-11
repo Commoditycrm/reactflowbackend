@@ -1087,12 +1087,13 @@ const typeDefs = gql`
     ACCOUNTS
   }
 
-  interface Resource implements Timestamped {
+  interface Resource implements Timestamped & SoftDeletable {
     id: ID!
     name: String!
     resourceType: ResourceType!
     createdAt: DateTime!
     updatedAt: DateTime
+    deletedAt: DateTime
     organization: Organization! @declareRelationship
     address: Address @declareRelationship
     attachedFiles: [ExternalFile!]! @declareRelationship
@@ -1109,8 +1110,11 @@ const typeDefs = gql`
     street: String
   }
 
-  type Contact implements Resource & Timestamped & TimestampedCreatable
+  type Contact implements Resource & Timestamped & TimestampedCreatable & SoftDeletable
     @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
       validate: [
         {
           when: [AFTER]
@@ -1234,10 +1238,14 @@ const typeDefs = gql`
     lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    deletedAt: DateTime
   }
 
-  type Asset implements Resource & Timestamped & TimestampedCreatable
+  type Asset implements Resource & Timestamped & TimestampedCreatable & SoftDeletable
     @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
       validate: [
         {
           when: [AFTER]
@@ -1338,10 +1346,14 @@ const typeDefs = gql`
     lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    deletedAt: DateTime
   }
 
-  type Account implements Resource & Timestamped & TimestampedCreatable
+  type Account implements Resource & Timestamped & TimestampedCreatable & SoftDeletable
     @authorization(
+      filter: [
+        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
+      ]
       validate: [
         {
           when: [AFTER]
@@ -1441,6 +1453,7 @@ const typeDefs = gql`
     lastModified: DateTime @timestamp(operations: [CREATE, UPDATE])
     createdAt: DateTime! @timestamp(operations: [CREATE])
     updatedAt: DateTime @timestamp(operations: [UPDATE])
+    deletedAt: DateTime
   }
 
   enum BacklogTable {
@@ -2266,7 +2279,7 @@ const typeDefs = gql`
          CALL(p) {
          WITH p
          MATCH(p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
-         WHERE file.deletedAT IS NULL AND n.deletedAt IS NULL
+         WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
          OPTIONAL MATCH path=(n)-[:HAS_CHILD_ITEM*1..5]->(bi:BacklogItem)-[:ITEM_IN_PROJECT]->(p)
          WHERE bi.deletedAt IS NULL
           AND ALL(x IN nodes(path) WHERE NOT x:BacklogItem OR x.deletedAt IS NULL)
