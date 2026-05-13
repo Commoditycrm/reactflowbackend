@@ -5906,7 +5906,7 @@ const typeDefs = gql`
         UNWIND allNodes AS node
         WITH DISTINCT node, name
         WHERE node.deletedAt IS NOT NULL
-          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem","Account","Asset","Contact"])
 
         OPTIONAL MATCH (creator)-[
           :CREATED_FOLDER
@@ -5915,6 +5915,7 @@ const typeDefs = gql`
           |CREATED_FLOW_NODE
           |CREATED_PROJECT
           |CREATED_ITEM
+          |CREATED_RESOURCE
         ]->(node)
 
         WITH node, name, head(collect(creator)) AS creator
@@ -5930,7 +5931,7 @@ const typeDefs = gql`
           id: node.id,
           name: coalesce(node.name, node.label),
           deletedAt: node.deletedAt,
-          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"]]),
+          type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem","Account","Asset","Contact"]]),
           createdByName: creator.name,
           createdByRole: creator.role,
           createdByEmail: creator.email
@@ -5952,7 +5953,7 @@ const typeDefs = gql`
         UNWIND allNodes AS node
         WITH DISTINCT node, name
         WHERE node.deletedAt IS NOT NULL
-          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+          AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem","Account","Asset","Contact"])
 
         WITH node, name
         WHERE name = ""
