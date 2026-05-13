@@ -5788,7 +5788,7 @@ const typeDefs = gql`
             UNWIND allNodes AS node
             WITH DISTINCT node
             WHERE node.deletedAt IS NOT NULL
-              AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem"])
+              AND any(l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem","Account","Asset","Contact"])
             RETURN node
           ',
           '
