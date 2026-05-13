@@ -143,6 +143,8 @@ export class NeoConnection {
             : parsedSession.roles || [],
           orgCreated: payload.orgCreated ?? parsedSession.orgCreated ?? false,
           sessionId,
+          phone_number:payload.phone_number,
+          name:payload.name
         };
 
         return { jwt: appJwt, authorization: { jwt: appJwt } };
