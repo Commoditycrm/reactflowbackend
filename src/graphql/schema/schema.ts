@@ -5929,7 +5929,7 @@ const typeDefs = gql`
 
         RETURN {
           id: node.id,
-          name: coalesce(node.name, node.label),
+          name: coalesce(node.name, node.label, "--No Name--"),
           deletedAt: node.deletedAt,
           type: head([l IN labels(node) WHERE l IN ["Folder","File","Sprint","FlowNode","Project","BacklogItem","Account","Asset","Contact"]]),
           createdByName: creator.name,
