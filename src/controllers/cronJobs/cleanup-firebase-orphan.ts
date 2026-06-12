@@ -135,7 +135,6 @@ const cleanUpFirebaseOrphan = async (req: Request, res: Response) => {
         // Candidate orphan
         if (dryRun) {
           toDelete.push(objectPath);
-          deleted++;
         } else {
           try {
             await file.delete(); // IMPORTANT: no ignoreNotFound while debugging
@@ -150,10 +149,10 @@ const cleanUpFirebaseOrphan = async (req: Request, res: Response) => {
           }
         }
 
-        if (deleted >= maxDeletes) break;
+        if ((dryRun ? toDelete.length : deleted) >= maxDeletes) break;
       }
 
-      if (deleted >= maxDeletes) break;
+      if ((dryRun ? toDelete.length : deleted) >= maxDeletes) break;
       if (!pageToken) break;
     }
 

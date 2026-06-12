@@ -41,11 +41,13 @@ const updateUserRole = async (
     if (result.records[0] && result.records[0].get("updatedRole") === role) {
       const userRecord = await auth.getUser(uid);
       const currentClaims = userRecord.customClaims || {};
-      await tx.commit();
+      // Set Firebase claims BEFORE committing so a claims failure rolls back the
+      // DB role change, keeping Neo4j and Firebase in sync.
       await auth.setCustomUserClaims(uid, {
         ...currentClaims,
         roles: [role],
       });
+      await tx.commit();
       logger?.info("Role updated successfully.");
       return true;
     } else {
@@ -208,6 +210,12 @@ const updatePhoneNumber = async (
 ): Promise<Boolean> => {
   const User = (await OGMConnection.getInstance()).model("User");
   const externalId = _context?.jwt?.sub;
+
+  if (!externalId) {
+    throw new GraphQLError("Unauthenticated.", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
 
   try {
     await getFirebaseAdminAuth().auth().updateUser(externalId, {

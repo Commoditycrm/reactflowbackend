@@ -542,10 +542,10 @@ const getFirebaseStorage = async (
 ) => {
   const app = getFirebaseAdminAuth();
   const userRole = _context?.jwt?.roles;
-  if (userRole[0] !== UserRole.SystemAdmin) {
+  if (userRole?.[0] !== UserRole.SystemAdmin) {
     throw new GraphQLError("UNAUTHORIZED", {
       extensions: {
-        code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
+        code: "FORBIDDEN",
       },
     });
   }

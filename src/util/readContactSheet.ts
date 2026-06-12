@@ -151,15 +151,11 @@ export function readContactSheetAsJson({
 
     const errors: string[] = [];
 
+    const fieldValues = parsedRow as Record<string, any>;
     for (const field of requiredFields) {
-      const value =
-        field === "firstName"
-          ? parsedRow.firstName
-          : field === "lastName"
-          ? parsedRow.lastName
-          : field === "middleName"
-          ? parsedRow.middleName
-          : null;
+      // Resolve any required field generically (not just the name fields),
+      // checking the parsed row first and then the dynamic extra columns.
+      const value = fieldValues[field] ?? extraFields[field] ?? null;
 
       if (!value || String(value).trim() === "") {
         errors.push(`${field} is required`);
