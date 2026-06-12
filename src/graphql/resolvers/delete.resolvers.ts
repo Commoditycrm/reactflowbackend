@@ -7,6 +7,31 @@ import { Model } from "@neo4j/graphql-ogm";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
 import { User, UserRole } from "../../interfaces";
 
+/**
+ * True if the caller and the target user share at least one organization
+ * (either OWNS or MEMBER_OF). Used to keep COMPANY_ADMIN actions scoped to
+ * their own org; SYSTEM_ADMIN callers bypass this check.
+ */
+const callerSharesOrgWithTarget = async (
+  callerExternalId: string,
+  targetUserId: string
+): Promise<boolean> => {
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  try {
+    const result = await session.run(
+      `
+      MATCH (caller:User {externalId: $callerExternalId})-[:OWNS|MEMBER_OF]->(org:Organization)<-[:OWNS|MEMBER_OF]-(target:User {id: $targetUserId})
+      RETURN org.id AS orgId
+      LIMIT 1
+      `,
+      { callerExternalId, targetUserId }
+    );
+    return result.records.length > 0;
+  } finally {
+    await session.close();
+  }
+};
+
 const deleteUser = async (
   _source: Record<string, any>,
   { userId }: { userId: string },
@@ -85,6 +110,21 @@ const deleteUser = async (
       throw new GraphQLError("Cannot delete your own account.", {
         extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
       });
+    }
+
+    // COMPANY_ADMIN may only delete users within their own org.
+    if (currentUser.role !== "SYSTEM_ADMIN") {
+      const sameOrg = await callerSharesOrgWithTarget(currentUserId, userId);
+      if (!sameOrg) {
+        logger?.error("Cross-org deletion attempt blocked", {
+          currentUserId,
+          targetUserId: userId,
+        });
+        throw new GraphQLError(
+          "Unauthorized access. Insufficient permissions.",
+          { extensions: { code: "FORBIDDEN" } }
+        );
+      }
     }
 
     const [updateResult, _firebaseResult] = await Promise.allSettled([
@@ -191,6 +231,21 @@ const disableUser = async (
       throw new GraphQLError("User not found.", {
         extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
       });
+    }
+
+    // COMPANY_ADMIN may only disable users within their own org.
+    if (currentUser.role !== "SYSTEM_ADMIN") {
+      const sameOrg = await callerSharesOrgWithTarget(currentUserId, userId);
+      if (!sameOrg) {
+        logger?.error("Cross-org disable attempt blocked", {
+          currentUserId,
+          targetUserId: userId,
+        });
+        throw new GraphQLError(
+          "Unauthorized access. Insufficient permissions.",
+          { extensions: { code: "FORBIDDEN" } }
+        );
+      }
     }
 
     // Firebase identifies users by their uid (externalId), not the DB id.
