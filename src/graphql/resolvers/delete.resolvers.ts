@@ -41,7 +41,7 @@ const deleteUser = async (
 
   if (!currentUserId) {
     throw new GraphQLError("Authentication required.", {
-      extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      extensions: { code: "UNAUTHENTICATED" },
     });
   }
 
@@ -85,7 +85,7 @@ const deleteUser = async (
     if (!currentUser) {
       logger?.error("Current user not found in database", { currentUserId });
       throw new GraphQLError("Authentication failed.", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+        extensions: { code: "UNAUTHENTICATED" },
       });
     }
 
@@ -96,7 +96,7 @@ const deleteUser = async (
         targetUserId: userId,
       });
       throw new GraphQLError("Unauthorized access. Insufficient permissions.", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+        extensions: { code: "FORBIDDEN" },
       });
     }
 
@@ -297,16 +297,17 @@ const deleteOrg = async (
   { orgId }: { orgId: string },
   _context: Record<string, any>
 ) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
-  const userRole = _context?.jwt?.roles[0];
+  const userRole = _context?.jwt?.roles?.[0];
   if (userRole !== UserRole.SystemAdmin) {
     throw new GraphQLError("UNAUTHORIZED", {
       extensions: {
-        code: ApolloServerErrorCode.BAD_REQUEST,
+        code: "FORBIDDEN",
       },
     });
   }
+
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
 
   try {
     const result = await tx.run(
@@ -359,7 +360,7 @@ const deleteOrg = async (
       },
     });
   } finally {
-    session.close();
+    await session.close();
   }
 };
 

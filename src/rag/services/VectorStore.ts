@@ -470,14 +470,16 @@ export class VectorStore {
       const result = await session.run(
         `
         MATCH (c:DocumentChunk)-[:CHUNK_OF]->(ef:ExternalFile {id: $externalFileId})
-        WITH c, count(c) AS cnt
-        DETACH DELETE c
+        WITH collect(c) AS chunks, count(c) AS cnt
+        FOREACH (x IN chunks | DETACH DELETE x)
         RETURN cnt
         `,
         { externalFileId }
       );
 
-      const deletedCount = result.records[0]?.get("cnt") ?? 0;
+      const raw = result.records[0]?.get("cnt");
+      const deletedCount =
+        typeof raw?.toNumber === "function" ? raw.toNumber() : Number(raw ?? 0);
       logger?.info("VectorStore.deleteChunksForDocument completed", {
         externalFileId,
         deletedCount,

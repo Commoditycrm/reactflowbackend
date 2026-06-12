@@ -14,7 +14,6 @@ const errorHandling = (
     extensions: {
       code: formattedError.extensions?.code || "INTERNAL_SERVER_ERROR",
     },
-    ...(formattedError.path ? { path: formattedError.path } : {}),
     path: formattedError.path || [],
   };
 
