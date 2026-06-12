@@ -349,7 +349,14 @@ export class DiagramIndexService {
     let skipped = 0;
     let failed = 0;
 
+    const RATE_LIMIT_DELAY_MS = 2000;
+    const lastIndex = diagrams.length - 1;
+    let i = 0;
+
     for (const d of diagrams) {
+      // Whether this iteration actually hit the external (Groq/embedding) APIs
+      // and therefore needs to be throttled.
+      let calledApi = false;
       try {
         const result = await this.indexDiagram(
           d.fileId,
@@ -358,21 +365,27 @@ export class DiagramIndexService {
           orgId,
           { skipIfUnchanged: true }
         );
-        if (result) indexed++;
-        else skipped++;
-        
-        // Add delay between API calls to avoid rate limiting
-        await sleep(2000);
+        if (result) {
+          indexed++;
+          calledApi = true;
+        } else {
+          // Unchanged: skipped before any API call, so no throttling needed.
+          skipped++;
+        }
       } catch (error) {
         logger?.error(
           "DiagramIndexService.indexProjectDiagrams: failed for diagram",
           { fileId: d.fileId, error }
         );
         failed++;
-        
-        // Add delay even on failure to respect rate limits
-        await sleep(2000);
+        calledApi = true; // may have hit the API before failing
       }
+
+      // Only throttle when we made an API call, and never after the last item.
+      if (calledApi && i < lastIndex) {
+        await sleep(RATE_LIMIT_DELAY_MS);
+      }
+      i++;
     }
 
     logger?.info("DiagramIndexService.indexProjectDiagrams completed", {

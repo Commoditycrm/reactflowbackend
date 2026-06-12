@@ -25,6 +25,27 @@ import {
   isValidInternalSecret,
 } from "../middleware/internalAuth";
 
+// Secrets never change at runtime — compute the encoded forms once (lazily,
+// so we don't depend on env being loaded at import time) instead of on every
+// request through the hot auth path.
+let sessionSecretBytes: Uint8Array<ArrayBuffer> | undefined;
+const getSessionSecretBytes = (): Uint8Array<ArrayBuffer> => {
+  if (!sessionSecretBytes) {
+    sessionSecretBytes = new TextEncoder().encode(
+      EnvLoader.getOrThrow("SESSION_SECRET")
+    );
+  }
+  return sessionSecretBytes;
+};
+
+let inviteJwtSecret: string | undefined;
+const getInviteJwtSecret = (): string => {
+  if (!inviteJwtSecret) {
+    inviteJwtSecret = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
+  }
+  return inviteJwtSecret;
+};
+
 export type IResolvers =
   | {
       Mutation?: Record<string, any>;
@@ -88,10 +109,7 @@ export class NeoConnection {
 
     if (sessionToken) {
       try {
-        const SESSION_SECRET = EnvLoader.getOrThrow("SESSION_SECRET");
-
-        const secret = new TextEncoder().encode(SESSION_SECRET);
-        const { payload } = await jwtVerify(sessionToken, secret);
+        const { payload } = await jwtVerify(sessionToken, getSessionSecretBytes());
 
         if (!payload?.email_verified) {
           throw new GraphQLError("Please verify your email first.", {
@@ -107,22 +125,11 @@ export class NeoConnection {
           });
         }
 
-        logger.info("SESSION ID FROM JWT:", { sessionId });
-
         const redisKey = `session:${sessionId}`;
-        logger.info("REDIS KEY:", { redisKey });
-
         const redisSession = await redis.get(redisKey);
-        logger.info("REDIS SESSION FOUND:", { redisSession: !!redisSession });
 
         if (!redisSession) {
           throw new GraphQLError("Session expired or logged out", {
-            extensions: { code: "UNAUTHENTICATED" },
-          });
-        }
-
-        if (!sessionId) {
-          throw new GraphQLError("Session id missing", {
             extensions: { code: "UNAUTHENTICATED" },
           });
         }
@@ -166,9 +173,7 @@ export class NeoConnection {
 
     if (headerToken) {
       try {
-        const INVITE_JWT_SECRET = EnvLoader.getOrThrow("INVITE_JWT_SECRET");
-
-        const decoded = jwt.verify(headerToken, INVITE_JWT_SECRET) as Record<
+        const decoded = jwt.verify(headerToken, getInviteJwtSecret()) as Record<
           string,
           any
         >;

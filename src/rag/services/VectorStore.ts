@@ -175,42 +175,49 @@ export class VectorStore {
         chunks.map((c) => c.content)
       );
 
-      const tx = session.beginTransaction();
-      let storedCount = 0;
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const embeddingResult = embeddings[i];
-        if (!chunk || !embeddingResult) continue;
-
-        const embedding = embeddingResult.embedding;
-
-        await tx.run(
-          `
-          MATCH (ef:ExternalFile {id: $externalFileId})
-          CREATE (c:DocumentChunk:${label} {
-            id: randomUUID(),
-            content: $content,
-            embedding: $embedding,
-            pageNumber: $pageNumber,
-            chunkIndex: $chunkIndex,
-            status: 'COMPLETED',
-            metadata: $metadata,
-            createdAt: datetime()
-          })
-          CREATE (c)-[:CHUNK_OF]->(ef)
-          RETURN c.id AS chunkId
-          `,
-          {
-            externalFileId,
+      const rows = chunks
+        .map((chunk, i) => {
+          const embeddingResult = embeddings[i];
+          if (!chunk || !embeddingResult) return null;
+          return {
             content: chunk.content,
-            embedding,
+            embedding: embeddingResult.embedding,
             pageNumber: chunk.pageNumber,
             chunkIndex: chunk.chunkIndex,
             metadata: JSON.stringify(chunk.metadata ?? {}),
-          }
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+
+      const tx = session.beginTransaction();
+      let storedCount = 0;
+
+      if (rows.length > 0) {
+        // Create all chunks in a single round-trip instead of one query per
+        // chunk (large PDFs produce hundreds of chunks).
+        const result = await tx.run(
+          `
+          MATCH (ef:ExternalFile {id: $externalFileId})
+          UNWIND $rows AS row
+          CREATE (c:DocumentChunk:${label} {
+            id: randomUUID(),
+            content: row.content,
+            embedding: row.embedding,
+            pageNumber: row.pageNumber,
+            chunkIndex: row.chunkIndex,
+            status: 'COMPLETED',
+            metadata: row.metadata,
+            createdAt: datetime()
+          })
+          CREATE (c)-[:CHUNK_OF]->(ef)
+          RETURN count(c) AS storedCount
+          `,
+          { externalFileId, rows }
         );
-        storedCount++;
+
+        const raw = result.records[0]?.get("storedCount");
+        storedCount =
+          typeof raw?.toNumber === "function" ? raw.toNumber() : Number(raw ?? 0);
       }
 
       await tx.commit();

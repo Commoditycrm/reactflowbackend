@@ -74,33 +74,36 @@ const createEventNotification = async (req: Request, res: Response) => {
   });
 
   try {
-    // Send Email
-    await emailServices.sendTemplate({
-      to: orgOwnerEmail,
-      templateId,
-      dynamicTemplateData: {
-        ...templateData,
-      },
-    });
+    // Email and WhatsApp are independent external calls — fire concurrently.
+    // WhatsApp only runs when a phone number is present; it swallows its own
+    // errors, so only an email failure rejects (preserving the prior 500).
+    await Promise.all([
+      emailServices.sendTemplate({
+        to: orgOwnerEmail,
+        templateId,
+        dynamicTemplateData: {
+          ...templateData,
+        },
+      }),
+      phoneNumber
+        ? waService.sendTemplate({
+            to: phoneNumber,
+            contentSid,
+            variables: {
+              "1": userName,
+              "2": title,
+              "3": projectName,
+              "4": endLocal,
+              "5": startLocal,
+              "6": wsUrl,
+            },
+          })
+        : Promise.resolve(),
+    ]);
 
     logger.info(`Event Email: Successfully sent to ${orgOwnerEmail}.`, {
       projectLink: path,
     });
-
-    if (phoneNumber) {
-      await waService.sendTemplate({
-        to: phoneNumber,
-        contentSid,
-        variables: {
-          "1": userName,
-          "2": title,
-          "3": projectName,
-          "4": endLocal,
-          "5": startLocal,
-          "6": wsUrl,
-        },
-      });
-    }
 
     return res.status(202).json({
       message: `Event notification email and WhatsApp sent successfully.`,

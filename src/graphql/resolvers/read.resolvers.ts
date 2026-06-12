@@ -383,6 +383,10 @@ const generateTask = async (
       } as BacklogItemType;
     });
 
+    // Release the DB connection before the (multi-second) AI call. close() is
+    // idempotent, so the finally below stays a harmless no-op in the happy path.
+    await session.close();
+
     const matchedType =
       orgTypes
         .map((type) => ({
