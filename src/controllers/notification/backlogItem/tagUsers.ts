@@ -56,40 +56,40 @@ const tagUsers = async (req: Request, res: Response) => {
   );
 
   try {
-    await Promise.allSettled(
-      uniqueRecipients.map((r) =>
-        emailServices.sendTemplate({
-          to: r.email,
-          templateId,
-          dynamicTemplateData: {
-            mentionedUserName: r.name,
-            mentionedByName,
-            itemType,
-            itemTitle,
-            projectName,
-            commentHtml,
-            commentUrl: link,
-          },
-        })
-      )
+    // Run both channels (email + WhatsApp) for all recipients concurrently in a
+    // single batch instead of waiting for the whole email batch to finish first.
+    const emailJobs = uniqueRecipients.map((r) =>
+      emailServices.sendTemplate({
+        to: r.email,
+        templateId,
+        dynamicTemplateData: {
+          mentionedUserName: r.name,
+          mentionedByName,
+          itemType,
+          itemTitle,
+          projectName,
+          commentHtml,
+          commentUrl: link,
+        },
+      })
     );
 
-    await Promise.allSettled(
-      uniqueRecipients.map((r) =>
-        waService.sendTemplate({
-          to: r.phoneNumber,
-          contentSid,
-          variables: {
-            "1": r.name,
-            "2": mentionedByName,
-            "3": projectName,
-            "4": itemTitle,
-            "5": commentHtml,
-            "6": wsUrl,
-          },
-        })
-      )
+    const waJobs = uniqueRecipients.map((r) =>
+      waService.sendTemplate({
+        to: r.phoneNumber,
+        contentSid,
+        variables: {
+          "1": r.name,
+          "2": mentionedByName,
+          "3": projectName,
+          "4": itemTitle,
+          "5": commentHtml,
+          "6": wsUrl,
+        },
+      })
     );
+
+    await Promise.allSettled([...emailJobs, ...waJobs]);
 
     logger.info(`Tag users ${itemType} Email: Successfully processed.`, {
       count: uniqueRecipients.length,

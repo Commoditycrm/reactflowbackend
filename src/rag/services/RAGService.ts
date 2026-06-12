@@ -1530,6 +1530,10 @@ export class RAGService {
     const conn = await Neo4JConnection.getInstance();
     const session = conn.driver.session();
 
+    // Fetch the document list, then release the pooled connection BEFORE the
+    // long-running ingestion loop (each doc does HTTP fetch + embeddings and
+    // opens its own sessions). No reason to hold this one open meanwhile.
+    let docs: { documentId: string; isEmbedded: boolean }[];
     try {
       const result = await session.run(
         `
@@ -1566,41 +1570,43 @@ export class RAGService {
         }
       );
 
-      let successful = 0;
-      let failed = 0;
-      let skipped = 0;
-      const totalDocs = result.records.length;
-
-      for (const record of result.records) {
-        const docId = record.get("documentId");
-        const isEmbedded = record.get("isEmbedded");
-
-        if (isEmbedded) {
-          skipped++;
-          logger?.info("RAGService.ingestProjectDocuments: Skipping already embedded document", { documentId: docId });
-          continue;
-        }
-
-        const response = await this.ingestDocument(docId, userId);
-        if (response.success) {
-          successful++;
-        } else {
-          failed++;
-        }
-      }
-
-      logger?.info("RAGService.ingestProjectDocuments completed", {
-        projectId,
-        total: totalDocs,
-        successful,
-        failed,
-        skipped,
-      });
-
-      return { total: totalDocs, successful, failed, skipped };
+      docs = result.records.map((record) => ({
+        documentId: record.get("documentId"),
+        isEmbedded: record.get("isEmbedded"),
+      }));
     } finally {
       await session.close();
     }
+
+    let successful = 0;
+    let failed = 0;
+    let skipped = 0;
+    const totalDocs = docs.length;
+
+    for (const doc of docs) {
+      if (doc.isEmbedded) {
+        skipped++;
+        logger?.info("RAGService.ingestProjectDocuments: Skipping already embedded document", { documentId: doc.documentId });
+        continue;
+      }
+
+      const response = await this.ingestDocument(doc.documentId, userId);
+      if (response.success) {
+        successful++;
+      } else {
+        failed++;
+      }
+    }
+
+    logger?.info("RAGService.ingestProjectDocuments completed", {
+      projectId,
+      total: totalDocs,
+      successful,
+      failed,
+      skipped,
+    });
+
+    return { total: totalDocs, successful, failed, skipped };
   }
 
   /**

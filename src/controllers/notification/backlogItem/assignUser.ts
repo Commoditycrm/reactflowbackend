@@ -56,28 +56,33 @@ const assignUserToItem = async (req: Request, res: Response) => {
   });
 
   try {
-    await emailServices.sendTemplate({
-      to: toEmail,
-      templateId,
-      dynamicTemplateData: {
-        ...templateData,
-      },
-    });
+    // Email (SendGrid) and WhatsApp (Twilio) are independent external calls —
+    // fire them concurrently. The WhatsApp service swallows its own errors, so
+    // only an email failure rejects here (preserving the prior 500-on-email).
+    await Promise.all([
+      emailServices.sendTemplate({
+        to: toEmail,
+        templateId,
+        dynamicTemplateData: {
+          ...templateData,
+        },
+      }),
+      waService.sendTemplate({
+        to: phoneNumber,
+        contentSid,
+        variables: {
+          "1": workItemName,
+          "2": assignedByName,
+          "3": projectName,
+          "4": workItemName,
+          "6": wsUrl,
+        },
+      }),
+    ]);
+
     logger.info(`Assign ${workItemType} Email: Successfully sent.`, {
       toEmail,
       projectLink: link,
-    });
-
-    await waService.sendTemplate({
-      to: phoneNumber,
-      contentSid,
-      variables: {
-        "1": workItemName,
-        "2": assignedByName,
-        "3": projectName,
-        "4": workItemName,
-        "6": wsUrl,
-      },
     });
 
     return res.status(202).json({
