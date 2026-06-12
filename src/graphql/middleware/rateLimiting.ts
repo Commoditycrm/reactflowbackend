@@ -17,57 +17,39 @@ function getClientIp(req: Request): string {
   return req.ip ?? req.socket.remoteAddress ?? "unknown";
 }
 
-const rateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
+// Each call returns an independent limiter with its own in-memory bucket, so
+// the GraphQL and REST limiters don't share/compound a single per-IP budget.
+const buildLimiter = () =>
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
 
-  keyGenerator: (req) => {
-    const auth = req.headers.authorization ?? "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    // Key by client IP only. We deliberately do NOT key off the JWT
+    // `sub`/`uid`: this middleware runs before authentication, so the token is
+    // unverified — trusting its claims would let an attacker forge a `sub` to
+    // evade their own limit or get a victim rate-limited.
+    keyGenerator: (req) => ipKeyGenerator(getClientIp(req)),
 
-    if (token) {
-      try {
-        const payload = JSON.parse(
-          Buffer.from(token.split(".")[1] ?? "", "base64").toString(),
-        );
+    message: {
+      error: "Too many requests. Please try again!",
+    },
 
-        const key = payload.sub ?? payload.uid;
+    handler: (req: Request, res: Response, _next: NextFunction, options: any) => {
+      logger.warn(
+        `Blocked request by rate limiter: path=${req.path}, ip=${getClientIp(
+          req,
+        )}, max=${options.max}`,
+      );
+      res.status(options.statusCode).json(options.message);
+    },
+  });
 
-        if (key) {
-          return String(key);
-        }
-      } catch (err) {
-        logger.warn(
-          `Rate limit keyGenerator JWT parse failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-    }
+// GraphQL limiter (mounted on the /graphql route in apollo.init).
+const rateLimiter = buildLimiter();
 
-    const rawIp = getClientIp(req);
-    const ip = ipKeyGenerator(rawIp);
-
-    logger.debug(`Rate limit key (IP fallback): ${ip}`);
-
-    return ip;
-  },
-
-  message: {
-    error: "Too many requests. Please try again!",
-  },
-
-  handler: (req: Request, res: Response, next: NextFunction, options: any) => {
-    const rawIp = getClientIp(req);
-
-    logger.warn(
-      `Blocked request by rate limiter: path=${req.path}, ip=${rawIp}, max=${options.max}`,
-    );
-
-    res.status(options.statusCode).json(options.message);
-  },
-});
+// REST limiter (mounted on the REST sub-routers in apiRouters).
+export const restRateLimiter = buildLimiter();
 
 export default rateLimiter;
