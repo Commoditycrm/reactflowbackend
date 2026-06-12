@@ -1481,8 +1481,38 @@ export class RAGService {
 
   /**
    * Delete diagram summary embedding (e.g. when diagram file is deleted).
+   *
+   * Scoped to the caller: the file must belong to a project in an
+   * organization the user owns or is a member of. Prevents deleting
+   * arbitrary diagram indexes by id (IDOR).
    */
-  async deleteDiagramIndex(fileId: string) {
+  async deleteDiagramIndex(fileId: string, userId: string) {
+    const conn = await Neo4JConnection.getInstance();
+    const session = conn.driver.session();
+
+    try {
+      const accessCheck = await session.run(
+        `
+        MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization)
+        MATCH (org)-[:HAS_PROJECTS]->(p:Project)
+        MATCH (file:File {id: $fileId})
+        WHERE p.deletedAt IS NULL
+          AND (
+            EXISTS { MATCH (p)-[:HAS_CHILD_FILE]->(file) }
+            OR EXISTS { MATCH (p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file) }
+          )
+        RETURN file.id AS fileId
+        `,
+        { userId, fileId }
+      );
+
+      if (accessCheck.records.length === 0) {
+        throw new Error("Diagram not found or access denied");
+      }
+    } finally {
+      await session.close();
+    }
+
     return this.diagramIndexService.deleteDiagramSummary(fileId);
   }
 

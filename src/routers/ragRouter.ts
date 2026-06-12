@@ -244,10 +244,10 @@ ragRouter.post("/index-project-diagrams", async (req, res) => {
 
 ragRouter.delete("/diagram-index/:fileId", async (req, res) => {
   try {
-    await authenticateRequest(req);
+    const { userId } = await authenticateRequest(req);
     const { fileId } = req.params;
 
-    const deleted = await ragService.deleteDiagramIndex(fileId);
+    const deleted = await ragService.deleteDiagramIndex(fileId, userId);
 
     return res.status(200).json({ success: true, deleted });
   } catch (error: any) {
