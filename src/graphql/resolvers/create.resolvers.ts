@@ -190,13 +190,38 @@ const createProjectWithTemplate = async (
   },
   _context: Record<string, any>,
 ) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
   const userId = _context?.jwt?.uid || _context?.jwt?.sub;
   if (!userId) {
-    logger.warn("userId not exist");
+    throw new GraphQLError("UNAUTHORIZED", {
+      extensions: { code: "UNAUTHORIZED" },
+    });
   }
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
   try {
+    // Caller must belong to the org they're creating in...
+    const membership = await tx.run(
+      `
+      MATCH (u:User {externalId: $userId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
+      RETURN coalesce(u.role, 'USER') AS role
+      LIMIT 1
+      `,
+      { userId, orgId },
+    );
+    if (membership.records.length === 0) {
+      throw new GraphQLError(
+        "Unauthorized: you do not belong to this organization.",
+        { extensions: { code: "FORBIDDEN" } },
+      );
+    }
+    // ...and any role except a plain USER may create a project from a template.
+    if (membership.records[0]?.get("role") === "USER") {
+      throw new GraphQLError(
+        "Unauthorized: your role cannot create projects.",
+        { extensions: { code: "FORBIDDEN" } },
+      );
+    }
+
     const params = {
       templateProjectId,
       name,
@@ -273,6 +298,9 @@ const createProjectWithTemplate = async (
   } catch (error) {
     await tx.rollback();
     logger?.error("Batch failure:", error);
+    if (error instanceof GraphQLError) {
+      throw error;
+    }
     throw new GraphQLError(`${error}`, {
       extensions: {
         code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,

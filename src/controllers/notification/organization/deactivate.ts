@@ -4,7 +4,7 @@ import { EmailService } from "../../../services";
 import { EnvLoader } from "../../../util/EnvLoader";
 
 const emailServices = EmailService.getInstance();
-const addProjectTemplateId = EnvLoader.getOrThrow("ASSIGN_PROJECT_TEMPLATE_ID");
+const addProjectTemplateId = EnvLoader.getOrThrow("ORG_DEACTIVATED_TEMPLATE_ID");
 
 const orgDeactivate = async (req: Request, res: Response) => {
   const { orgName, userName, userEmail } = req.body;
