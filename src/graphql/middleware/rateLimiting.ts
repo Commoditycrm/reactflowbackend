@@ -50,7 +50,7 @@ const rateLimiter = rateLimit({
     const rawIp = getClientIp(req);
     const ip = ipKeyGenerator(rawIp);
 
-    logger.info(`Rate limit key (IP fallback): ${ip}`);
+    logger.debug(`Rate limit key (IP fallback): ${ip}`);
 
     return ip;
   },

@@ -27,7 +27,7 @@ import logger from "../../logger";
 import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "./../../database/connection";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { Integer } from "neo4j-driver";
+import { Integer, Session, Transaction } from "neo4j-driver";
 import { BacklogItem, ImportSheetResult, UserRole } from "../../interfaces";
 import { FirebaseFunctions } from "../firebase/firebaseFunctions";
 import { getFirebaseAdminAuth } from "../firebase/admin";
@@ -648,8 +648,10 @@ const createAiFlow = async (
   }: { fileId: string; prompt: string; layoutDirection: LayoutDirection },
   _context: Record<string, any>,
 ) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
+  // DB resources are opened lazily, right before the writes — no point holding
+  // a pooled connection and an open transaction across the ~25s AI call below.
+  let session: Session | undefined;
+  let tx: Transaction | undefined;
   console.time("AI_CALL");
 
   try {
@@ -750,8 +752,6 @@ Rules:
         },
       );
     }
-
-    console.log(completion);
 
     // 🛑 Check truncated response
     if (completion.stop_reason === "max_tokens") {
@@ -912,9 +912,9 @@ Rules:
       }));
     });
 
-    console.log("nodeDataWithIds", nodeDataWithIds);
-    console.log("edgeData", edgeData);
-    console.log("backlogItems", backlogItems);
+    // Open the transaction now that all the (slow, DB-free) work is done.
+    session = (await Neo4JConnection.getInstance()).driver.session();
+    tx = session.beginTransaction();
 
     await tx.run(CREATE_AI_FLOWNODE_CQL, {
       nodes: nodeDataWithIds, // IMPORTANT
@@ -934,10 +934,10 @@ Rules:
 
     return 1;
   } catch (error) {
-    await tx.rollback();
+    if (tx) await tx.rollback();
     throw error;
   } finally {
-    await session.close();
+    if (session) await session.close();
   }
 };
 
