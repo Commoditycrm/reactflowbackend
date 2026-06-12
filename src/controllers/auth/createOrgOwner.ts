@@ -14,13 +14,13 @@ const createOwner = async (req: Request, res: Response) => {
   const { email, password, name, phoneNumber } = req.body;
   //   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
   if (!email || !password) {
-    logger.warn("Validation Error", { email, password, name });
+    logger.warn("Validation Error", { email, name });
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
     });
   }
-  logger.info("Start creating firebase user", { email, password, phoneNumber });
+  logger.info("Start creating firebase user", { email, phoneNumber });
   const payload = {
     email,
     password,

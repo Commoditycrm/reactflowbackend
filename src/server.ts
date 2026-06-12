@@ -2,6 +2,7 @@ import { loadDotenv, NODE_ENV } from "./env/detector";
 const loadedEnvFile = loadDotenv();
 
 import express from "express";
+import helmet from "helmet";
 import logger from "./logger";
 import { createServer } from "http";
 import cookieParser from "cookie-parser";
@@ -30,6 +31,9 @@ httpServer.keepAliveTimeout = 65_000;
 httpServer.headersTimeout = 66_000;
 
 // Middleware
+// CSP is disabled so it doesn't block the (dev-only) Apollo sandbox; all other
+// security headers (HSTS, X-Frame-Options, noSniff, etc.) stay on.
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cookieParser());
 app.use(express.json());
 app.use(corsMiddleware);
