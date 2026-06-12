@@ -1,5 +1,6 @@
 // utils/authToken.ts
 import { Request } from "express";
+import { getTokenFromHeader } from "./tokenExtractor";
 
 export function getAuthTokens(req: Request) {
   const cookieHeader = req.get("cookie");
@@ -15,15 +16,6 @@ export function getAuthTokens(req: Request) {
 }
 
 // ---- helpers ----
-
-function getTokenFromHeader(authHeader?: string): string | null {
-  if (!authHeader) return null;
-
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") return null;
-
-  return parts[1] ?? null;
-}
 
 function getCookieValue(
   cookieHeader: string | undefined,

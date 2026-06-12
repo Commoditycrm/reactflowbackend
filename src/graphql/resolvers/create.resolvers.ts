@@ -39,7 +39,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { EnvLoader } from "../../util/EnvLoader";
 import convertToFlowchartRenderData, {
   LayoutDirection,
-} from "../../util/converFlowNodeRenderData";
+} from "../../util/convertFlowNodeRenderData";
 import { randomUUID } from "node:crypto";
 
 const firebaseFunctions = FirebaseFunctions.getInstance();
