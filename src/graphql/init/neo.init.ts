@@ -20,6 +20,10 @@ import jwt from "jsonwebtoken";
 import { jwtVerify } from "../../util/jwtVerify";
 import { redis } from "../../database/redisClient";
 import logger from "../../logger";
+import {
+  INTERNAL_SECRET_HEADER,
+  isValidInternalSecret,
+} from "../middleware/internalAuth";
 
 export type IResolvers =
   | {
@@ -65,7 +69,10 @@ export class NeoConnection {
     jwt: Record<string, any>;
     authorization?: { jwt: Record<string, any> };
   }> {
-    if (req.headers["x-warmup"] === "true") {
+    if (
+      req.headers["x-warmup"] === "true" &&
+      isValidInternalSecret(req.headers[INTERNAL_SECRET_HEADER])
+    ) {
       const warmupJwt = {
         uid: "warmup-user",
         sub: "warmup-user",

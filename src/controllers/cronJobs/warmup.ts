@@ -1,15 +1,18 @@
 import { Request, Response } from "express";
 import logger from "../../logger";
 import { EnvLoader } from "../../util/EnvLoader";
+import { INTERNAL_SECRET_HEADER } from "../../graphql/middleware/internalAuth";
 
 const warmupcontroller = async (req: Request, res: Response) => {
   const API_URL = `${EnvLoader.getOrThrow("API_URL")}/api/v1/graphql`;
+  const internalSecret = EnvLoader.getOrThrow("INTERNAL_API_SECRET");
   try {
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-warmup": "true",
+        [INTERNAL_SECRET_HEADER]: internalSecret,
       },
       body: JSON.stringify({ query: "{ __typename }" }),
     });

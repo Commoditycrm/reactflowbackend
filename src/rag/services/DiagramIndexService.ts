@@ -478,8 +478,8 @@ export class DiagramIndexService {
       const result = await session.run(
         `
         MATCH (ds:DiagramSummaryNode)-[:SUMMARY_OF]->(file:File {id: $fileId})
-        WITH ds, count(ds) AS cnt
-        DETACH DELETE ds
+        WITH count(ds) AS cnt, collect(ds) AS nodes
+        FOREACH (n IN nodes | DETACH DELETE n)
         RETURN cnt
         `,
         { fileId }

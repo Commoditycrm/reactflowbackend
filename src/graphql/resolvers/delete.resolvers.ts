@@ -150,14 +150,28 @@ const disableUser = async (
   _context: Record<string, any>
 ) => {
   const currentUserId = _context?.jwt?.sub;
+
+  if (!currentUserId) {
+    throw new GraphQLError("Authentication required.", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
+
   const User = (await OGMConnection.getInstance()).model("User");
 
   try {
     const [currentUser] = await User.find({
-      where: {
-        externalId: currentUserId,
-      },
+      where: { externalId: currentUserId },
+      options: { limit: 1 },
     });
+
+    if (!currentUser) {
+      logger?.error("Current user not found in database", { currentUserId });
+      throw new GraphQLError("Authentication failed.", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+
     if (
       currentUser.role !== "SYSTEM_ADMIN" &&
       currentUser.role !== "COMPANY_ADMIN"
@@ -167,11 +181,27 @@ const disableUser = async (
         extensions: { code: "FORBIDDEN" },
       });
     }
-    await getFirebaseAdminAuth().auth().updateUser(userId, {
+
+    const [targetUser] = await User.find({
+      where: { id: userId },
+      options: { limit: 1 },
+    });
+
+    if (!targetUser) {
+      throw new GraphQLError("User not found.", {
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+      });
+    }
+
+    // Firebase identifies users by their uid (externalId), not the DB id.
+    await getFirebaseAdminAuth().auth().updateUser(targetUser.externalId, {
       disabled: true,
     });
     return true;
   } catch (error) {
+    if (error instanceof GraphQLError) {
+      throw error;
+    }
     logger?.error(error);
     throw new GraphQLError(
       "Unable to disable user account or account not found."

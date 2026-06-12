@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireInternalSecret } from "../graphql/middleware/internalAuth";
 import warmupcontroller from "../controllers/cronJobs/warmup";
 import sendReminders from "../controllers/cronJobs/send-reminders";
 import resetMessageCounter from "../controllers/cronJobs/resetMessageCounter";
@@ -8,6 +9,9 @@ import dummyDataCleanUp from "../controllers/cronJobs/dummyDataCleanUp";
 import cleanUpFirebaseOrphan from "../controllers/cronJobs/cleanup-firebase-orphan";
 
 const cronRouter = Router();
+
+// All cron endpoints are internal-only: require the shared secret.
+cronRouter.use(requireInternalSecret);
 
 cronRouter.get("/warmup", warmupcontroller);
 cronRouter.post("/send-reminders", sendReminders);

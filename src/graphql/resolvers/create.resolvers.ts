@@ -570,12 +570,16 @@ const cloneContacts = async (
   _args: { records: string[] },
   _context: Record<string, any>,
 ) => {
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  const tx = session.beginTransaction();
   const uid = _context?.jwt?.uid;
   if (!uid) {
-    logger.warn("userId not exist skipping contact clone");
+    throw new GraphQLError(`UNAUTHORIZED`, {
+      extensions: {
+        code: "UNAUTHORIZED",
+      },
+    });
   }
+  const session = (await Neo4JConnection.getInstance()).driver.session();
+  const tx = session.beginTransaction();
   try {
     const orgData = await tx.run(
       `
@@ -596,10 +600,12 @@ const cloneContacts = async (
     await tx.run(IMPORT_CONTACTS_QUERY, {
       rows: _args?.records,
     });
-    tx.commit();
+    await tx.commit();
     return _args?.records?.length;
   } catch (error) {
     await tx.rollback();
+    logger.error("cloneContacts failed", { error });
+    throw error;
   } finally {
     await session.close();
   }
