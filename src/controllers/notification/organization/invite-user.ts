@@ -5,7 +5,6 @@ import jwt from "jsonwebtoken";
 import { EnvLoader } from "../../../util/EnvLoader";
 import { performance } from "node:perf_hooks";
 import logger from "../../../logger";
-import crypto from "crypto";
 import { InviteUserProps } from "../../../interfaces/types";
 
 const auth = getFirebaseAdminAuth().auth();
@@ -42,10 +41,6 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
   logger.info("Generated invite token and link", { invitationLink });
-  const hashToken = crypto
-    .createHash("sha256")
-    .update(token + jwtSecret)
-    .digest("hex");
 
   let userExists = false;
   try {
@@ -107,7 +102,7 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
 
     return res
       .status(201)
-      .json({ success: true, link: invitationLink, token: hashToken });
+      .json({ success: true, link: invitationLink, token });
   } catch (error: any) {
     const tEnd = performance.now();
     logger.error("Invite user to org crashed sending email", {
