@@ -55,7 +55,7 @@ const userRoleSetter = (
   _args: Record<string, any>,
   _context: Record<string, any>,
 ) => {
-  const userRole = _context?.jwt?.roles[0];
+  const userRole = _context?.jwt?.roles?.[0];
   if (_parent?.ownedOrganization?.create) {
     return userRole === UserRole.SystemAdmin ? userRole : UserRole.CompanyAdmin;
   }
@@ -79,7 +79,7 @@ const uniqueSprint = (
   _context: Record<string, any>,
 ) => {
   const projectId = _parent?.project?.connect?.where?.node?.id;
-  return `${projectId}-${_parent?.name.trim()}`;
+  return `${projectId}-${_parent?.name?.trim()}`;
 };
 
 const uniqueInviteExtractor = (
@@ -88,7 +88,7 @@ const uniqueInviteExtractor = (
   _context: Record<string, any>,
 ) => {
   const orgId = _parent?.organization?.connect?.where?.node?.id;
-  const userEmail = _parent?.email.trim();
+  const userEmail = _parent?.email?.trim();
   return `${orgId}-${userEmail}`;
 };
 
@@ -130,8 +130,12 @@ const updateOrgLastModified = async (
   context: Record<string, any>,
 ) => {
   const userId = context?.jwt?.uid;
+  if (!userId) {
+    throw new GraphQLError("Unauthenticated.", {
+      extensions: { code: "UNAUTHENTICATED" },
+    });
+  }
   const session = (await Neo4JConnection.getInstance()).driver.session();
-  if (!userId) return;
   try {
     const tx = session.beginTransaction();
     await tx.run(
@@ -146,7 +150,7 @@ const updateOrgLastModified = async (
     return true;
   } catch (error) {
     logger?.error("Error updating Organization.lastModified:", error);
-    return false;
+    throw error;
   } finally {
     await session.close();
   }
