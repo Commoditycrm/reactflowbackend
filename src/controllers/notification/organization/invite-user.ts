@@ -40,7 +40,7 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
     },
   );
   const invitationLink = `${clientUrl}/invite?token=${token}`;
-  logger.info("Generated invite token and link", { invitationLink });
+  logger.info("Generated invite for user", { email, orgId });
 
   let userExists = false;
   try {
