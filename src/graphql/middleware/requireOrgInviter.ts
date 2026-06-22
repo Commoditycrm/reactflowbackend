@@ -3,13 +3,8 @@ import { NeoConnection } from "../init/neo.init";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 
-/**
- * Authenticates the caller's session and authorizes them to invite to the
- * organization named in the request body (`orgId`). The caller must OWN the org
- * or be an ADMIN-level member of it. This mirrors the GraphQL `createInvites`
- * authorization so the REST invite endpoints can no longer be hit anonymously
- * (which previously allowed invite-spam and a user-existence enumeration oracle).
- */
+// Only the org owner or an admin member may invite. Without this the invite
+// endpoint was open to anyone (spam + user-existence probing).
 export const requireOrgInviter = async (
   req: Request,
   res: Response,
@@ -17,7 +12,7 @@ export const requireOrgInviter = async (
 ): Promise<void> => {
   let jwt: Record<string, any>;
   try {
-    // Reuses the same session verification (cookie/redis) the GraphQL layer uses.
+    // same session check the graphql layer uses
     ({ jwt } = await NeoConnection.authorizeUserOnContext(req));
   } catch {
     res.status(401).json({ message: "Authentication required." });
@@ -25,7 +20,7 @@ export const requireOrgInviter = async (
   }
 
   const externalId = jwt?.sub || jwt?.uid;
-  // Only real session users may invite — reject invite tokens and warmup tokens.
+  // real session users only, not invite/warmup tokens
   if (!externalId || jwt.role === "invitee" || jwt.warmup) {
     res.status(401).json({ message: "Authentication required." });
     return;

@@ -897,7 +897,7 @@ export const CREATE_INVITE_USER_CQL = `
  WHERE
   ( $uniqueInvite IS NOT NULL AND invite.uniqueInvite = $uniqueInvite ) OR
   ( $uniqueInvite IS NULL AND invite.email = $email )
- // Org is required — never MERGE a membership edge to a null org.
+ // org must exist, don't merge a membership to a null org
  MATCH (invite)-[:INVITE_FOR]->(org:Organization)
  OPTIONAL MATCH (invite)-[:INVITE_TO_PROJECT]->(project:Project)
 
