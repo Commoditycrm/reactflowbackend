@@ -65,33 +65,6 @@ export class EmailService {
     return this.send(msg);
   }
 
-  /** Bulk dynamic-template email using personalizations */
-  async sendBulkTemplate(opts: {
-    personalizations: NonNullable<MailDataRequired["personalizations"]>;
-    templateId: NonNullable<MailDataRequired["templateId"]>;
-    subject?: MailDataRequired["subject"];
-    cc?: MailDataRequired["cc"];
-    bcc?: MailDataRequired["bcc"];
-    attachments?: MailDataRequired["attachments"];
-    categories?: MailDataRequired["categories"];
-    customArgs?: MailDataRequired["customArgs"];
-  }): Promise<boolean> {
-    if (!opts.personalizations.length) return false;
-
-    const msg: MailDataRequired = {
-      from: this.fromEmail,
-      personalizations: opts.personalizations,
-      templateId: opts.templateId,
-      ...(opts.subject !== undefined ? { subject: opts.subject } : {}),
-      ...(opts.cc ? { cc: opts.cc } : {}),
-      ...(opts.bcc ? { bcc: opts.bcc } : {}),
-      ...(opts.attachments ? { attachments: opts.attachments } : {}),
-      ...(opts.categories ? { categories: opts.categories } : {}),
-      ...(opts.customArgs ? { customArgs: opts.customArgs } : {}),
-    };
-    return this.send(msg);
-  }
-
   // ---- helpers ----
   private extractTo(data: MailDataRequired) {
     const pz = (data as any)

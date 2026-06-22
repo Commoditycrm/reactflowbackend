@@ -398,11 +398,8 @@ const finishInviteSignup = async (
   },
   _context: Record<string, any>,
 ) => {
-  // Require a valid, signed invite token (verified upstream in neo.init) that
-  // belongs to THIS email. Without this, anyone reaching the GraphQL endpoint
-  // could call finishInviteSignup with a pending invitee's email + a password
-  // of their choosing and take the account over at SUPER_USER — the signed
-  // invite token was previously never enforced at this step.
+  // invite token must match the email being signed up, otherwise anyone could
+  // finish signup for someone else's pending invite
   const inviteJwt = _context?.jwt;
   if (
     !inviteJwt ||
@@ -424,10 +421,11 @@ const finishInviteSignup = async (
     ...(phoneNumber && { phoneNumber: `+${phoneNumber}` }),
     role: UserRole.SuperUser,
   };
+  let createdUid: string | undefined;
   try {
     logger.info("Start creating invite user", { email, name });
     const { user } = await firebaseFunctions.createInvitedUser(payLaod);
-    logger.info("Finishes creating user in firebase", { user });
+    createdUid = user.uid;
     const response = await tx.run(CREATE_INVITE_USER_CQL, {
       name,
       email,
@@ -437,14 +435,32 @@ const finishInviteSignup = async (
         : { phoneNumber: null }),
       uniqueInvite,
     });
-    logger.info("Created invite user in database", { email });
-    const userNode =
-      response.records.map((user) => user.get("user").properties) || [];
+
+    if (!response.records.length) {
+      // no matching invite (already used / wrong org) — don't leave a firebase
+      // user with no organisation
+      throw new GraphQLError("Invite not found or already used.", {
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+      });
+    }
+
+    const userNode = response.records.map((u) => u.get("user").properties);
     await tx.commit();
+    logger.info("Created invite user", { email });
     return userNode;
   } catch (error) {
     await tx.rollback();
-    logger?.error("Field to create Invite user", error);
+    // undo the firebase user too, or a retry just hits "email already exists"
+    if (createdUid) {
+      await getFirebaseAdminAuth()
+        .auth()
+        .deleteUser(createdUid)
+        .catch((e) =>
+          logger?.error("failed to roll back firebase invite user", e),
+        );
+    }
+    logger?.error("failed to create invite user", error);
+    if (error instanceof GraphQLError) throw error;
     throw new GraphQLError(`${error}`, {
       extensions: {
         code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
