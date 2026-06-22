@@ -173,10 +173,9 @@ export class NeoConnection {
 
     if (headerToken) {
       try {
-        const decoded = jwt.verify(headerToken, getInviteJwtSecret()) as Record<
-          string,
-          any
-        >;
+        const decoded = jwt.verify(headerToken, getInviteJwtSecret(), {
+          algorithms: ["HS256"],
+        }) as Record<string, any>;
 
         if (decoded.role !== "invitee") {
           throw new Error("Invalid invite role");

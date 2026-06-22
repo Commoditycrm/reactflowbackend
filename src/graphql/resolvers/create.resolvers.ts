@@ -398,6 +398,23 @@ const finishInviteSignup = async (
   },
   _context: Record<string, any>,
 ) => {
+  // Require a valid, signed invite token (verified upstream in neo.init) that
+  // belongs to THIS email. Without this, anyone reaching the GraphQL endpoint
+  // could call finishInviteSignup with a pending invitee's email + a password
+  // of their choosing and take the account over at SUPER_USER — the signed
+  // invite token was previously never enforced at this step.
+  const inviteJwt = _context?.jwt;
+  if (
+    !inviteJwt ||
+    inviteJwt.role !== "invitee" ||
+    !inviteJwt.email ||
+    String(inviteJwt.email).toLowerCase() !== String(email || "").toLowerCase()
+  ) {
+    throw new GraphQLError("Invalid or missing invite token.", {
+      extensions: { code: "FORBIDDEN" },
+    });
+  }
+
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
   const payLaod = {

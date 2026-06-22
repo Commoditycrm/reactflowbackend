@@ -46,9 +46,11 @@ const inviteWorkForce = async (req: Request, res: Response) => {
     });
   }
 
-  // Pre-generate token & link
+  // Pre-generate token & link. The auth role is always "invitee" (required by
+  // the invite-token verification in neo.init and finishInviteSignup); the
+  // requested org role is carried separately and is not trusted at accept time.
   const token = jwt.sign(
-    { email, sub: email, role, name: fullName, orgId },
+    { email, sub: email, role: "invitee", inviteRole: role, name: fullName, orgId },
     jwtSecret,
     { expiresIn: "1d" }
   );
