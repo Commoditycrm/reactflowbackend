@@ -5,14 +5,6 @@ export interface SendEmailProps {
   type: string;
 }
 
-export type InviteWorkForceProps = SendEmailProps & {
-  senderName: string;
-  organizationName: string;
-  role: string;
-  inviteLink: string;
-  name: string;
-};
-
 export type InviteUserProps = SendEmailProps & {
   inviteLink: string;
   inviterName: string;
