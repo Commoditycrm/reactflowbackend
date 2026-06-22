@@ -504,6 +504,14 @@ const finishInviteSignupInOrgPage = async (
         : { phoneNumber: null }),
       uniqueInvite: null,
     });
+
+    if (!response.records.length) {
+      // no pending invite for this account, nothing to accept
+      throw new GraphQLError("No pending invite found for this account.", {
+        extensions: { code: ApolloServerErrorCode.BAD_REQUEST },
+      });
+    }
+
     logger.info("Created invite user in database", {
       email: user?.email,
     });
@@ -534,6 +542,7 @@ const finishInviteSignupInOrgPage = async (
   } catch (error) {
     await tx.rollback();
     logger?.error("Field to create Invite user", error);
+    if (error instanceof GraphQLError) throw error;
     throw new GraphQLError(`${error}`, {
       extensions: {
         code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
