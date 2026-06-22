@@ -3,8 +3,8 @@ import { NeoConnection } from "../init/neo.init";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
 
-// Only the org owner or an admin member may invite. Without this the invite
-// endpoint was open to anyone (spam + user-existence probing).
+// Only the org owner may invite. Without this the invite endpoint was open to
+// anyone (spam + user-existence probing).
 export const requireOrgInviter = async (
   req: Request,
   res: Response,
@@ -36,9 +36,7 @@ export const requireOrgInviter = async (
   try {
     const result = await session.run(
       `
-      MATCH (u:User {externalId: $externalId})-[:OWNS|MEMBER_OF]->(org:Organization {id: $orgId})
-      WHERE EXISTS { (u)-[:OWNS]->(org) }
-         OR u.role IN ['ADMIN', 'COMPANY_ADMIN', 'SYSTEM_ADMIN']
+      MATCH (u:User {externalId: $externalId})-[:OWNS]->(org:Organization {id: $orgId})
       RETURN org.id AS orgId
       LIMIT 1
       `,
@@ -47,7 +45,7 @@ export const requireOrgInviter = async (
     if (result.records.length === 0) {
       res
         .status(403)
-        .json({ message: "Not authorized to invite to this organization." });
+        .json({ message: "Only the organization owner can invite users." });
       return;
     }
   } catch (error) {
