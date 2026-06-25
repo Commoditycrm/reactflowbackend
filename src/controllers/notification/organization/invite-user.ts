@@ -22,18 +22,27 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
     .trim()
     .toLowerCase();
 
-  // Basic validation
+  // Basic validation. Log only which fields are missing -- never the body, which
+  // carries PII (emails, names).
   if (!email || !orgId || !orgName || !inviterName || !inviterEmail) {
-    logger.warn("Validation Error", { ...req.body });
+    const missing = Object.entries({
+      email,
+      orgId,
+      orgName,
+      inviterName,
+      inviterEmail,
+    })
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    logger.warn("Validation Error", { missing });
     return res.status(400).json({
       error: "Validation Error",
       message: "Invalid or incomplete request data.",
     });
   }
-  const normalizedEmail = email.toLowerCase();
-  // Pre-generate token & link
+  // Pre-generate token & link (email is already normalized above)
   const token = jwt.sign(
-    { email: normalizedEmail, sub: normalizedEmail, role: "invitee", orgId },
+    { email, sub: email, role: "invitee", orgId },
     jwtSecret,
     {
       expiresIn: "7d",
@@ -91,12 +100,11 @@ const inviteUserToOrg = async (req: Request, res: Response) => {
     });
 
     if (!ok) {
-      // SendGrid returned false; surface a 502 to caller if you want strictness.
+      // SendGrid returned false. Don't leak the live invite token/link in the
+      // error payload (it can land in client logs / error trackers).
       return res.status(502).json({
         success: false,
         message: "Failed to send invite email.",
-        link: invitationLink,
-        token,
       });
     }
 
