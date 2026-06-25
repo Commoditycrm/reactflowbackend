@@ -5,7 +5,7 @@ import { OGMConnection } from "../init/ogm.init";
 import { Neo4JConnection } from "../../database/connection";
 import { Model } from "@neo4j/graphql-ogm";
 import { ApolloServerErrorCode } from "@apollo/server/errors";
-import { User, UserRole } from "../../interfaces";
+import { User } from "../../interfaces";
 
 /**
  * True if the caller and the target user share at least one organization
@@ -127,33 +127,76 @@ const deleteUser = async (
       }
     }
 
-    const [updateResult, _firebaseResult] = await Promise.allSettled([
-      User.update({
+    // Anonymize in the DB first. Firebase deletion is irreversible, so we only
+    // fire it once the DB write commits -- doing both in parallel could delete
+    // the login while leaving the un-anonymized node behind on a DB failure.
+    let updateResult;
+    try {
+      updateResult = await User.update({
         where: { id: userId },
         update: {
           name: "Deleted Account",
           email: `Deleted Account_${targetUser?.email}`,
         },
-      }),
-      getFirebaseAdminAuth().auth().deleteUser(targetUser.externalId),
-    ]);
-
-    if (updateResult.status === "rejected") {
+      });
+    } catch (dbError) {
       logger?.error("Failed to update user in database", {
         userId,
-        error: updateResult.reason,
+        error: dbError,
       });
       throw new GraphQLError("Failed to delete user account.", {
         extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
       });
     }
 
-    if (_firebaseResult.status === "rejected") {
-      logger?.warn("Failed to delete user from Firebase (user may not exist)", {
+    // externalId is non-nullable and not OGM-settable on update, so revoke access
+    // in raw Cypher: detaching OWNS/MEMBER_OF drops the node out of every
+    // org-scoped authorization query, which is what actually neutralizes it.
+    const revokeSession = (await Neo4JConnection.getInstance()).driver.session();
+    try {
+      await revokeSession.run(
+        `
+        MATCH (u:User {id: $userId})
+        SET u.deletedAt = datetime()
+        WITH u
+        OPTIONAL MATCH (u)-[r:OWNS|MEMBER_OF]->(:Organization)
+        DELETE r
+        `,
+        { userId }
+      );
+    } catch (revokeError) {
+      logger?.error("Failed to revoke access for deleted user", {
         userId,
-        externalId: targetUser.externalId,
-        error: _firebaseResult.reason,
+        error: revokeError,
       });
+      throw new GraphQLError("Failed to fully revoke user access.", {
+        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
+      });
+    } finally {
+      await revokeSession.close();
+    }
+
+    // DB committed; now remove the Firebase credential so no new token can be
+    // minted. "user-not-found" just means it was already gone.
+    try {
+      await getFirebaseAdminAuth().auth().deleteUser(targetUser.externalId);
+    } catch (firebaseError: any) {
+      if (firebaseError?.code === "auth/user-not-found") {
+        logger?.warn("Firebase user already absent during deletion", {
+          userId,
+          externalId: targetUser.externalId,
+        });
+      } else {
+        logger?.error("Failed to revoke Firebase login for deleted user", {
+          userId,
+          externalId: targetUser.externalId,
+          error: firebaseError,
+        });
+        throw new GraphQLError(
+          "User was anonymized but their login could not be revoked. Please retry.",
+          { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } }
+        );
+      }
     }
 
     logger?.info("User successfully deleted", {
@@ -161,7 +204,7 @@ const deleteUser = async (
       deletedBy: currentUserId,
     });
 
-    return updateResult.value?.users ?? [];
+    return updateResult?.users ?? [];
   } catch (error) {
     // Enhanced error logging
     logger?.error("Error in deleteUser operation", {
@@ -297,37 +340,52 @@ const deleteOrg = async (
   { orgId }: { orgId: string },
   _context: Record<string, any>
 ) => {
-  const userRole = _context?.jwt?.roles?.[0];
-  if (userRole !== UserRole.SystemAdmin) {
-    throw new GraphQLError("UNAUTHORIZED", {
-      extensions: {
-        code: "FORBIDDEN",
-      },
+  const callerExternalId = _context?.jwt?.sub;
+  if (!callerExternalId) {
+    throw new GraphQLError("Authentication required.", {
+      extensions: { code: "UNAUTHENTICATED" },
     });
+  }
+
+  // Verify SYSTEM_ADMIN against the DB rather than the client-presented JWT
+  // claim -- this is a destructive, org-wide delete.
+  const authSession = (await Neo4JConnection.getInstance()).driver.session();
+  try {
+    const roleResult = await authSession.run(
+      `MATCH (u:User {externalId: $callerExternalId}) RETURN u.role AS role LIMIT 1`,
+      { callerExternalId }
+    );
+    if (roleResult.records[0]?.get("role") !== "SYSTEM_ADMIN") {
+      throw new GraphQLError("UNAUTHORIZED", {
+        extensions: { code: "FORBIDDEN" },
+      });
+    }
+  } finally {
+    await authSession.close();
   }
 
   const session = (await Neo4JConnection.getInstance()).driver.session();
   const tx = session.beginTransaction();
 
+  let uids: string[] = [];
   try {
     const result = await tx.run(
       `
-      MATCH (org:Organization {id:$orgId}) 
+      MATCH (org:Organization {id:$orgId})
       CALL(org) {
         OPTIONAL MATCH(users:User)-[:MEMBER_OF]->(org)
         RETURN users.externalId AS uid
-        UNION 
+        UNION
         OPTIONAL MATCH(user:User)-[:OWNS]->(org)
         RETURN user.externalId AS uid
-      } WITH uid WHERE uid IS NOT NULL RETURN collect(DISTINCT uid) AS uids  
+      } WITH uid WHERE uid IS NOT NULL RETURN collect(DISTINCT uid) AS uids
       `,
       {
         orgId,
       }
     );
-    const uids =
+    uids =
       result.records && result.records[0] ? result.records[0].get("uids") : [];
-    await getFirebaseAdminAuth().auth().deleteUsers(uids);
     await tx.run(
       `CALL apoc.periodic.iterate(
      '
@@ -350,7 +408,6 @@ const deleteOrg = async (
       { orgId }
     );
     await tx.commit();
-    return true;
   } catch (error) {
     await tx.rollback();
     logger?.error(error);
@@ -362,6 +419,21 @@ const deleteOrg = async (
   } finally {
     await session.close();
   }
+
+  // Graph delete committed; remove the Firebase logins afterwards so a Firebase
+  // failure can't strand an already-deleted graph. Orphaned auth accounts are
+  // swept by the cleanup-firebase-orphan cron.
+  if (uids.length) {
+    try {
+      await getFirebaseAdminAuth().auth().deleteUsers(uids);
+    } catch (firebaseError) {
+      logger?.error("Org graph deleted but Firebase user cleanup failed", {
+        orgId,
+        error: firebaseError,
+      });
+    }
+  }
+  return true;
 };
 
 export const deleteOperationMutations = {

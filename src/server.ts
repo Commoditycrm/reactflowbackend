@@ -25,6 +25,11 @@ logger?.info(
 logger?.info(`CORS allowlist: ${ALLOW_ORIGINS.join(", ") || "<empty>"}`);
 const app = express();
 
+// Number of reverse-proxy hops in front of us (Caddy/nginx/CDN). Without this,
+// req.ip is the proxy's address and X-Forwarded-For is fully client-controlled,
+// which makes the IP-based rate limiter trivially bypassable. Defaults to 1.
+app.set("trust proxy", EnvLoader.getInt("TRUST_PROXY_HOPS") ?? 1);
+
 const httpServer = createServer(app);
 
 httpServer.keepAliveTimeout = 65_000;
