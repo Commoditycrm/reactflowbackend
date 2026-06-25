@@ -2,18 +2,11 @@ import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import logger from "../../logger";
 
+// Express computes req.ip from X-Forwarded-For according to the `trust proxy`
+// setting (see server.ts). We rely on that instead of parsing the raw header
+// ourselves -- reading the leftmost X-Forwarded-For entry directly is forgeable
+// and lets an attacker get a fresh rate-limit bucket per request.
 function getClientIp(req: Request): string {
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const realIp = req.headers["x-real-ip"];
-
-  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
-    return forwardedFor.split(",")[0]?.trim() as string;
-  }
-
-  if (typeof realIp === "string" && realIp.trim()) {
-    return realIp.trim();
-  }
-
   return req.ip ?? req.socket.remoteAddress ?? "unknown";
 }
 
