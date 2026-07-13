@@ -74,20 +74,24 @@ const tagUsers = async (req: Request, res: Response) => {
       })
     );
 
-    const waJobs = uniqueRecipients.map((r) =>
-      waService.sendTemplate({
-        to: r.phoneNumber,
-        contentSid,
-        variables: {
-          "1": r.name,
-          "2": mentionedByName,
-          "3": projectName,
-          "4": itemTitle,
-          "5": commentHtml,
-          "6": wsUrl,
-        },
-      })
-    );
+    // Skip recipients without a saved WhatsApp number — firing with an
+    // undefined `to` only produces a guaranteed Twilio failure.
+    const waJobs = uniqueRecipients
+      .filter((r) => r.phoneNumber)
+      .map((r) =>
+        waService.sendTemplate({
+          to: r.phoneNumber,
+          contentSid,
+          variables: {
+            "1": r.name,
+            "2": mentionedByName,
+            "3": projectName,
+            "4": itemTitle,
+            "5": commentHtml,
+            "6": wsUrl,
+          },
+        })
+      );
 
     await Promise.allSettled([...emailJobs, ...waJobs]);
 
