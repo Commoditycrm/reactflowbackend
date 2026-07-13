@@ -67,17 +67,19 @@ const assignUserToItem = async (req: Request, res: Response) => {
           ...templateData,
         },
       }),
-      waService.sendTemplate({
-        to: phoneNumber,
-        contentSid,
-        variables: {
-          "1": workItemName,
-          "2": assignedByName,
-          "3": projectName,
-          "4": workItemName,
-          "6": wsUrl,
-        },
-      }),
+      phoneNumber
+        ? waService.sendTemplate({
+            to: phoneNumber,
+            contentSid,
+            variables: {
+              "1": workItemName,
+              "2": assignedByName,
+              "3": projectName,
+              "4": workItemName,
+              "6": wsUrl,
+            },
+          })
+        : Promise.resolve(),
     ]);
 
     logger.info(`Assign ${workItemType} Email: Successfully sent.`, {
