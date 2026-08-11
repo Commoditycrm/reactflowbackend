@@ -112,7 +112,9 @@ const createBacklogItemWithUID = async (
     // Create the new BacklogItem with UID
     const createdBacklogItem: any = await BacklogItem.create<BacklogItem>({
       input: { ...input, uid: newCounter, uniqueUid: `${newCounter}-${orgId}` },
-      context: { executionContext: tx },
+      // Forward the caller's auth (authorization.jwt) so the OGM can evaluate
+      // @authorization on the read-back; without it the create is Unauthenticated.
+      context: { ..._context, executionContext: tx },
       rootValue: _source,
       selectionSet: `{
         backlogItems {
