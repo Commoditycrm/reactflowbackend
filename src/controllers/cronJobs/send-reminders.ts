@@ -4,32 +4,43 @@ import logger from "../../logger";
 import { Integer } from "neo4j-driver";
 import pLimit from "p-limit";
 import { EnvLoader } from "../../util/EnvLoader";
+import { EmailService } from "../../services";
 import { User } from "../../interfaces";
 
 const CONCURRENCY_LIMIT = 10;
+const emailService = EmailService.getInstance();
+
+const reminderHtml = (userName: string, count: number, appLink: string) => {
+  const plural = count === 1 ? "" : "s";
+  const verb = count === 1 ? "is" : "are";
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; color: #1f2937; line-height: 1.6;">
+    <p>Hi ${userName || "there"},</p>
+    <p>You have <strong>${count}</strong> pending task${plural} that ${verb} due or overdue.</p>
+    <p style="margin: 20px 0;">
+      <a href="${appLink}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#ffffff;border-radius:6px;text-decoration:none;">
+        View my tasks
+      </a>
+    </p>
+    <p style="color:#6b7280;font-size:13px;">You're receiving this because task${plural} assigned to you ${verb} due or overdue and still incomplete.</p>
+  </div>`;
+};
 
 const sendReminder = async (user: User, taskCount: Integer) => {
-  const REMINDER_URL = EnvLoader.getOrThrow("REMINDER_URL");
+  const appLink = EnvLoader.getOrThrow("CLIENT_URL");
+  const fromEmail = EnvLoader.getOrThrow("EMAIL_FROM");
+  const count = taskCount.toNumber();
   try {
-    const res = await fetch(REMINDER_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userEmail: user.email,
-        userName: user.name,
-        taskCount: taskCount.toNumber(),
-      }),
+    await emailService.send({
+      from: fromEmail,
+      to: user.email,
+      subject: `You have ${count} pending task${count === 1 ? "" : "s"} to complete`,
+      html: reminderHtml(user.name, count, appLink),
     });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      logger?.error(
-        `Failed to send reminder to ${user.email}. Status: ${res.status}. Body: ${errorText}`
-      );
-    } else {
-      logger?.info(`Reminder sent to ${user.email}`);
-    }
+    logger?.info(`Reminder sent to ${user.email} (${count} pending task(s))`);
   } catch (err) {
+    // EmailService.send already logs SendGrid detail; keep the cron resilient so
+    // one bad recipient doesn't abort the whole batch.
     logger?.error(`Error sending reminder to ${user.email}: ${err}`);
   }
 };
@@ -41,7 +52,10 @@ const sendReminders = async (_req: Request, res: Response) => {
     const result = await session.run(`
           MATCH (task:BacklogItem)-[:HAS_ASSIGNED_USER]->(user:User),
           (task)-[:HAS_STATUS]->(status:Status)
-          WHERE date(task.endDate) = date() AND toLower(status.name) <> "completed"
+          WHERE task.endDate IS NOT NULL
+            AND date(task.endDate) <= date()
+            AND toLower(status.name) <> "completed"
+            AND task.deletedAt IS NULL
           WITH user, COUNT(task) AS taskCount
           WHERE taskCount > 0
           RETURN collect({
@@ -59,7 +73,8 @@ const sendReminders = async (_req: Request, res: Response) => {
 
     await Promise.all(tasks);
 
-    res.status(200).send({ success: true });
+    logger?.info(`Pending-task reminders processed: ${reminders.length}`);
+    res.status(200).send({ success: true, notified: reminders.length });
   } catch (error) {
     logger?.error(`General failure in reminder handler: ${error}`);
     res
