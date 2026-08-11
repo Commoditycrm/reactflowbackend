@@ -298,6 +298,11 @@ export class DiagramService {
       nodeIdMap.set(n.id, `N${i + 1}`);
     });
 
+    // id -> node/group lookups so the group + node-detail sections below stay
+    // O(1) per lookup instead of scanning all nodes/groups (was O(n^2)).
+    const nodeById = new Map(data.nodes.map((n) => [n.id, n]));
+    const groupById = new Map(data.groups.map((g) => [g.id, g]));
+
     // ── Header ──────────────────────────────────────────────────────────
     sections.push(
       `## Diagram: "${data.fileName}"\n`
@@ -331,7 +336,7 @@ export class DiagramService {
       for (const g of data.groups) {
         const childNames = g.childNodeIds
           .map((id) => {
-            const node = data.nodes.find((n) => n.id === id);
+            const node = nodeById.get(id);
             return node ? `"${node.name}"` : id;
           })
           .join(", ");
@@ -357,7 +362,7 @@ export class DiagramService {
       if (node.description) meta.push(`desc: "${node.description}"`);
 
       const group = node.parentGroupId
-        ? data.groups.find((g) => g.id === node.parentGroupId)
+        ? groupById.get(node.parentGroupId)
         : null;
       if (group) meta.push(`in group "${group.name}"`);
 
