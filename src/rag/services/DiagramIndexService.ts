@@ -224,10 +224,13 @@ export class DiagramIndexService {
       targetName: e.targetName,
       label: e.label,
     }));
+    // id -> node lookup so child-name resolution is O(1) instead of scanning
+    // all nodes per child id (was O(nodes^2) for heavily grouped diagrams).
+    const nodeById = new Map(diagramData.nodes.map((n) => [n.id, n]));
     const groupInfos = diagramData.groups.map((g) => ({
       name: g.name,
       childNodeNames: g.childNodeIds
-        .map((id) => diagramData.nodes.find((n) => n.id === id)?.name ?? id)
+        .map((id) => nodeById.get(id)?.name ?? id)
         .filter(Boolean),
     }));
 
