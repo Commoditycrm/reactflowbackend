@@ -287,6 +287,31 @@ const typeDefs = gql`
     @query(read: true, aggregate: false)
     @mutation(operations: [CREATE, DELETE, UPDATE])
     @authorization(
+      # READ uses filter (not validate) so a query spanning multiple orgs
+      # returns only the caller's authorized rows instead of throwing Forbidden
+      # on the whole result set when it contains another org's nodes.
+      filter: [
+        {
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                  }
+                }
+                { createdBy: { externalId: "$jwt.sub" } }
+              ]
+            }
+          }
+        }
+        {
+          operations: [READ]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        }
+      ]
       validate: [
         {
           when: [AFTER]
@@ -301,23 +326,6 @@ const typeDefs = gql`
                       externalId: "$jwt.sub"
                       role_IN: ["ADMIN"]
                     }
-                  }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
                   }
                 }
                 { createdBy: { externalId: "$jwt.sub" } }
@@ -349,11 +357,6 @@ const typeDefs = gql`
               ]
             }
           }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
       ]
     ) {
@@ -405,6 +408,31 @@ const typeDefs = gql`
   type BacklogItemType implements Timestamped & TimestampedCreatable
     @query(read: true, aggregate: false)
     @authorization(
+      # READ uses filter (not validate) so a query spanning multiple orgs
+      # returns only the caller's authorized rows instead of throwing Forbidden
+      # on the whole result set when it contains another org's nodes.
+      filter: [
+        {
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                  }
+                }
+                { createdBy: { externalId: "$jwt.sub" } }
+              ]
+            }
+          }
+        }
+        {
+          operations: [READ]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        }
+      ]
       validate: [
         {
           when: [AFTER]
@@ -419,23 +447,6 @@ const typeDefs = gql`
                       externalId: "$jwt.sub"
                       role: "ADMIN"
                     }
-                  }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
                   }
                 }
                 { createdBy: { externalId: "$jwt.sub" } }
@@ -467,11 +478,6 @@ const typeDefs = gql`
               ]
             }
           }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
       ]
     ) {
@@ -525,10 +531,12 @@ const typeDefs = gql`
 
   type RiskLevel implements Timestamped & TimestampedCreatable
     @authorization(
-      validate: [
+      # READ uses filter (not validate) so a query spanning multiple orgs
+      # returns only the caller's authorized rows instead of throwing Forbidden
+      # on the whole result set when it contains another org's nodes.
+      filter: [
         {
           operations: [READ]
-          when: [BEFORE]
           where: {
             node: {
               OR: [
@@ -543,6 +551,12 @@ const typeDefs = gql`
             }
           }
         }
+        {
+          operations: [READ]
+          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+        }
+      ]
+      validate: [
         {
           when: [AFTER]
           operations: [CREATE, UPDATE]
@@ -588,11 +602,6 @@ const typeDefs = gql`
             }
           }
         }
-        # {
-        #   operations: [READ]
-        #   when: [BEFORE]
-        #   where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-        # }
       ]
     ) {
     id: ID! @id
@@ -947,6 +956,26 @@ const typeDefs = gql`
     @query(read: true, aggregate: false)
     @mutation(operations: [UPDATE])
     @authorization(
+      # READ uses filter (not validate) so a query spanning multiple orgs
+      # returns only the caller's authorized rows instead of throwing Forbidden
+      # on the whole result set when it contains another org's nodes.
+      filter: [
+        {
+          operations: [READ]
+          where: {
+            node: {
+              OR: [
+                { organization: { createdBy: { externalId: "$jwt.sub" } } }
+                {
+                  organization: {
+                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
       validate: [
         {
           operations: [CREATE]
@@ -961,22 +990,6 @@ const typeDefs = gql`
                       externalId: "$jwt.sub"
                       role: "ADMIN"
                     }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ]
-          when: [BEFORE]
-          where: {
-            node: {
-              OR: [
-                { organization: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  organization: {
-                    memberUsers_SINGLE: { externalId: "$jwt.sub" }
                   }
                 }
               ]
@@ -1613,42 +1626,49 @@ const typeDefs = gql`
 
   type Project implements SoftDeletable & Timestamped & TimestampedCreatable
     @authorization(
+      # READ/AGGREGATE use filter (not validate) so a query spanning multiple
+      # orgs returns only the caller's authorized, non-deleted rows instead of
+      # throwing Forbidden when the result set includes another org's projects.
+      # Soft-delete and authorization are AND-ed inside one rule on purpose.
       filter: [
-        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
-      ]
-      validate: [
         {
-          operations: [READ]
-          when: [BEFORE]
+          operations: [READ, AGGREGATE]
           where: {
-            OR: [
+            AND: [
+              { node: { deletedAt: null } }
               {
-                node: {
-                  organization: { createdBy: { externalId: "$jwt.sub" } }
-                }
-              }
-              {
-                node: {
-                  organization: {
-                    memberUsers_SINGLE: {
-                      externalId: "$jwt.sub"
-                      role: "ADMIN"
+                OR: [
+                  {
+                    node: {
+                      organization: { createdBy: { externalId: "$jwt.sub" } }
                     }
                   }
-                }
+                  {
+                    node: {
+                      organization: {
+                        memberUsers_SINGLE: {
+                          externalId: "$jwt.sub"
+                          role: "ADMIN"
+                        }
+                      }
+                    }
+                  }
+                  { node: { createdBy: { externalId: "$jwt.sub" } } }
+                  { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
+                  {
+                    node: {
+                      organization: { invites_SINGLE: { email: "$jwt.sub" } }
+                    }
+                  }
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  { node: { isTemplate: true } }
+                ]
               }
-              { node: { createdBy: { externalId: "$jwt.sub" } } }
-              { node: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } } }
-              {
-                node: {
-                  organization: { invites_SINGLE: { email: "$jwt.sub" } }
-                }
-              }
-              { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
-              { node: { isTemplate: true } }
             ]
           }
         }
+      ]
+      validate: [
         {
           when: [AFTER]
           operations: [CREATE]
