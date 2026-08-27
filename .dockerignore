@@ -1,0 +1,31 @@
+# deps & build output (rebuilt inside the image)
+node_modules
+dist
+.yarn/cache
+.yarn/install-state.gz
+
+# secrets & local env — NEVER copy into the image (passed at runtime)
+.env
+.env.*
+
+# vcs / ci / editor
+.git
+.github
+.gitignore
+.vscode
+.idea
+
+# docker meta
+Dockerfile
+.dockerignore
+docker-compose.yml
+neo4j-compose.yaml
+redis-compose.yaml
+
+# logs & docs
+logs
+*.log
+myErrors.log
+docs
+*.md
+coverage
