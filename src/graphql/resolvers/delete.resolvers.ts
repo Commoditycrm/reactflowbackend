@@ -14,17 +14,17 @@ import { User } from "../../interfaces";
  */
 const callerSharesOrgWithTarget = async (
   callerExternalId: string,
-  targetUserId: string
+  targetUserId: string,
 ): Promise<boolean> => {
   const session = (await Neo4JConnection.getInstance()).driver.session();
   try {
     const result = await session.run(
       `
-      MATCH (caller:User {externalId: $callerExternalId})-[:OWNS|MEMBER_OF]->(org:Organization)<-[:OWNS|MEMBER_OF]-(target:User {id: $targetUserId})
+      MATCH (caller:User {externalId: $callerExternalId})-[:OWNS]->(org:Organization)<-[:MEMBER_OF]-(target:User {id: $targetUserId})
       RETURN org.id AS orgId
       LIMIT 1
       `,
-      { callerExternalId, targetUserId }
+      { callerExternalId, targetUserId },
     );
     return result.records.length > 0;
   } finally {
@@ -35,7 +35,7 @@ const callerSharesOrgWithTarget = async (
 const deleteUser = async (
   _source: Record<string, any>,
   { userId }: { userId: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const currentUserId = _context?.jwt?.sub;
 
@@ -49,8 +49,8 @@ const deleteUser = async (
   const User: Model = (await OGMConnection.getInstance()).model("User");
 
   try {
-    // Single query to get both users with proper error handling
-    const [currentUserResult, targetUserResult] = await Promise.allSettled([
+    // Fetch caller and target together; a query failure bubbles to the catch below.
+    const [currentUserRows, targetUserRows] = await Promise.all([
       User.find<User[]>({
         where: { externalId: currentUserId },
         options: { limit: 1 },
@@ -58,29 +58,8 @@ const deleteUser = async (
       User.find<User[]>({ where: { id: userId }, options: { limit: 1 } }),
     ]);
 
-    // Handle current user query failure
-    if (currentUserResult.status === "rejected") {
-      logger?.error("Failed to fetch current user", {
-        currentUserId,
-        error: currentUserResult.reason,
-      });
-      throw new GraphQLError("Authentication failed.", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
-      });
-    }
-
-    if (targetUserResult.status === "rejected") {
-      logger?.error("Failed to fetch target user", {
-        userId,
-        error: targetUserResult.reason,
-      });
-      throw new GraphQLError("Unable to process user deletion request.", {
-        extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },
-      });
-    }
-
-    const [currentUser] = currentUserResult.value;
-    const [targetUser] = targetUserResult.value;
+    const [currentUser] = currentUserRows;
+    const [targetUser] = targetUserRows;
 
     if (!currentUser) {
       logger?.error("Current user not found in database", { currentUserId });
@@ -122,14 +101,11 @@ const deleteUser = async (
         });
         throw new GraphQLError(
           "Unauthorized access. Insufficient permissions.",
-          { extensions: { code: "FORBIDDEN" } }
+          { extensions: { code: "FORBIDDEN" } },
         );
       }
     }
 
-    // Anonymize in the DB first. Firebase deletion is irreversible, so we only
-    // fire it once the DB write commits -- doing both in parallel could delete
-    // the login while leaving the un-anonymized node behind on a DB failure.
     let updateResult;
     try {
       updateResult = await User.update({
@@ -149,20 +125,19 @@ const deleteUser = async (
       });
     }
 
-    // externalId is non-nullable and not OGM-settable on update, so revoke access
-    // in raw Cypher: detaching OWNS/MEMBER_OF drops the node out of every
-    // org-scoped authorization query, which is what actually neutralizes it.
-    const revokeSession = (await Neo4JConnection.getInstance()).driver.session();
+    const revokeSession = (
+      await Neo4JConnection.getInstance()
+    ).driver.session();
     try {
       await revokeSession.run(
         `
         MATCH (u:User {id: $userId})
         SET u.deletedAt = datetime()
         WITH u
-        OPTIONAL MATCH (u)-[r:OWNS|MEMBER_OF]->(:Organization)
+        OPTIONAL MATCH (u)-[r:MEMBER_OF]->(:Organization)
         DELETE r
         `,
-        { userId }
+        { userId },
       );
     } catch (revokeError) {
       logger?.error("Failed to revoke access for deleted user", {
@@ -194,7 +169,7 @@ const deleteUser = async (
         });
         throw new GraphQLError(
           "User was anonymized but their login could not be revoked. Please retry.",
-          { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } }
+          { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } },
         );
       }
     }
@@ -222,7 +197,7 @@ const deleteUser = async (
     // Generic fallback error
     throw new GraphQLError(
       "Unable to delete user account. Please try again later.",
-      { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } }
+      { extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR } },
     );
   }
 };
@@ -230,7 +205,7 @@ const deleteUser = async (
 const disableUser = async (
   _source: Record<string, any>,
   { userId }: { userId: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const currentUserId = _context?.jwt?.sub;
 
@@ -286,7 +261,7 @@ const disableUser = async (
         });
         throw new GraphQLError(
           "Unauthorized access. Insufficient permissions.",
-          { extensions: { code: "FORBIDDEN" } }
+          { extensions: { code: "FORBIDDEN" } },
         );
       }
     }
@@ -302,7 +277,7 @@ const disableUser = async (
     }
     logger?.error(error);
     throw new GraphQLError(
-      "Unable to disable user account or account not found."
+      "Unable to disable user account or account not found.",
     );
   }
 };
@@ -310,7 +285,7 @@ const disableUser = async (
 const deleteFirebaseUser = async (
   _source: Record<string, any>,
   { userId }: { userId: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   try {
     await getFirebaseAdminAuth().auth().deleteUser(userId);
@@ -329,7 +304,7 @@ const deleteFirebaseUser = async (
           extensions: {
             code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR,
           },
-        }
+        },
       );
     }
   }
@@ -338,7 +313,7 @@ const deleteFirebaseUser = async (
 const deleteOrg = async (
   _source: Record<string, any>,
   { orgId }: { orgId: string },
-  _context: Record<string, any>
+  _context: Record<string, any>,
 ) => {
   const callerExternalId = _context?.jwt?.sub;
   if (!callerExternalId) {
@@ -353,7 +328,7 @@ const deleteOrg = async (
   try {
     const roleResult = await authSession.run(
       `MATCH (u:User {externalId: $callerExternalId}) RETURN u.role AS role LIMIT 1`,
-      { callerExternalId }
+      { callerExternalId },
     );
     if (roleResult.records[0]?.get("role") !== "SYSTEM_ADMIN") {
       throw new GraphQLError("UNAUTHORIZED", {
@@ -382,7 +357,7 @@ const deleteOrg = async (
       `,
       {
         orgId,
-      }
+      },
     );
     uids =
       result.records && result.records[0] ? result.records[0].get("uids") : [];
@@ -405,7 +380,7 @@ const deleteOrg = async (
       params: { orgId: $orgId }
     }
     )`,
-      { orgId }
+      { orgId },
     );
     await tx.commit();
   } catch (error) {
