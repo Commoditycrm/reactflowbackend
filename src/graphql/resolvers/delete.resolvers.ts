@@ -20,7 +20,7 @@ const callerSharesOrgWithTarget = async (
   try {
     const result = await session.run(
       `
-      MATCH (caller:User {externalId: $callerExternalId})-[:OWNS|MEMBER_OF]->(org:Organization)<-[:OWNS|MEMBER_OF]-(target:User {id: $targetUserId})
+      MATCH (caller:User {externalId: $callerExternalId})-[:OWNS]->(org:Organization)<-[:MEMBER_OF]-(target:User {id: $targetUserId})
       RETURN org.id AS orgId
       LIMIT 1
       `,
