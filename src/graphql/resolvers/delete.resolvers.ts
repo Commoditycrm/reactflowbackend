@@ -61,6 +61,7 @@ const deleteUser = async (
     const [currentUser] = currentUserRows;
     const [targetUser] = targetUserRows;
 
+
     if (!currentUser) {
       logger?.error("Current user not found in database", { currentUserId });
       throw new GraphQLError("Authentication failed.", {
@@ -114,11 +115,17 @@ const deleteUser = async (
           name: "Deleted Account",
           email: `Deleted Account_${targetUser?.email}`,
         },
+        // OGM needs the caller's JWT to evaluate the User @authorization rules;
+        // without it the update fails as Unauthenticated.
+        context: _context,
       });
     } catch (dbError) {
+      // Error message/stack are non-enumerable, so logging the raw object
+      // serialises to {} — pull them out so the real cause is visible.
       logger?.error("Failed to update user in database", {
         userId,
-        error: dbError,
+        error: dbError instanceof Error ? dbError.message : String(dbError),
+        stack: dbError instanceof Error ? dbError.stack : undefined,
       });
       throw new GraphQLError("Failed to delete user account.", {
         extensions: { code: ApolloServerErrorCode.INTERNAL_SERVER_ERROR },

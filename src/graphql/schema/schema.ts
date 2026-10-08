@@ -81,7 +81,17 @@ const typeDefs = gql`
       @populatedBy(callback: "externalIdExtractor", operations: [CREATE])
       @settable(onCreate: true, onUpdate: false)
       @authorization(
-        validate: [{ where: { node: { externalId: "$jwt.sub" } } }]
+        validate: [
+          {
+            where: {
+              OR: [
+                { node: { externalId: "$jwt.sub" } }
+                { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                { jwt: { roles_INCLUDES: "COMPANY_ADMIN" } }
+              ]
+            }
+          }
+        ]
       )
     email: String!
       @unique
