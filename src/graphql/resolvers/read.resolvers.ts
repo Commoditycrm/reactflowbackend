@@ -550,10 +550,18 @@ const getFirebaseStorage = async (
     });
   }
   const bucket = app.storage().bucket();
-  const prefix = `attachments/org:${orgId}/`;
+  // task attachments, comment images and description images all live in the bucket
+  const prefixes = [
+    `attachments/org:${orgId}/`,
+    `comment-images/org:${orgId}/`,
+    `description-images/org:${orgId}/`,
+  ];
 
   try {
-    const [files] = await bucket.getFiles({ prefix });
+    const listings = await Promise.all(
+      prefixes.map((prefix) => bucket.getFiles({ prefix })),
+    );
+    const files = listings.flatMap(([prefixFiles]) => prefixFiles);
     if (!files.length) {
       return {
         orgId,
