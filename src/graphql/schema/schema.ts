@@ -6020,9 +6020,15 @@ const typeDefs = gql`
           MATCH (p:Project)
           WHERE p.deletedAt IS NULL
             AND (
-              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) } OR
-              EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) } OR
-              EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              // SYSTEM_ADMIN: every org. ADMIN/COMPANY_ADMIN: their whole org.
+              // everyone else: only projects they're assigned to or created.
+              'SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+              OR (
+                user.role IN ['COMPANY_ADMIN', 'ADMIN']
+                AND EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) }
+              )
+              OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              OR EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) }
             )
           RETURN DISTINCT p
         }
@@ -6080,9 +6086,15 @@ const typeDefs = gql`
           MATCH (p:Project)
           WHERE p.deletedAt IS NULL
             AND (
-              EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) } OR
-              EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) } OR
-              EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              // SYSTEM_ADMIN: every org. ADMIN/COMPANY_ADMIN: their whole org.
+              // everyone else: only projects they're assigned to or created.
+              'SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+              OR (
+                user.role IN ['COMPANY_ADMIN', 'ADMIN']
+                AND EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) }
+              )
+              OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              OR EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) }
             )
           RETURN collect(DISTINCT p) AS projects
         }
@@ -6133,6 +6145,128 @@ const typeDefs = gql`
         SKIP $offset
         LIMIT $limit
         RETURN bi AS result
+        """
+        columnName: "result"
+      )
+
+    fullTextSearchOnProjects(
+      query: String!
+      limit: Int = 10
+      offset: Int = 0
+    ): [Project!]!
+      @cypher(
+        statement: """
+        MATCH (user:User { externalId: $jwt.sub })
+        WITH user, ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])) AS isSysAdmin
+        CALL db.index.fulltext.queryNodes('projectName', '*' + $query + '*')
+        YIELD node, score
+        WITH user, isSysAdmin, node AS p, score
+        WHERE p:Project AND p.deletedAt IS NULL
+          AND (
+            isSysAdmin
+            OR (
+              user.role IN ['COMPANY_ADMIN', 'ADMIN']
+              AND EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) }
+            )
+            OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+            OR EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) }
+          )
+        WITH p, max(score) AS score
+        RETURN p AS result
+        ORDER BY score DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "result"
+      )
+
+    fullTextSearchOnFiles(
+      query: String!
+      limit: Int = 10
+      offset: Int = 0
+    ): [File!]!
+      @cypher(
+        statement: """
+        MATCH (user:User { externalId: $jwt.sub })
+        WITH user, ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])) AS isSysAdmin
+        CALL {
+          WITH user, isSysAdmin
+          MATCH (p:Project)
+          WHERE p.deletedAt IS NULL
+            AND (
+              isSysAdmin
+              OR (
+                user.role IN ['COMPANY_ADMIN', 'ADMIN']
+                AND EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) }
+              )
+              OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              OR EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) }
+            )
+          RETURN collect(DISTINCT p) AS projects
+        }
+        CALL db.index.fulltext.queryNodes('fullTextOnFileName', '*' + $query + '*')
+        YIELD node, score
+        WITH projects, node AS file, score
+        WHERE file:File AND file.deletedAt IS NULL
+          AND (
+            EXISTS { MATCH (pp)-[:HAS_CHILD_FILE]->(file) WHERE pp IN projects }
+            OR EXISTS {
+              MATCH path=(pp)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file)
+              WHERE pp IN projects
+                AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+            }
+          )
+        WITH file, max(score) AS score
+        RETURN file AS result
+        ORDER BY score DESC
+        SKIP $offset LIMIT $limit
+        """
+        columnName: "result"
+      )
+
+    fullTextSearchOnFlowNodes(
+      query: String!
+      limit: Int = 10
+      offset: Int = 0
+    ): [FlowNode!]!
+      @cypher(
+        statement: """
+        MATCH (user:User { externalId: $jwt.sub })
+        WITH user, ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])) AS isSysAdmin
+        CALL {
+          WITH user, isSysAdmin
+          MATCH (p:Project)
+          WHERE p.deletedAt IS NULL
+            AND (
+              isSysAdmin
+              OR (
+                user.role IN ['COMPANY_ADMIN', 'ADMIN']
+                AND EXISTS { MATCH (p)<-[:HAS_PROJECTS]-(:Organization)<-[:OWNS|MEMBER_OF]-(user) }
+              )
+              OR EXISTS { MATCH (p)-[:HAS_ASSIGNED_USER]->(user) }
+              OR EXISTS { MATCH (p)<-[:CREATED_PROJECT]-(user) }
+            )
+          RETURN collect(DISTINCT p) AS projects
+        }
+        WITH projects, toLower($query) AS q
+        UNWIND projects AS p
+        CALL {
+          WITH p
+          MATCH (p)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+          RETURN n
+          UNION
+          WITH p
+          MATCH path=(p)-[:HAS_CHILD_FOLDER*1..5]->(:Folder)-[:HAS_CHILD_FILE]->(file:File)-[:HAS_FLOW_NODE]->(n:FlowNode)
+          WHERE file.deletedAt IS NULL AND n.deletedAt IS NULL
+            AND ALL(x IN nodes(path) WHERE NOT x:Folder OR x.deletedAt IS NULL)
+          RETURN n
+        }
+        WITH DISTINCT n, q
+        WHERE toLower(coalesce(n.name, '')) CONTAINS q
+           OR toLower(coalesce(n.description, '')) CONTAINS q
+        RETURN n AS result
+        ORDER BY n.name ASC
+        SKIP $offset LIMIT $limit
         """
         columnName: "result"
       )
