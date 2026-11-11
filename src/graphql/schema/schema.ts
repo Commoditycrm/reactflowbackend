@@ -3449,42 +3449,48 @@ const typeDefs = gql`
   type Folder implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
-        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
-      ]
-      validate: [
         {
-          when: [BEFORE]
-          operations: [READ]
+          operations: [READ, AGGREGATE]
           where: {
-            OR: [
+            AND: [
+              { node: { deletedAt: null } }
               {
-                node: {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-              }
-              { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
-              {
-                node: {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-              }
-              {
-                node: {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
+                OR: [
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  {
+                    node: {
+                      project: {
+                        organization: { createdBy: { externalId: "$jwt.sub" } }
                       }
                     }
                   }
-                }
+                  { node: { project: { createdBy: { externalId: "$jwt.sub" } } } }
+                  {
+                    node: {
+                      project: {
+                        assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                      }
+                    }
+                  }
+                  {
+                    node: {
+                      project: {
+                        organization: {
+                          memberUsers_SINGLE: {
+                            externalId: "$jwt.sub"
+                            role_IN: ["ADMIN", "COMPANY_ADMIN"]
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
               }
             ]
           }
         }
+      ]
+      validate: [
         {
           when: [AFTER]
           operations: [UPDATE, CREATE]
@@ -3829,78 +3835,88 @@ const typeDefs = gql`
   type File implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
-        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
-      ]
-      validate: [
         {
-          when: [BEFORE]
-          operations: [READ]
+          operations: [READ, AGGREGATE]
           where: {
-            node: {
-              OR: [
-                {
-                  parentConnection: {
-                    Project: {
-                      node: {
-                        OR: [
-                          {
-                            organization: {
-                              createdBy: { externalId: "$jwt.sub" }
-                            }
-                          }
-                          { createdBy: { externalId: "$jwt.sub" } }
-                          { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                          {
-                            organization: {
-                              memberUsers_SOME: {
-                                externalId: "$jwt.sub"
-                                role: "ADMIN"
-                              }
-                            }
-                          }
-                        ]
-                      }
-                    }
-                  }
-                }
-                {
-                  parentConnection: {
-                    Folder: {
-                      node: {
-                        OR: [
-                          {
-                            project: {
-                              organization: {
-                                createdBy: { externalId: "$jwt.sub" }
-                              }
-                            }
-                          }
-                          { project: { createdBy: { externalId: "$jwt.sub" } } }
-                          {
-                            project: {
-                              assignedUsers_SINGLE: { externalId: "$jwt.sub" }
-                            }
-                          }
-                          {
-                            project: {
-                              organization: {
-                                memberUsers_SINGLE: {
-                                  externalId: "$jwt.sub"
-                                  role: "ADMIN"
+            AND: [
+              { node: { deletedAt: null } }
+              {
+                OR: [
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  {
+                    node: {
+                      parentConnection: {
+                        Project: {
+                          node: {
+                            OR: [
+                              {
+                                organization: {
+                                  createdBy: { externalId: "$jwt.sub" }
                                 }
                               }
-                            }
+                              { createdBy: { externalId: "$jwt.sub" } }
+                              {
+                                assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                              }
+                              {
+                                organization: {
+                                  memberUsers_SOME: {
+                                    externalId: "$jwt.sub"
+                                    role_IN: ["ADMIN", "COMPANY_ADMIN"]
+                                  }
+                                }
+                              }
+                            ]
                           }
-                        ]
+                        }
                       }
                     }
                   }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
+                  {
+                    node: {
+                      parentConnection: {
+                        Folder: {
+                          node: {
+                            OR: [
+                              {
+                                project: {
+                                  organization: {
+                                    createdBy: { externalId: "$jwt.sub" }
+                                  }
+                                }
+                              }
+                              {
+                                project: { createdBy: { externalId: "$jwt.sub" } }
+                              }
+                              {
+                                project: {
+                                  assignedUsers_SINGLE: { externalId: "$jwt.sub" }
+                                }
+                              }
+                              {
+                                project: {
+                                  organization: {
+                                    memberUsers_SINGLE: {
+                                      externalId: "$jwt.sub"
+                                      role_IN: ["ADMIN", "COMPANY_ADMIN"]
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                  { node: { createdBy: { externalId: "$jwt.sub" } } }
+                ]
+              }
+            ]
           }
         }
+      ]
+      validate: [
         {
           when: [AFTER]
           operations: [CREATE, UPDATE]
