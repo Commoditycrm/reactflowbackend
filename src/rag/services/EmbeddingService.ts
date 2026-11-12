@@ -26,9 +26,11 @@ export class EmbeddingService {
       baseURL: RAG_CONFIG.EMBEDDING_BASE_URL,
     });
 
-    // Separate client for chat completions (Groq API)
+    // Separate client for chat completions (Groq API). Don't hard-require the
+    // key: RAG may be disabled (no external calls), and a missing key should
+    // not crash backend boot. Calls fail clearly only if RAG is actually used.
     this.chatClient = new OpenAI({
-      apiKey: EnvLoader.getOrThrow("GROQ_API_KEY"),
+      apiKey: EnvLoader.get("GROQ_API_KEY") || "disabled",
       baseURL: RAG_CONFIG.CHAT_BASE_URL,
     });
   }
