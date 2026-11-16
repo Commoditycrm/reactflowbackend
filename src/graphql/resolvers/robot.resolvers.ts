@@ -48,6 +48,13 @@ const getAnthropic = (): Anthropic => {
   return anthropicClient;
 };
 
+/** Neo4j integers come back as Integer objects. */
+const toNum = (v: unknown, fallback: number): number => {
+  if (typeof v === "number") return v;
+  const n = (v as { toNumber?: () => number } | null)?.toNumber?.();
+  return typeof n === "number" && Number.isFinite(n) ? n : fallback;
+};
+
 const fail = (message: string, code: string): never => {
   throw new GraphQLError(message, { extensions: { code } });
 };
@@ -235,7 +242,7 @@ const generatePartExplanations = async (
         id: r.get("id"),
         key: r.get("key"),
         name: r.get("name"),
-        qty: Number(r.get("qty")),
+        qty: toNum(r.get("qty"), 1),
         category: r.get("category"),
         motors: r.get("motors") ?? [],
         links: r.get("links") ?? [],
