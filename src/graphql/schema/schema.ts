@@ -1,4 +1,5 @@
 import { gql } from "graphql-tag";
+import { robotMutationFields, robotTypeDefs } from "./robot.schema";
 
 const typeDefs = gql`
   #TODO: DELETE user (delete only the PII) so that createdBy is not null
@@ -5905,6 +5906,9 @@ const typeDefs = gql`
       fileId: ID!
       layoutDirection: NodeLayoutType!
     ): Int!
+
+    # Split & Explain (robot.schema.ts)
+    ${robotMutationFields}
   }
 
   type Query {
@@ -7430,6 +7434,9 @@ const typeDefs = gql`
         columnName: "getProjectListCount"
       )
   }
+
+  # Split & Explain (robot.schema.ts)
+  ${robotTypeDefs}
 `;
 
 export default typeDefs;

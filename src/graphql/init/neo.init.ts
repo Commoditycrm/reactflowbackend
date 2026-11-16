@@ -12,6 +12,7 @@ import { createOperationMutations } from "./../resolvers/create.resolvers";
 import { readOperationQueries } from "./../resolvers/read.resolvers";
 import { updateOperationMutations } from "./../resolvers/update.resolvers";
 import { ragResolvers } from "./../resolvers/rag.resolvers";
+import { robotMutations } from "./../resolvers/robot.resolvers";
 import { EnvLoader } from "../../util/EnvLoader";
 
 import { Neo4JConnection } from "../../database/connection";
@@ -205,6 +206,7 @@ export class NeoConnection {
         ...createOperationMutations,
         ...updateOperationMutations,
         ...deleteOperationMutations,
+        ...robotMutations,
       },
       Query: {
         ...readOperationQueries,
