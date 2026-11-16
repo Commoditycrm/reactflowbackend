@@ -96,9 +96,9 @@ CREATE (g:RobotPartGroup {
   id: gi.id,
   key: gi.key,
   name: gi.name,
-  qty: gi.qty,
+  qty: toInteger(gi.qty),
   category: gi.category,
-  order: gi.order,
+  order: toInteger(gi.order),
   motors: gi.motors
 })
 CREATE (r)-[:HAS_PART_GROUP]->(g)
@@ -118,7 +118,7 @@ CREATE (pt:RobotPart {
   scale: pi.scale,
   color: pi.color,
   explode: pi.explode,
-  depth: pi.depth
+  depth: toInteger(pi.depth)
 })
 CREATE (g)-[:HAS_PART]->(pt)
 RETURN count(pt) AS parts
