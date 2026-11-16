@@ -13,6 +13,16 @@ Split a robot into its parts, explain each part, and link each part to build tas
 3. `generatePartExplanations` asks Claude for what / why / made-of per part group. It may only quote numbers from the org's `ComponentSpec` records; everything else becomes an open question. Drafts are `source: AI, status: DRAFT`.
 4. `updatePartExplanation` lets a person edit and/or confirm. `upsertComponentSpec` (org owners/admins) records a component's specs with source links and marks confirmed explanations that use it as `STALE`.
 
+## Supply and bottlenecks
+
+`robotSupplyStatus(robotId)` compares the motors a robot needs (per model, from `RobotPartGroup.motors`) with the organisation's **Assets** whose `modelNumber` matches (case-insensitive):
+
+- *available here* = units assigned to the robot's project + unassigned units;
+- *shortfall* = needed − available here;
+- *shared bottleneck* = other live robots in the org need the same model and total demand exceeds total stock.
+
+Robots in projects the user cannot read are reported as "Another robot" without names. Logic: `src/robots/supply.ts` (unit-tested).
+
 ## Graph
 
 ```
@@ -51,7 +61,7 @@ applied with `gsutil cors set cors.json gs://<bucket>`.
 - STL meshes only; no Collada/OBJ yet. URDF ≤ 5 MB, ≤ 500 links, ≤ 600 meshes.
 - Explode offsets follow the joint tree (child slides away from parent). Users cannot yet merge/split groups in the UI.
 - `ORG_ADMIN_CQL` picks the first org the user administers; users in several orgs will need an org argument.
-- Supply/bottleneck tab (needs `ComponentSpec` ↔ `Asset` stock) is not built yet.
+- Supply matches motors to Assets by model number only; there is no reservation step beyond assigning an Asset to a project.
 
 ## Tests
 

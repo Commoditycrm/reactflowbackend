@@ -241,3 +241,44 @@ CALL {
 }
 RETURN c.id AS id
 `;
+
+// ---------------------------------------------------------------------------
+// Supply
+// ---------------------------------------------------------------------------
+
+/** Motors needed per model by every live robot in the org, with whether the user can see each project. */
+export const ORG_MOTOR_DEMAND_CQL = `
+MATCH (u:User {externalId: $sub})
+MATCH (org:Organization {id: $orgId})-[:HAS_PROJECTS]->(p:Project)-[:HAS_ROBOT]->(r:Robot)-[:HAS_PART_GROUP]->(g:RobotPartGroup)
+WHERE r.deletedAt IS NULL AND p.deletedAt IS NULL
+UNWIND g.motors AS m
+WITH u, org, p, r, g, trim(coalesce(split(m, "|")[1], "")) AS model
+WHERE model <> ""
+WITH u, org, p, r, g, model, count(*) AS n
+RETURN r.id AS robotId, r.name AS robotName, p.id AS projectId, p.name AS projectName,
+       g.id AS groupId, model, n,
+       (
+         $isSystemAdmin
+         OR EXISTS { (u)-[:OWNS]->(org) }
+         OR (EXISTS { (u)-[:MEMBER_OF]->(org) } AND u.role IN ["ADMIN", "SUPER_USER", "COMPANY_ADMIN"])
+         OR EXISTS { (u)-[:CREATED_PROJECT]->(p) }
+         OR EXISTS { (p)-[:HAS_ASSIGNED_USER]->(u) }
+       ) AS readable
+`;
+
+export const ROBOT_UNKNOWN_MOTORS_CQL = `
+MATCH (r:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup)
+UNWIND g.motors AS m
+WITH m WHERE trim(coalesce(split(m, "|")[1], "")) = ""
+RETURN count(*) AS unknown
+`;
+
+/** Asset units whose model number matches one of the models (case-insensitive). */
+export const ORG_STOCK_CQL = `
+MATCH (org:Organization {id: $orgId})-[:HAS_RESOURCE]->(a:Asset)
+WHERE a.deletedAt IS NULL AND a.modelNumber IS NOT NULL
+  AND toUpper(trim(a.modelNumber)) IN $modelKeys
+OPTIONAL MATCH (proj:Project)-[:HAS_RESOURCE]->(a)
+WHERE proj.deletedAt IS NULL
+RETURN a.id AS assetId, a.modelNumber AS model, collect(DISTINCT proj.id) AS projectIds
+`;

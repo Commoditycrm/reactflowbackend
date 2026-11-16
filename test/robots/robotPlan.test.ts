@@ -175,3 +175,79 @@ test("explanation prompt carries specs and parsing drops bad items", () => {
   assert.deepEqual(parsed[0], { groupId: "G1", what: "Swings the leg.", why: "Likely for balance.", madeOf: ["2 × MX-28"], openQuestions: ["Which motor on hip_z?"] });
   assert.throws(() => parseExplanationResponse("sorry, no", groups));
 });
+
+// ---------------------------------------------------------------------------
+// Supply
+// ---------------------------------------------------------------------------
+import { computeSupply, modelKey } from "../../src/robots/supply";
+
+const demandRow = (robotId: string, model: string, n: number, extra: Partial<Record<string, unknown>> = {}) => ({
+  robotId,
+  robotName: robotId.toUpperCase(),
+  projectId: `p-${robotId}`,
+  projectName: `Project ${robotId}`,
+  readable: true,
+  groupId: `${robotId}-g-${model}`,
+  model,
+  n,
+  ...extra,
+});
+
+test("supply: counts need vs stock available to this project", () => {
+  const s = computeSupply(
+    "a",
+    "p-a",
+    [demandRow("a", "MX-28", 4), demandRow("a", "mx-28 ", 2, { groupId: "a-g2" }), demandRow("a", "AX-12", 2)],
+    [
+      { assetId: "1", model: "MX-28", projectIds: [] },
+      { assetId: "2", model: "MX-28", projectIds: ["p-a"] },
+      { assetId: "3", model: "MX-28", projectIds: ["p-other"] },
+      { assetId: "4", model: "ax-12", projectIds: [] },
+      { assetId: "5", model: "AX-12", projectIds: [] },
+    ],
+    1,
+  );
+  const mx = s.lines.find((l) => modelKey(l.model) === "MX-28")!;
+  assert.equal(mx.needed, 6);
+  assert.deepEqual(mx.groupIds.length, 2);
+  assert.equal(mx.inStock, 3);
+  assert.equal(mx.availableHere, 2);
+  assert.equal(mx.assignedElsewhere, 1);
+  assert.equal(mx.shortfall, 4);
+  assert.equal(mx.state, "SHORT");
+  const ax = s.lines.find((l) => l.model === "AX-12")!;
+  assert.equal(ax.state, "COVERED");
+  assert.equal(s.lines[0]!.model, "MX-28", "problems first");
+  assert.equal(s.unknownMotors, 1);
+  assert.equal(s.shortModels, 1);
+});
+
+test("supply: flags shared bottlenecks and hides robots the user cannot see", () => {
+  const s = computeSupply(
+    "a",
+    "p-a",
+    [demandRow("a", "MX-64", 2), demandRow("b", "MX-64", 2), demandRow("c", "MX-64", 1, { readable: false })],
+    [
+      { assetId: "1", model: "MX-64", projectIds: [] },
+      { assetId: "2", model: "MX-64", projectIds: [] },
+      { assetId: "3", model: "MX-64", projectIds: [] },
+    ],
+    0,
+  );
+  const line = s.lines[0]!;
+  assert.equal(line.availableHere, 3);
+  assert.equal(line.shortfall, 0);
+  assert.equal(line.otherDemand, 3);
+  assert.equal(line.sharedShortfall, 2);
+  assert.equal(line.state, "SHARED_SHORT");
+  assert.equal(s.sharedBottlenecks, 1);
+  const hidden = line.otherRobots.find((o) => o.robotId === null)!;
+  assert.equal(hidden.robotName, "Another robot");
+  assert.ok(!JSON.stringify(line.otherRobots).includes("Project c"), "hidden project name not leaked");
+});
+
+test("supply: no matching assets means no stock data, not 'covered'", () => {
+  const s = computeSupply("a", "p-a", [demandRow("a", "XM430", 3)], [], 0);
+  assert.equal(s.lines[0]!.state, "NO_STOCK_DATA");
+  assert.equal(s.lines[0]!.shortfall, 3);
+});

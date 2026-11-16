@@ -232,6 +232,52 @@ export const robotTypeDefs = `
     sources: [String!]!
   }
 
+  enum RobotSupplyState {
+    COVERED
+    SHORT
+    SHARED_SHORT
+    NO_STOCK_DATA
+  }
+
+  type RobotSupplyOtherRobot
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    "Null when the user cannot see that robot's project."
+    robotId: ID
+    robotName: String!
+    projectName: String!
+    needed: Int!
+  }
+
+  type RobotSupplyLine
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    model: String!
+    needed: Int!
+    groupIds: [ID!]!
+    "Asset units in the organisation with this model number."
+    inStock: Int!
+    assignedHere: Int!
+    unassigned: Int!
+    assignedElsewhere: Int!
+    availableHere: Int!
+    shortfall: Int!
+    otherDemand: Int!
+    sharedShortfall: Int!
+    otherRobots: [RobotSupplyOtherRobot!]!
+    state: RobotSupplyState!
+  }
+
+  type RobotSupplyStatus
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    robotId: ID!
+    lines: [RobotSupplyLine!]!
+    unknownMotors: Int!
+    shortModels: Int!
+    sharedBottlenecks: Int!
+  }
+
   type ImportRobotResult
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
@@ -252,4 +298,9 @@ export const robotMutationFields = `
     updatePartExplanation(input: UpdatePartExplanationInput!): ID!
     deleteRobot(robotId: ID!): Boolean!
     upsertComponentSpec(input: ComponentSpecInput!): ID!
+`;
+
+/** Custom query fields, added inside the main type Query block. */
+export const robotQueryFields = `
+    robotSupplyStatus(robotId: ID!): RobotSupplyStatus!
 `;
