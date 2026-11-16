@@ -23,13 +23,17 @@ import {
   LOAD_COMPONENT_SPECS_CQL,
   LOAD_GROUPS_FOR_AI_CQL,
   ORG_ADMIN_CQL,
+  ORG_MOTOR_DEMAND_CQL,
+  ORG_STOCK_CQL,
   ROBOT_ACCESS_CQL,
+  ROBOT_UNKNOWN_MOTORS_CQL,
   SOFT_DELETE_ROBOT_CQL,
   UPDATE_EXPLANATION_CQL,
   UPSERT_COMPONENT_SPEC_CQL,
   WRITE_EXPLANATIONS_CQL,
 } from "../../robots/robot.cypher";
 import { motorModelsFromConfig, planRobot } from "../../robots/robotPlan";
+import { computeSupply, DemandRow, modelKey, StockRow } from "../../robots/supply";
 import { parseUrdf, UrdfError } from "../../robots/urdf";
 import convertToFlowchartRenderData from "../../util/convertFlowNodeRenderData";
 import { EnvLoader } from "../../util/EnvLoader";
@@ -400,3 +404,41 @@ export const robotMutations = {
   deleteRobot,
   upsertComponentSpec,
 };
+
+// ---------------------------------------------------------------------------
+// robotSupplyStatus
+// ---------------------------------------------------------------------------
+
+const robotSupplyStatus = async (_src: unknown, { robotId }: { robotId: string }, ctx: Ctx) => {
+  const { sub, isSystemAdmin } = auth(ctx);
+  const session = await openSession();
+  try {
+    const robot = await robotAccess(session, sub, isSystemAdmin, robotId, false);
+    const demandRes = await session.run(ORG_MOTOR_DEMAND_CQL, { sub, isSystemAdmin, orgId: robot.orgId });
+    const demand: DemandRow[] = demandRes.records.map((r) => ({
+      robotId: r.get("robotId"),
+      robotName: r.get("robotName"),
+      projectId: r.get("projectId"),
+      projectName: r.get("projectName") ?? "",
+      readable: !!r.get("readable"),
+      groupId: r.get("groupId"),
+      model: r.get("model"),
+      n: toNum(r.get("n"), 0),
+    }));
+    const modelKeys = [...new Set(demand.filter((d) => d.robotId === robotId).map((d) => modelKey(d.model)))];
+    const stockRes = modelKeys.length ? await session.run(ORG_STOCK_CQL, { orgId: robot.orgId, modelKeys }) : null;
+    const stock: StockRow[] = (stockRes?.records ?? []).map((r) => ({
+      assetId: r.get("assetId"),
+      model: r.get("model"),
+      projectIds: r.get("projectIds") ?? [],
+    }));
+    const unknownRes = await session.run(ROBOT_UNKNOWN_MOTORS_CQL, { robotId });
+    const unknown = toNum(unknownRes.records[0]?.get("unknown"), 0);
+    return computeSupply(robotId, robot.projectId, demand, stock, unknown);
+  } finally {
+    await session.close();
+  }
+};
+
+export const robotQueries = { robotSupplyStatus };
+

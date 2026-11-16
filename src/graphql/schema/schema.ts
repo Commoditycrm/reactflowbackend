@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { robotMutationFields, robotTypeDefs } from "./robot.schema";
+import { robotMutationFields, robotQueryFields, robotTypeDefs } from "./robot.schema";
 
 const typeDefs = gql`
   #TODO: DELETE user (delete only the PII) so that createdBy is not null
@@ -6023,6 +6023,8 @@ const typeDefs = gql`
 
     countAllSoftDeletedItems: [DeletedItemCont!]!
     generateTask(prompt: String!): [OpenAIResponse!]!
+    # Split & Explain (robot.schema.ts)
+    ${robotQueryFields}
     backlogItemsSearchWithUid(
       query: String!
       limit: Int = 10
