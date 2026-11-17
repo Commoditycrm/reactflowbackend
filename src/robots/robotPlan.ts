@@ -73,6 +73,12 @@ export interface PlanOptions {
   partMotors?: Record<string, string[]>;
   /** Links to leave out of groups, parts and dependencies (e.g. a synthetic model root). */
   skipLinks?: string[];
+  /**
+   * Geometric centre of each link in world space. CAD files often bake
+   * positions into the vertices, so the frame origin says little; when given,
+   * centres drive the explode directions and robot size.
+   */
+  linkCenters?: Record<string, Vec3>;
 }
 
 const SIDE_PATTERNS: [RegExp, Side][] = [
@@ -83,6 +89,10 @@ const SIDE_PATTERNS: [RegExp, Side][] = [
 ];
 
 const STRIP_SUFFIXES = /([_\-.](motors?|link|visual|collision|mesh|assembly|asm))+$/i;
+/** CAD instance numbers: "Bolt_M3_2", "Wheel (3)", "Leg:1". */
+const INSTANCE_SUFFIX = /([_\-.: ]+(\d+|\(\d+\)))+$/;
+
+export const hasInstanceSuffix = (linkName: string): boolean => INSTANCE_SUFFIX.test(linkName.trim());
 
 export const sideOf = (linkName: string): Side => {
   for (const [re, side] of SIDE_PATTERNS) if (re.test(linkName)) return side;
@@ -91,9 +101,9 @@ export const sideOf = (linkName: string): Side => {
 
 /** "l_shoulder_motor" → "shoulder", "RightUpperArm_link" → "rightupperarm"… */
 export const groupKeyOf = (linkName: string): string => {
-  let base = linkName;
+  let base = linkName.trim().replace(INSTANCE_SUFFIX, "");
   for (const [re] of SIDE_PATTERNS) base = base.replace(re, "");
-  base = base.replace(STRIP_SUFFIXES, "");
+  base = base.replace(STRIP_SUFFIXES, "").replace(INSTANCE_SUFFIX, "");
   base = base.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return base || linkName.toLowerCase();
 };
@@ -145,8 +155,12 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
     }
   }
 
-  // Robot size and centre from link origins.
-  const positions = ordered.map((n) => translationOf(world.get(n)!));
+  const skip = new Set(opts.skipLinks ?? []);
+  const posOf = (n: string): Vec3 => opts.linkCenters?.[n] ?? translationOf(world.get(n)!);
+
+  // Robot size and centre from link positions (skipped links excluded).
+  const sized = ordered.filter((n) => !skip.has(n));
+  const positions = (sized.length ? sized : ordered).map(posOf);
   const lo: Vec3 = [Infinity, Infinity, Infinity];
   const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
   for (const p of positions) {
@@ -164,14 +178,14 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
   const explode = new Map<string, Vec3>([[urdf.rootLink, [0, 0, 0]]]);
   for (const link of ordered.slice(1)) {
     const j = jointByChild.get(link)!;
-    const parentPos = translationOf(world.get(j.parent)!);
-    const pos = translationOf(world.get(link)!);
+    const pos = posOf(link);
+    // Parts hanging off a skipped root spread out from the robot's centre.
+    const parentPos = skip.has(j.parent) ? centre : posOf(j.parent);
     const dir =
       unit(sub(pos, parentPos)) ?? unit(sub(pos, centre)) ?? ([0, 0, 1] as Vec3);
     explode.set(link, add(explode.get(j.parent) ?? [0, 0, 0], scale(dir, gap)));
   }
 
-  const skip = new Set(opts.skipLinks ?? []);
   /** name|model entries for the motors that drive or sit in a link. */
   const linkMotors = (link: string): string[] => {
     const out: string[] = [];
@@ -182,7 +196,7 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
   };
 
   // Groups.
-  const groups = new Map<string, PlannedGroup & { sides: Set<Side>; minDepth: number }>();
+  const groups = new Map<string, PlannedGroup & { sides: Set<Side>; minDepth: number; instances: number }>();
   const groupOfLink = new Map<string, string>();
   for (const link of ordered) {
     if (skip.has(link)) continue;
@@ -200,9 +214,11 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
         joints: [],
         sides: new Set<Side>(),
         minDepth: Infinity,
+        instances: 0,
       };
     g.linkNames.push(link);
     g.sides.add(sideOf(link));
+    if (hasInstanceSuffix(link)) g.instances++;
     g.minDepth = Math.min(g.minDepth, depth.get(link) ?? 0);
     for (const m of linkMotors(link)) {
       const [name, model] = m.split("|");
@@ -217,13 +233,16 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
     groups.set(key, g);
   }
 
+  // Build order: parents first; among equals, lowest first (you build from the base up).
+  const lowZ = (g: { linkNames: string[] }) => Math.min(...g.linkNames.map((n) => posOf(n)[2]));
   const groupList = [...groups.values()].sort(
-    (a, b) => a.minDepth - b.minDepth || a.key.localeCompare(b.key),
+    (a, b) => a.minDepth - b.minDepth || lowZ(a) - lowZ(b) || a.key.localeCompare(b.key),
   );
   const finalGroups: PlannedGroup[] = groupList.map((g, i) => ({
     key: g.key,
     name: g.name,
-    qty: g.sides.has("left") && g.sides.has("right") ? 2 : 1,
+    // Left + right halves = 2; numbered CAD instances ("nut", "nut_2", …) = one per link.
+    qty: g.sides.has("left") && g.sides.has("right") ? 2 : g.instances > 0 && g.linkNames.length > 1 ? g.linkNames.length : 1,
     category: categoryOf(g.key, g.joints.length > 0),
     order: i,
     linkNames: g.linkNames,

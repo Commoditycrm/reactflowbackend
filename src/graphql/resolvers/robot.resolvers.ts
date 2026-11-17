@@ -14,7 +14,15 @@ import {
   parseExplanationResponse,
 } from "../../robots/explanations";
 import { buildImportPayload, ImportPayload, isAllowedMeshUrl } from "../../robots/importPayload";
-import { applyBom, BomRow, parseBomCsv, parsedFromBom, parsedFromModelParts, SYNTHETIC_ROOT } from "../../robots/parts";
+import {
+  applyBom,
+  BomRow,
+  centersFromModelParts,
+  parseBomCsv,
+  parsedFromBom,
+  parsedFromModelParts,
+  SYNTHETIC_ROOT,
+} from "../../robots/parts";
 import {
   ABSORB_FLOW_NODES_CQL,
   CAN_EDIT_PROJECT_CQL,
@@ -277,7 +285,7 @@ const importRobotFromUrdf = async (_src: unknown, { input }: { input: ImportInpu
 type ImportModelInput = CommonImport & {
   format: "GLB" | "BOM";
   modelUrl?: string | null;
-  parts?: { name: string; parent?: string | null; matrix: number[] }[] | null;
+  parts?: { name: string; parent?: string | null; matrix: number[]; center?: number[] | null }[] | null;
   bomCsv?: string | null;
 };
 
@@ -287,11 +295,13 @@ const importRobotFromModel = async (_src: unknown, { input }: { input: ImportMod
   const bom = parseBom(input.bomCsv);
   let urdf;
   let model: { format: "GLB"; url: string } | { format: "NONE" };
+  let linkCenters: Record<string, [number, number, number]> = {};
   if (input.format === "GLB") {
     if (!input.modelUrl || !isAllowedMeshUrl(input.modelUrl, extraMeshHosts())) {
       fail("Upload the model file to the app's storage first.", "BAD_USER_INPUT");
     }
     urdf = planOrFail(() => parsedFromModelParts(name, input.parts ?? []));
+    linkCenters = centersFromModelParts(input.parts ?? []);
     model = { format: "GLB", url: input.modelUrl! };
   } else {
     if (!bom.length) fail("The bill of materials has no rows with a motor/model.", "BAD_USER_INPUT");
@@ -300,7 +310,7 @@ const importRobotFromModel = async (_src: unknown, { input }: { input: ImportMod
   }
   const fromBom = applyBom(urdf, bom);
   const plan = planOrFail(() =>
-    planRobot(urdf, { partMotors: fromBom.partMotors, skipLinks: [SYNTHETIC_ROOT] }),
+    planRobot(urdf, { partMotors: fromBom.partMotors, skipLinks: [SYNTHETIC_ROOT], linkCenters }),
   );
   if (!plan.groups.length) fail("No parts found in the model.", "BAD_USER_INPUT");
   const payload = buildImportPayload(plan, [], { createTasks: input.createTasks !== false, model });
