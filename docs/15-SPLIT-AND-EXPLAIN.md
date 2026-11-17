@@ -13,6 +13,20 @@ Split a robot into its parts, explain each part, and link each part to build tas
 3. `generatePartExplanations` asks Claude for what / why / made-of per part group. It may only quote numbers from the org's `ComponentSpec` records; everything else becomes an open question. Drafts are `source: AI, status: DRAFT`.
 4. `updatePartExplanation` lets a person edit and/or confirm. `upsertComponentSpec` (org owners/admins) records a component's specs with source links and marks confirmed explanations that use it as `STALE`.
 
+## Other ways in
+
+- **CAD model (GLB, or STEP converted to GLB in the browser):** `importRobotFromModel(format: GLB)` takes the uploaded GLB URL and its mesh parts (name, parent, world matrix, centre). Parts become links joined by fixed joints that reproduce the transforms (`src/robots/parts.ts`); a synthetic root is skipped. Numbered instances ("nut", "nut_2") group together with that quantity; parts at the same depth are ordered from the base up.
+- **Bill of materials (CSV):** header with a `joint` or `part` column, a `motor`/`model` column and optional `qty`. Joint rows set that joint's motor model; part rows add motors to that part. Works with URDF and GLB imports, or on its own (`format: BOM`, no 3D). Unmatched rows are returned as `unmatchedBomRows`.
+
+## Editing part groups
+
+Motors are stored on each `RobotPart` (`motors: [name|model]`), and a group's `motors` and `qty` are recomputed from its parts after every edit.
+
+- `renamePartGroup` – name and category; the flow node is renamed too.
+- `mergePartGroups` – parts move into the first group; tasks, comments and `LINKED_TO` links of the other groups' flow nodes move to its node, then those nodes and groups are deleted.
+- `movePartsToGroup` – to an existing group, or a new one (with its own flow node linked from the source group's node). Emptying a group is refused (use merge).
+- Confirmed explanations of changed groups become `STALE`.
+
 ## Supply and bottlenecks
 
 `robotSupplyStatus(robotId)` compares the motors a robot needs (per model, from `RobotPartGroup.motors`) with the organisation's **Assets** whose `modelNumber` matches (case-insensitive):
@@ -58,8 +72,8 @@ applied with `gsutil cors set cors.json gs://<bucket>`.
 
 ## Limits and follow-ups
 
-- STL meshes only; no Collada/OBJ yet. URDF ≤ 5 MB, ≤ 500 links, ≤ 600 meshes.
-- Explode offsets follow the joint tree (child slides away from parent). Users cannot yet merge/split groups in the UI.
+- URDF meshes must be STL; CAD models must be STEP or GLB (Collada/OBJ not yet). URDF ≤ 5 MB, ≤ 500 links, ≤ 600 meshes; models ≤ 2000 parts; BOM ≤ 1 MB.
+- Explode offsets follow the joint tree (child slides away from parent); for CAD models, from the robot's centre using part centres.
 - `ORG_ADMIN_CQL` picks the first org the user administers; users in several orgs will need an org argument.
 - Supply matches motors to Assets by model number only; there is no reservation step beyond assigning an Asset to a project.
 

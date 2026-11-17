@@ -324,3 +324,24 @@ test("BOM-only robot and GLB payloads", () => {
   assert.equal(glb.parts[0]!.meshNode, "Body");
   assert.equal(glb.parts[0]!.meshUrl, "https://firebasestorage.googleapis.com/m.glb");
 });
+
+test("CAD: instance numbers group together, centres drive explode", () => {
+  assert.equal(groupKeyOf("Bolt_M3_2"), "bolt_m3");
+  assert.equal(groupKeyOf("Wheel (3)"), "wheel");
+  assert.equal(groupKeyOf("l_shoulder_motor"), "shoulder");
+  const I = fromXyzRpy([0, 0, 0], [0, 0, 0]);
+  const parts = [
+    { name: "Base", matrix: I, center: [0, 0, 0.1] },
+    { name: "Wheel_1", matrix: I, center: [0.3, 0, 0] },
+    { name: "Wheel_2", matrix: I, center: [-0.3, 0, 0] },
+  ];
+  const plan = planRobot(parsedFromModelParts("cart", parts), {
+    skipLinks: [SYNTHETIC_ROOT],
+    linkCenters: { Base: [0, 0, 0.1], Wheel_1: [0.3, 0, 0], Wheel_2: [-0.3, 0, 0] },
+  });
+  const wheel = plan.groups.find((g) => g.key === "wheel")!;
+  assert.equal(wheel.qty, 2);
+  const w1 = plan.parts.find((p) => p.linkName === "Wheel_1")!;
+  const w2 = plan.parts.find((p) => p.linkName === "Wheel_2")!;
+  assert.ok(w1.explode[0] > 0 && w2.explode[0] < 0, "wheels spread apart even though their frames coincide");
+});

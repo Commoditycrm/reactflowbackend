@@ -237,6 +237,8 @@ export const robotTypeDefs = `
     parent: String
     "Row-major 4×4 world transform."
     matrix: [Float!]!
+    "World-space centre of the part's geometry."
+    center: [Float!]
   }
 
   input ImportRobotModelInput {

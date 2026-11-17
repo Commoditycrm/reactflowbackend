@@ -14,9 +14,21 @@ export interface ModelPartInput {
   parent?: string | null;
   /** Row-major 4×4 world transform. */
   matrix: number[];
+  /** World-space centre of the part's geometry (bounding-box centre). */
+  center?: number[] | null;
 }
 
 const MAX_PARTS = 2000;
+
+/** World-space centres given by the client, keyed by part name. */
+export const centersFromModelParts = (parts: ModelPartInput[]): Record<string, [number, number, number]> => {
+  const out: Record<string, [number, number, number]> = {};
+  for (const p of parts ?? []) {
+    const c = p.center;
+    if (Array.isArray(c) && c.length === 3 && c.every((n) => Number.isFinite(n))) out[p.name.trim()] = [c[0]!, c[1]!, c[2]!];
+  }
+  return out;
+};
 
 /** Builds a tree of fixed joints whose forward kinematics reproduce the given world transforms. */
 export const parsedFromModelParts = (robotName: string, parts: ModelPartInput[]): ParsedUrdf => {
