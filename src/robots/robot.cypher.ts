@@ -114,6 +114,9 @@ CREATE (pt:RobotPart {
   side: pi.side,
   meshUrl: pi.meshUrl,
   meshFile: pi.meshFile,
+  meshFormat: pi.meshFormat,
+  meshNode: pi.meshNode,
+  motors: pi.motors,
   matrix: pi.matrix,
   scale: pi.scale,
   color: pi.color,
@@ -281,4 +284,171 @@ WHERE a.deletedAt IS NULL AND a.modelNumber IS NOT NULL
 OPTIONAL MATCH (proj:Project)-[:HAS_RESOURCE]->(a)
 WHERE proj.deletedAt IS NULL
 RETURN a.id AS assetId, a.modelNumber AS model, collect(DISTINCT proj.id) AS projectIds
+`;
+
+// ---------------------------------------------------------------------------
+// Editing part groups
+// ---------------------------------------------------------------------------
+
+const FLOW_NODE_LABEL = `toString(g.order + 1) + ". " + g.name + CASE WHEN g.qty > 1 THEN " ×" + toString(g.qty) ELSE "" END`;
+
+export const ROBOT_OF_GROUP_CQL = `
+MATCH (r:Robot)-[:HAS_PART_GROUP]->(:RobotPartGroup {id: $groupId})
+RETURN r.id AS robotId
+LIMIT 1
+`;
+
+export const RENAME_GROUP_CQL = `
+MATCH (:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup {id: $groupId})
+SET g.name = $name, g.category = coalesce($category, g.category)
+WITH g
+OPTIONAL MATCH (g)-[:PART_GROUP_NODE]->(n:FlowNode)
+SET n.name = ${FLOW_NODE_LABEL}
+RETURN g.id AS id
+`;
+
+export const LOAD_GROUPS_FOR_EDIT_CQL = `
+MATCH (:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup)
+WHERE g.id IN $groupIds
+OPTIONAL MATCH (g)-[:PART_GROUP_NODE]->(n:FlowNode)
+OPTIONAL MATCH (g)-[:HAS_PART]->(p:RobotPart)
+RETURN g.id AS id, g.order AS order, n.id AS nodeId, collect(p.id) AS partIds
+`;
+
+/** Moves parts (of this robot) into the target group. */
+export const MOVE_PARTS_CQL = `
+MATCH (r:Robot {id: $robotId})-[:HAS_PART_GROUP]->(t:RobotPartGroup {id: $targetId})
+UNWIND $partIds AS pid
+MATCH (r)-[:HAS_PART_GROUP]->(src:RobotPartGroup)-[rel:HAS_PART]->(p:RobotPart {id: pid})
+WHERE src <> t
+DELETE rel
+CREATE (t)-[:HAS_PART]->(p)
+RETURN count(p) AS moved
+`;
+
+export const LINK_GROUP_NODE_CQL = `
+MATCH (g:RobotPartGroup {id: $groupId})
+MATCH (n:FlowNode {id: $nodeId})
+MERGE (g)-[:PART_GROUP_NODE]->(n)
+RETURN n.id AS id
+`;
+
+/** Moves tasks, comments and links from other flow nodes onto the target node, then deletes them. */
+export const ABSORB_FLOW_NODES_CQL = `
+MATCH (tn:FlowNode {id: $targetNodeId})
+UNWIND $nodeIds AS nid
+MATCH (other:FlowNode {id: nid})
+WHERE other <> tn
+CALL {
+  WITH tn, other
+  MATCH (other)-[r:HAS_CHILD_ITEM]->(b:BacklogItem)
+  MERGE (tn)-[:HAS_CHILD_ITEM]->(b)
+  DELETE r
+}
+CALL {
+  WITH tn, other
+  MATCH (other)-[r:HAS_COMMENT]->(c:Comment)
+  MERGE (tn)-[:HAS_COMMENT]->(c)
+  DELETE r
+}
+CALL {
+  WITH tn, other
+  MATCH (other)-[r:LINKED_TO]->(x:FlowNode)
+  WHERE x <> tn AND NOT EXISTS { (tn)-[:LINKED_TO]->(x) }
+  CREATE (tn)-[r2:LINKED_TO]->(x)
+  SET r2 = properties(r), r2.source = tn.id
+}
+CALL {
+  WITH tn, other
+  MATCH (x:FlowNode)-[r:LINKED_TO]->(other)
+  WHERE x <> tn AND NOT EXISTS { (x)-[:LINKED_TO]->(tn) }
+  CREATE (x)-[r2:LINKED_TO]->(tn)
+  SET r2 = properties(r)
+}
+DETACH DELETE other
+RETURN count(*) AS absorbed
+`;
+
+export const DELETE_GROUPS_CQL = `
+MATCH (:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup)
+WHERE g.id IN $groupIds
+OPTIONAL MATCH (g)-[:HAS_EXPLANATION]->(e:PartExplanation)
+DETACH DELETE e, g
+RETURN count(*) AS deleted
+`;
+
+/** Recomputes motors and quantity from the parts, flags confirmed explanations and renames flow nodes. */
+export const RECOMPUTE_GROUPS_CQL = `
+MATCH (g:RobotPartGroup)
+WHERE g.id IN $groupIds
+OPTIONAL MATCH (g)-[:HAS_PART]->(p:RobotPart)
+WITH g, collect(p) AS parts
+SET g.motors = reduce(acc = [], x IN parts | acc + coalesce(x.motors, [])),
+    g.qty = CASE
+      WHEN any(x IN parts WHERE x.side = "LEFT") AND any(x IN parts WHERE x.side = "RIGHT") THEN 2
+      ELSE 1
+    END
+WITH g
+OPTIONAL MATCH (g)-[:HAS_EXPLANATION]->(e:PartExplanation {status: "CONFIRMED"})
+SET e.status = "STALE"
+WITH g
+OPTIONAL MATCH (g)-[:PART_GROUP_NODE]->(n:FlowNode)
+SET n.name = ${FLOW_NODE_LABEL}
+RETURN count(DISTINCT g) AS updated
+`;
+
+export const SET_GROUP_FIELDS_CQL = `
+MATCH (:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup {id: $groupId})
+SET g.name = coalesce($name, g.name), g.order = toInteger(coalesce($order, g.order))
+RETURN g.id AS id
+`;
+
+/** New, empty group with its own flow node next to the source group's node. */
+export const CREATE_GROUP_WITH_NODE_CQL = `
+MATCH (u:User {externalId: $sub})
+MATCH (r:Robot {id: $robotId})-[:HAS_PART_GROUP]->(src:RobotPartGroup {id: $sourceGroupId})
+MATCH (r)-[:HAS_PART_GROUP]->(every:RobotPartGroup)
+WITH u, r, src, max(every.order) AS maxOrder
+CREATE (g:RobotPartGroup {
+  id: $groupId, key: $key, name: $name, qty: 1, category: src.category,
+  order: toInteger(maxOrder + 1), motors: []
+})
+CREATE (r)-[:HAS_PART_GROUP]->(g)
+WITH u, r, src, g
+OPTIONAL MATCH (src)-[:PART_GROUP_NODE]->(sn:FlowNode)
+OPTIONAL MATCH (r)-[:HAS_BUILD_FLOW]->(f:File)
+CALL {
+  WITH u, g, sn, f
+  WITH u, g, sn, f WHERE f IS NOT NULL
+  CREATE (n:FlowNode {
+    id: $nodeId,
+    name: toString(g.order + 1) + ". " + g.name,
+    color: coalesce(sn.color, "#ffffff"),
+    shape: coalesce(sn.shape, "rectangle"),
+    posX: toFloat(coalesce(sn.posX, 0.0) + 280.0),
+    posY: toFloat(coalesce(sn.posY, 0.0)),
+    width: toFloat(coalesce(sn.width, 200.0)),
+    height: toFloat(coalesce(sn.height, 80.0)),
+    description: "",
+    type: coalesce(sn.type, "process"),
+    textDecoration: "normal",
+    createdAt: datetime()
+  })
+  CREATE (f)-[:HAS_FLOW_NODE]->(n)
+  CREATE (u)-[:CREATED_FLOW_NODE]->(n)
+  CREATE (g)-[:PART_GROUP_NODE]->(n)
+  WITH sn, n
+  WITH sn, n WHERE sn IS NOT NULL
+  CREATE (sn)-[:LINKED_TO {
+    id: randomUUID(), source: sn.id, sourceHandle: "d", targetHandle: "b",
+    animated: false, label: "", color: "#b0b0b5", bidirectional: false
+  }]->(n)
+}
+RETURN g.id AS id
+`;
+
+export const ROBOT_GROUP_PARTS_CQL = `
+MATCH (:Robot {id: $robotId})-[:HAS_PART_GROUP]->(g:RobotPartGroup)
+OPTIONAL MATCH (g)-[:HAS_PART]->(p:RobotPart)
+RETURN g.id AS id, collect(p.id) AS partIds
 `;

@@ -13,9 +13,21 @@ import {
   GroupForAi,
   parseExplanationResponse,
 } from "../../robots/explanations";
-import { buildImportPayload, isAllowedMeshUrl } from "../../robots/importPayload";
+import { buildImportPayload, ImportPayload, isAllowedMeshUrl } from "../../robots/importPayload";
+import { applyBom, BomRow, parseBomCsv, parsedFromBom, parsedFromModelParts, SYNTHETIC_ROOT } from "../../robots/parts";
 import {
+  ABSORB_FLOW_NODES_CQL,
   CAN_EDIT_PROJECT_CQL,
+  CREATE_GROUP_WITH_NODE_CQL,
+  DELETE_GROUPS_CQL,
+  LINK_GROUP_NODE_CQL,
+  LOAD_GROUPS_FOR_EDIT_CQL,
+  MOVE_PARTS_CQL,
+  RECOMPUTE_GROUPS_CQL,
+  RENAME_GROUP_CQL,
+  ROBOT_GROUP_PARTS_CQL,
+  ROBOT_OF_GROUP_CQL,
+  SET_GROUP_FIELDS_CQL,
   CREATE_BUILD_FLOW_FILE_CQL,
   CREATE_ROBOT_CQL,
   GROUP_ACCESS_CQL,
@@ -32,7 +44,7 @@ import {
   UPSERT_COMPONENT_SPEC_CQL,
   WRITE_EXPLANATIONS_CQL,
 } from "../../robots/robot.cypher";
-import { motorModelsFromConfig, planRobot } from "../../robots/robotPlan";
+import { motorModelsFromConfig, planRobot, RobotPlan } from "../../robots/robotPlan";
 import { computeSupply, DemandRow, modelKey, StockRow } from "../../robots/supply";
 import { parseUrdf, UrdfError } from "../../robots/urdf";
 import convertToFlowchartRenderData from "../../util/convertFlowNodeRenderData";
@@ -94,57 +106,55 @@ const robotAccess = async (session: Session, sub: string, isSystemAdmin: boolean
 };
 
 // ---------------------------------------------------------------------------
-// importRobotFromUrdf
+// Importing robots
 // ---------------------------------------------------------------------------
 
-type ImportInput = {
+type CommonImport = {
   projectId: string;
   name: string;
-  urdf: string;
-  meshes: { fileName: string; url: string }[];
-  motorConfigJson?: string | null;
   license?: string | null;
   attribution?: string | null;
   sourceUrl?: string | null;
   createTasks?: boolean | null;
 };
 
-const importRobotFromUrdf = async (_src: unknown, { input }: { input: ImportInput }, ctx: Ctx) => {
-  const { sub, isSystemAdmin } = auth(ctx);
-
+const checkCommon = (input: CommonImport) => {
   const name = (input.name ?? "").trim().slice(0, 120);
   if (!name) fail("Robot name is required.", "BAD_USER_INPUT");
-  if (!Array.isArray(input.meshes) || input.meshes.length > MAX_MESHES) {
-    fail(`Upload at most ${MAX_MESHES} mesh files.`, "BAD_USER_INPUT");
-  }
-  const hosts = extraMeshHosts();
-  for (const m of input.meshes) {
-    if (!m.fileName || !isAllowedMeshUrl(m.url, hosts)) {
-      fail(`Mesh "${m.fileName}" must be uploaded to the app's storage first.`, "BAD_USER_INPUT");
-    }
-  }
   if (input.sourceUrl && !/^https?:\/\//i.test(input.sourceUrl)) {
     fail("Source URL must start with http(s)://", "BAD_USER_INPUT");
   }
+  return name;
+};
 
-  // Parse and plan before touching the database.
-  let motorModels: Record<string, string> = {};
-  if (input.motorConfigJson) {
-    try {
-      motorModels = motorModelsFromConfig(JSON.parse(input.motorConfigJson));
-    } catch {
-      fail("The motor config is not valid JSON.", "BAD_USER_INPUT");
-    }
-  }
-  let plan;
+const parseBom = (csv: string | null | undefined): BomRow[] => {
   try {
-    plan = planRobot(parseUrdf(input.urdf), { motorModels });
+    return parseBomCsv(csv ?? "");
   } catch (e) {
     if (e instanceof UrdfError) fail(e.message, "BAD_USER_INPUT");
     throw e;
   }
-  const payload = buildImportPayload(plan!, input.meshes, { createTasks: input.createTasks !== false });
+};
 
+const planOrFail = <T>(fn: () => T): T => {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof UrdfError) fail(e.message, "BAD_USER_INPUT");
+    throw e;
+  }
+};
+
+/** Shared write path: build-flow file, flow nodes, tasks, robot, groups and parts in one transaction. */
+const writeImport = async (
+  ctx: Ctx,
+  input: CommonImport,
+  name: string,
+  plan: RobotPlan,
+  payload: ImportPayload,
+  unmatchedBomRows: string[],
+) => {
+  const { sub, isSystemAdmin } = auth(ctx);
   const fileId = randomUUID();
   const robotId = randomUUID();
   const layout = convertToFlowchartRenderData({
@@ -201,7 +211,7 @@ const importRobotFromUrdf = async (_src: unknown, { input }: { input: ImportInpu
       license: input.license?.slice(0, 120) ?? null,
       attribution: input.attribution?.slice(0, 500) ?? null,
       sourceUrl: input.sourceUrl?.slice(0, 500) ?? null,
-      approxSize: plan!.approxSize,
+      approxSize: plan.approxSize,
       groups: payload.groups.map(({ flowSeedId, ...g }) => ({ ...g, flowNodeId: dbIdBySeed.get(flowSeedId)! })),
       parts: payload.parts,
     });
@@ -215,13 +225,213 @@ const importRobotFromUrdf = async (_src: unknown, { input }: { input: ImportInpu
       partCount: payload.parts.length,
       taskCount: backlogItems.length,
       missingMeshes: payload.missingMeshes,
+      unmatchedBomRows,
     };
   } catch (error) {
     if (tx) await tx.rollback();
-    if (!(error instanceof GraphQLError)) logger?.error?.("importRobotFromUrdf failed", error);
+    if (!(error instanceof GraphQLError)) logger?.error?.("robot import failed", error);
     throw error;
   } finally {
     if (session) await session.close();
+  }
+};
+
+type ImportInput = CommonImport & {
+  urdf: string;
+  meshes: { fileName: string; url: string }[];
+  motorConfigJson?: string | null;
+  bomCsv?: string | null;
+};
+
+const importRobotFromUrdf = async (_src: unknown, { input }: { input: ImportInput }, ctx: Ctx) => {
+  auth(ctx);
+  const name = checkCommon(input);
+  if (!Array.isArray(input.meshes) || input.meshes.length > MAX_MESHES) {
+    fail(`Upload at most ${MAX_MESHES} mesh files.`, "BAD_USER_INPUT");
+  }
+  const hosts = extraMeshHosts();
+  for (const m of input.meshes) {
+    if (!m.fileName || !isAllowedMeshUrl(m.url, hosts)) {
+      fail(`Mesh "${m.fileName}" must be uploaded to the app's storage first.`, "BAD_USER_INPUT");
+    }
+  }
+
+  let motorModels: Record<string, string> = {};
+  if (input.motorConfigJson) {
+    try {
+      motorModels = motorModelsFromConfig(JSON.parse(input.motorConfigJson));
+    } catch {
+      fail("The motor config is not valid JSON.", "BAD_USER_INPUT");
+    }
+  }
+  const bom = parseBom(input.bomCsv);
+  const urdf = planOrFail(() => parseUrdf(input.urdf));
+  const fromBom = applyBom(urdf, bom);
+  const plan = planOrFail(() =>
+    planRobot(urdf, { motorModels: { ...motorModels, ...fromBom.motorModels }, partMotors: fromBom.partMotors }),
+  );
+  const payload = buildImportPayload(plan, input.meshes, { createTasks: input.createTasks !== false });
+  return writeImport(ctx, input, name, plan, payload, fromBom.unmatched);
+};
+
+type ImportModelInput = CommonImport & {
+  format: "GLB" | "BOM";
+  modelUrl?: string | null;
+  parts?: { name: string; parent?: string | null; matrix: number[] }[] | null;
+  bomCsv?: string | null;
+};
+
+const importRobotFromModel = async (_src: unknown, { input }: { input: ImportModelInput }, ctx: Ctx) => {
+  auth(ctx);
+  const name = checkCommon(input);
+  const bom = parseBom(input.bomCsv);
+  let urdf;
+  let model: { format: "GLB"; url: string } | { format: "NONE" };
+  if (input.format === "GLB") {
+    if (!input.modelUrl || !isAllowedMeshUrl(input.modelUrl, extraMeshHosts())) {
+      fail("Upload the model file to the app's storage first.", "BAD_USER_INPUT");
+    }
+    urdf = planOrFail(() => parsedFromModelParts(name, input.parts ?? []));
+    model = { format: "GLB", url: input.modelUrl! };
+  } else {
+    if (!bom.length) fail("The bill of materials has no rows with a motor/model.", "BAD_USER_INPUT");
+    urdf = planOrFail(() => parsedFromBom(name, bom));
+    model = { format: "NONE" };
+  }
+  const fromBom = applyBom(urdf, bom);
+  const plan = planOrFail(() =>
+    planRobot(urdf, { partMotors: fromBom.partMotors, skipLinks: [SYNTHETIC_ROOT] }),
+  );
+  if (!plan.groups.length) fail("No parts found in the model.", "BAD_USER_INPUT");
+  const payload = buildImportPayload(plan, [], { createTasks: input.createTasks !== false, model });
+  return writeImport(ctx, input, name, plan, payload, fromBom.unmatched);
+};
+
+// ---------------------------------------------------------------------------
+// Editing part groups
+// ---------------------------------------------------------------------------
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "group";
+
+const editAccess = async (session: Session, ctx: Ctx, robotId: string) => {
+  const { sub, isSystemAdmin } = auth(ctx);
+  await robotAccess(session, sub, isSystemAdmin, robotId, true);
+  return sub;
+};
+
+const renamePartGroup = async (
+  _src: unknown,
+  { groupId, name, category }: { groupId: string; name: string; category?: string | null },
+  ctx: Ctx,
+) => {
+  const clean = (name ?? "").trim().slice(0, 80);
+  if (!clean) fail("Name is required.", "BAD_USER_INPUT");
+  const session = await openSession();
+  try {
+    const r = await session.run(ROBOT_OF_GROUP_CQL, { groupId });
+    const robotId = r.records[0]?.get("robotId");
+    if (!robotId) fail("Part group not found.", "NOT_FOUND");
+    await editAccess(session, ctx, robotId);
+    const res = await session.executeWrite((tx) =>
+      tx.run(RENAME_GROUP_CQL, { robotId, groupId, name: clean, category: category?.trim().slice(0, 40) || null }),
+    );
+    return res.records[0]?.get("id");
+  } finally {
+    await session.close();
+  }
+};
+
+const mergePartGroups = async (
+  _src: unknown,
+  { robotId, groupIds, name }: { robotId: string; groupIds: string[]; name?: string | null },
+  ctx: Ctx,
+) => {
+  const ids = [...new Set(groupIds ?? [])];
+  if (ids.length < 2) fail("Pick at least two part groups to merge.", "BAD_USER_INPUT");
+  const session = await openSession();
+  try {
+    await editAccess(session, ctx, robotId);
+    const loaded = await session.run(LOAD_GROUPS_FOR_EDIT_CQL, { robotId, groupIds: ids });
+    if (loaded.records.length !== ids.length) fail("Some part groups do not belong to this robot.", "BAD_USER_INPUT");
+    const rows = loaded.records.map((r) => ({
+      id: r.get("id") as string,
+      order: toNum(r.get("order"), 0),
+      nodeId: r.get("nodeId") as string | null,
+    }));
+    const targetId = ids[0]!;
+    const others = rows.filter((r) => r.id !== targetId);
+    const target = rows.find((r) => r.id === targetId)!;
+    const targetNodeId = target.nodeId ?? others.find((o) => o.nodeId)?.nodeId ?? null;
+    const otherNodeIds = others.map((o) => o.nodeId).filter((n): n is string => !!n && n !== targetNodeId);
+    const partIds = loaded.records.filter((r) => r.get("id") !== targetId).flatMap((r) => r.get("partIds") as string[]);
+    const newName = name?.trim().slice(0, 80) || null;
+    const order = Math.min(...rows.map((r) => r.order));
+
+    await session.executeWrite(async (tx) => {
+      if (partIds.length) await tx.run(MOVE_PARTS_CQL, { robotId, targetId, partIds });
+      if (targetNodeId && !target.nodeId) await tx.run(LINK_GROUP_NODE_CQL, { groupId: targetId, nodeId: targetNodeId });
+      if (targetNodeId && otherNodeIds.length) await tx.run(ABSORB_FLOW_NODES_CQL, { targetNodeId, nodeIds: otherNodeIds });
+      await tx.run(DELETE_GROUPS_CQL, { robotId, groupIds: others.map((o) => o.id) });
+      await tx.run(SET_GROUP_FIELDS_CQL, { robotId, groupId: targetId, name: newName, order });
+      await tx.run(RECOMPUTE_GROUPS_CQL, { groupIds: [targetId] });
+    });
+    return targetId;
+  } finally {
+    await session.close();
+  }
+};
+
+const movePartsToGroup = async (
+  _src: unknown,
+  {
+    robotId,
+    partIds,
+    targetGroupId,
+    newGroupName,
+  }: { robotId: string; partIds: string[]; targetGroupId?: string | null; newGroupName?: string | null },
+  ctx: Ctx,
+) => {
+  const ids = [...new Set(partIds ?? [])];
+  if (!ids.length) fail("Pick at least one part to move.", "BAD_USER_INPUT");
+  const newName = newGroupName?.trim().slice(0, 80) || null;
+  if (!targetGroupId && !newName) fail("Choose a group or give the new group a name.", "BAD_USER_INPUT");
+  const session = await openSession();
+  try {
+    const sub = await editAccess(session, ctx, robotId);
+    // Which groups currently hold these parts, and would any be left empty?
+    const all = await session.run(ROBOT_GROUP_PARTS_CQL, { robotId });
+    const groups = all.records.map((r) => ({ id: r.get("id") as string, partIds: r.get("partIds") as string[] }));
+    const sources = groups.filter((g) => g.partIds.some((p) => ids.includes(p)));
+    const found = new Set(sources.flatMap((g) => g.partIds.filter((p) => ids.includes(p))));
+    if (found.size !== ids.length) fail("Some parts do not belong to this robot.", "BAD_USER_INPUT");
+    if (targetGroupId && !groups.some((g) => g.id === targetGroupId)) {
+      fail("The target group does not belong to this robot.", "BAD_USER_INPUT");
+    }
+    const emptied = sources.filter((g) => g.id !== targetGroupId && g.partIds.every((p) => ids.includes(p)));
+    if (emptied.length) {
+      fail("That would leave a part group empty. Use Merge to combine whole groups.", "BAD_USER_INPUT");
+    }
+
+    let targetId = targetGroupId ?? "";
+    await session.executeWrite(async (tx) => {
+      if (!targetGroupId) {
+        targetId = randomUUID();
+        await tx.run(CREATE_GROUP_WITH_NODE_CQL, {
+          sub,
+          robotId,
+          sourceGroupId: sources[0]!.id,
+          groupId: targetId,
+          nodeId: randomUUID(),
+          name: newName,
+          key: slug(newName!),
+        });
+      }
+      await tx.run(MOVE_PARTS_CQL, { robotId, targetId, partIds: ids });
+      await tx.run(RECOMPUTE_GROUPS_CQL, { groupIds: [targetId, ...sources.map((g) => g.id)] });
+    });
+    return targetId;
+  } finally {
+    await session.close();
   }
 };
 
@@ -399,6 +609,10 @@ const upsertComponentSpec = async (_src: unknown, { input }: { input: ComponentS
 
 export const robotMutations = {
   importRobotFromUrdf,
+  importRobotFromModel,
+  renamePartGroup,
+  mergePartGroups,
+  movePartsToGroup,
   generatePartExplanations,
   updatePartExplanation,
   deleteRobot,

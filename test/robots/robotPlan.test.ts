@@ -251,3 +251,76 @@ test("supply: no matching assets means no stock data, not 'covered'", () => {
   assert.equal(s.lines[0]!.state, "NO_STOCK_DATA");
   assert.equal(s.lines[0]!.shortfall, 3);
 });
+
+// ---------------------------------------------------------------------------
+// CAD parts, BOM and motors on parts
+// ---------------------------------------------------------------------------
+import { applyBom, parseBomCsv, parseCsv, parsedFromBom, parsedFromModelParts, SYNTHETIC_ROOT } from "../../src/robots/parts";
+import { fromXyzRpy, invert, multiply } from "../../src/robots/urdf";
+
+test("invert gives the identity when multiplied back", () => {
+  const m = fromXyzRpy([0.1, -0.2, 0.3], [0.4, -0.5, 1.2]);
+  const id = multiply(m, invert(m));
+  id.forEach((v, i) => assert.ok(Math.abs(v - ([0, 5, 10, 15].includes(i) ? 1 : 0)) < 1e-9));
+});
+
+test("CAD parts: world transforms survive the round trip and roots are skipped", () => {
+  const torso = fromXyzRpy([0, 0, 0.5], [0, 0, 0]);
+  const arm = fromXyzRpy([0.2, 0, 0.6], [0, 0.3, 0]);
+  const u = parsedFromModelParts("cad", [
+    { name: "torso", parent: null, matrix: torso },
+    { name: "l_arm", parent: "torso", matrix: arm },
+    { name: "loop_a", parent: "loop_b", matrix: torso },
+    { name: "loop_b", parent: "loop_a", matrix: torso },
+  ]);
+  const plan = planRobot(u, { skipLinks: [SYNTHETIC_ROOT] });
+  const armPart = plan.parts.find((p) => p.linkName === "l_arm")!;
+  armPart.matrix.forEach((v, i) => assert.ok(Math.abs(v - arm[i]!) < 1e-6));
+  assert.ok(!plan.groups.some((g) => g.key.includes("model_root")));
+  assert.ok(!plan.parts.some((p) => p.linkName === SYNTHETIC_ROOT));
+  assert.ok(plan.dependencies.some(([a, b]) => a === "torso" && b === "arm"));
+  assert.throws(() => parsedFromModelParts("x", [{ name: "a", matrix: [1, 2] as any }]), /invalid transform/);
+  assert.throws(() => parsedFromModelParts("x", [{ name: "a", matrix: torso }, { name: "a", matrix: torso }]), /Duplicate/);
+});
+
+test("BOM: CSV parsing, header detection and quantities", () => {
+  assert.deepEqual(parseCsv('a,"b,c","d ""q"""\r\n1,2,3\n'), [["a", "b,c", 'd "q"'], ["1", "2", "3"]]);
+  const rows = parseBomCsv("Part;Motor Model;Qty\nl_arm;MX-28;2\ntorso;MX-64;\n;XL320;1\n");
+  assert.deepEqual(rows, [
+    { joint: null, part: "l_arm", model: "MX-28", qty: 2 },
+    { joint: null, part: "torso", model: "MX-64", qty: 1 },
+  ]);
+  assert.throws(() => parseBomCsv("foo,bar\n1,2"), /motor\/model column/);
+});
+
+test("BOM: joint rows set motor models, part rows add motors, unmatched reported", () => {
+  const u = parseUrdf(TOY);
+  const bom = applyBom(u, parseBomCsv("joint,part,motor,qty\nTORSO_Z,,MX-64,1\n,l_arm,XL-320,2\nnope,,MX-28,1\n"));
+  assert.deepEqual(bom.motorModels, { torso_z: "MX-64" });
+  assert.deepEqual(bom.partMotors, { l_arm: ["XL-320", "XL-320"] });
+  assert.deepEqual(bom.unmatched, ["nope"]);
+  const plan = planRobot(u, { motorModels: bom.motorModels, partMotors: bom.partMotors });
+  const torso = plan.parts.find((p) => p.linkName === "torso")!;
+  assert.deepEqual(torso.motors, ["torso_z|MX-64"]);
+  const arm = plan.groups.find((g) => g.key === "arm")!;
+  assert.equal(arm.joints.filter((j) => j.type === "bom").length, 2);
+  assert.equal(arm.joints.find((j) => j.type === "bom")!.motorModel, "XL-320");
+});
+
+test("BOM-only robot and GLB payloads", () => {
+  const rows = parseBomCsv("part,motor,qty\nl_hip,MX-28,2\nr_hip,MX-28,2\npelvis,MX-64,1\n");
+  const u = parsedFromBom("bom bot", rows);
+  const bom = applyBom(u, rows);
+  const plan = planRobot(u, { partMotors: bom.partMotors, skipLinks: [SYNTHETIC_ROOT] });
+  assert.deepEqual(plan.groups.map((g) => `${g.key}×${g.qty}`).sort(), ["hip×2", "pelvis×1"]);
+  const none = buildImportPayload(plan, [], { createTasks: true, model: { format: "NONE" } });
+  assert.ok(none.parts.every((p) => p.meshUrl === null && p.meshFile === null && p.meshFormat === null));
+  assert.equal(none.missingMeshes.length, 0);
+  assert.equal(none.groups.find((g) => g.key === "hip")!.motors.length, 4);
+
+  const cad = planRobot(parsedFromModelParts("cad", [{ name: "Body", matrix: fromXyzRpy([0, 0, 0], [0, 0, 0]) }]), { skipLinks: [SYNTHETIC_ROOT] });
+  const glb = buildImportPayload(cad, [], { createTasks: false, model: { format: "GLB", url: "https://firebasestorage.googleapis.com/m.glb" } });
+  assert.equal(glb.parts[0]!.meshFormat, "GLB");
+  assert.equal(glb.parts[0]!.meshNode, "Body");
+  assert.equal(glb.parts[0]!.meshUrl, "https://firebasestorage.googleapis.com/m.glb");
+});
