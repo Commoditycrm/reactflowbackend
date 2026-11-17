@@ -284,3 +284,26 @@ export const computeLinkTransforms = (urdf: ParsedUrdf): Map<string, Mat4> => {
   }
   return world;
 };
+
+/** Inverse of a rigid/affine 4×4 transform (row-major). Throws if singular. */
+export const invert = (m: Mat4): Mat4 => {
+  const a = m.map((v) => v ?? 0);
+  const inv = new Array<number>(16).fill(0);
+  // Gauss-Jordan on [a | I]
+  const aug = [0, 1, 2, 3].map((r) => [...a.slice(r * 4, r * 4 + 4), ...[0, 1, 2, 3].map((c) => (c === r ? 1 : 0))]);
+  for (let col = 0; col < 4; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < 4; r++) if (Math.abs(aug[r]![col]!) > Math.abs(aug[pivot]![col]!)) pivot = r;
+    if (Math.abs(aug[pivot]![col]!) < 1e-12) throw new UrdfError("A part has an invalid (singular) transform.");
+    [aug[col], aug[pivot]] = [aug[pivot]!, aug[col]!];
+    const p = aug[col]![col]!;
+    for (let c = 0; c < 8; c++) aug[col]![c]! /= p;
+    for (let r = 0; r < 4; r++) {
+      if (r === col) continue;
+      const f = aug[r]![col]!;
+      for (let c = 0; c < 8; c++) aug[r]![c]! -= f * aug[col]![c]!;
+    }
+  }
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) inv[r * 4 + c] = aug[r]![c + 4]!;
+  return inv;
+};

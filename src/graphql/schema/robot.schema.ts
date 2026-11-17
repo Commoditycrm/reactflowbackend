@@ -130,9 +130,15 @@ export const robotTypeDefs = `
     id: ID! @id
     linkName: String!
     side: RobotPartSide!
-    "Download URL of the mesh (STL), or null for a part with no visual."
+    "Download URL of the mesh (STL) or of the whole model (GLB); null for a part with no visual."
     meshUrl: String
     meshFile: String
+    "STL or GLB; null when the part has no 3D model."
+    meshFormat: String
+    "For GLB: name of the node in the model file."
+    meshNode: String
+    "Motors in this part, as name|model (model may be empty)."
+    motors: [String!]!
     "Row-major 4×4 transform of the mesh with all joints at zero."
     matrix: [Float!]!
     scale: [Float!]!
@@ -209,10 +215,42 @@ export const robotTypeDefs = `
     meshes: [RobotMeshInput!]!
     "Optional pypot-style motor config JSON: { motors: { joint: { type } } }."
     motorConfigJson: String
+    "Optional bill of materials CSV (joint or part column, motor/model column, optional qty)."
+    bomCsv: String
     license: String
     attribution: String
     sourceUrl: String
     "Create procure/build/assemble/test tasks for each part group."
+    createTasks: Boolean = true
+  }
+
+  enum RobotModelFormat {
+    "One GLB file (STEP is converted to GLB in the browser)."
+    GLB
+    "No 3D model: parts come from the bill of materials."
+    BOM
+  }
+
+  input RobotModelPartInput {
+    "Unique node name in the model file."
+    name: String!
+    parent: String
+    "Row-major 4×4 world transform."
+    matrix: [Float!]!
+  }
+
+  input ImportRobotModelInput {
+    projectId: ID!
+    name: String!
+    format: RobotModelFormat!
+    "Firebase Storage URL of the GLB (format GLB)."
+    modelUrl: String
+    "Mesh nodes of the model (format GLB)."
+    parts: [RobotModelPartInput!]
+    bomCsv: String
+    license: String
+    attribution: String
+    sourceUrl: String
     createTasks: Boolean = true
   }
 
@@ -288,12 +326,20 @@ export const robotTypeDefs = `
     taskCount: Int!
     "Meshes the URDF refers to that were not uploaded."
     missingMeshes: [String!]!
+    "BOM rows whose joint/part name matched nothing."
+    unmatchedBomRows: [String!]!
   }
 `;
 
 /** Custom mutation fields, added inside the main type Mutation block. */
 export const robotMutationFields = `
     importRobotFromUrdf(input: ImportRobotInput!): ImportRobotResult!
+    importRobotFromModel(input: ImportRobotModelInput!): ImportRobotResult!
+    renamePartGroup(groupId: ID!, name: String!, category: String): ID!
+    "Merges groups into the first one; returns its id. Tasks, comments and links move to its flow node."
+    mergePartGroups(robotId: ID!, groupIds: [ID!]!, name: String): ID!
+    "Moves parts to an existing group, or to a new group when newGroupName is given; returns the target group id."
+    movePartsToGroup(robotId: ID!, partIds: [ID!]!, targetGroupId: ID, newGroupName: String): ID!
     generatePartExplanations(robotId: ID!, groupIds: [ID!], overwriteConfirmed: Boolean = false): Int!
     updatePartExplanation(input: UpdatePartExplanationInput!): ID!
     deleteRobot(robotId: ID!): Boolean!

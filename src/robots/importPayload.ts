@@ -50,6 +50,10 @@ export interface ImportPayload {
     side: "LEFT" | "RIGHT" | "CENTER";
     meshUrl: string | null;
     meshFile: string | null;
+    /** STL = one file per part; GLB = one model file, part = node named meshNode. */
+    meshFormat: "STL" | "GLB" | null;
+    meshNode: string | null;
+    motors: string[];
     matrix: number[];
     scale: number[];
     color: string | null;
@@ -68,8 +72,14 @@ const motorSummary = (models: (string | null)[]): string => {
 export const buildImportPayload = (
   plan: RobotPlan,
   meshes: MeshUpload[],
-  opts: { createTasks: boolean; newId?: () => string } = { createTasks: true },
+  opts: {
+    createTasks: boolean;
+    newId?: () => string;
+    /** Default STL (URDF + per-part files). GLB: every part is a node of one model file. NONE: no 3D. */
+    model?: { format: "STL" } | { format: "GLB"; url: string } | { format: "NONE" };
+  } = { createTasks: true },
 ): ImportPayload => {
+  const model = opts.model ?? { format: "STL" as const };
   const newId = opts.newId ?? randomUUID;
   const meshByName = new Map(meshes.map((m) => [m.fileName.toLowerCase(), m.url]));
 
@@ -157,15 +167,28 @@ export const buildImportPayload = (
 
   const missing = new Set<string>();
   const parts = plan.parts.map((p) => {
-    const url = p.meshFile ? meshByName.get(p.meshFile.toLowerCase()) ?? null : null;
-    if (p.meshFile && !url) missing.add(p.meshFile);
+    let url: string | null = null;
+    let meshFormat: "STL" | "GLB" | null = null;
+    let meshNode: string | null = null;
+    if (model.format === "STL" && p.meshFile) {
+      url = meshByName.get(p.meshFile.toLowerCase()) ?? null;
+      if (url) meshFormat = "STL";
+      else missing.add(p.meshFile);
+    } else if (model.format === "GLB" && p.meshFile) {
+      url = model.url;
+      meshFormat = "GLB";
+      meshNode = p.meshFile;
+    }
     return {
       id: newId(),
       groupId: groupByKey.get(p.groupKey)!.id,
       linkName: p.linkName,
       side: p.side.toUpperCase() as "LEFT" | "RIGHT" | "CENTER",
       meshUrl: url,
-      meshFile: p.meshFile,
+      meshFile: model.format === "NONE" ? null : p.meshFile,
+      meshFormat,
+      meshNode,
+      motors: [...p.motors],
       matrix: p.matrix,
       scale: [...p.scale],
       color: p.color,

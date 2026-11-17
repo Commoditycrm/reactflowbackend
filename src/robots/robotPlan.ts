@@ -22,6 +22,8 @@ export interface PlannedPart {
   side: Side;
   /** Mesh file name from the URDF, or null for links with no visual. */
   meshFile: string | null;
+  /** Motors attached here, as name|model (model may be empty). Only on a link's first visual. */
+  motors: string[];
   /** Visual world transform (row-major 4×4) with all joints at zero. */
   matrix: number[];
   scale: Vec3;
@@ -33,7 +35,8 @@ export interface PlannedPart {
 
 export interface PlannedJoint {
   name: string;
-  type: UrdfJoint["type"];
+  /** URDF joint type, or "bom" for a motor listed only in the bill of materials. */
+  type: UrdfJoint["type"] | "bom";
   /** Motor model from the robot's config, when one was provided. */
   motorModel: string | null;
   limit: UrdfJoint["limit"];
@@ -66,6 +69,10 @@ export interface PlanOptions {
   motorModels?: Record<string, string>;
   /** Distance between neighbouring parts at 100% split, as a share of robot size. */
   gapRatio?: number;
+  /** linkName → motor models from a BOM (one entry per unit). */
+  partMotors?: Record<string, string[]>;
+  /** Links to leave out of groups, parts and dependencies (e.g. a synthetic model root). */
+  skipLinks?: string[];
 }
 
 const SIDE_PATTERNS: [RegExp, Side][] = [
@@ -164,10 +171,21 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
     explode.set(link, add(explode.get(j.parent) ?? [0, 0, 0], scale(dir, gap)));
   }
 
+  const skip = new Set(opts.skipLinks ?? []);
+  /** name|model entries for the motors that drive or sit in a link. */
+  const linkMotors = (link: string): string[] => {
+    const out: string[] = [];
+    const j = jointByChild.get(link);
+    if (j && isActuatedJoint(j)) out.push(`${j.name}|${opts.motorModels?.[j.name] ?? ""}`);
+    (opts.partMotors?.[link] ?? []).forEach((model, i) => out.push(`bom:${link}#${i + 1}|${model}`));
+    return out;
+  };
+
   // Groups.
   const groups = new Map<string, PlannedGroup & { sides: Set<Side>; minDepth: number }>();
   const groupOfLink = new Map<string, string>();
   for (const link of ordered) {
+    if (skip.has(link)) continue;
     const key = groupKeyOf(link);
     groupOfLink.set(link, key);
     const g =
@@ -186,13 +204,14 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
     g.linkNames.push(link);
     g.sides.add(sideOf(link));
     g.minDepth = Math.min(g.minDepth, depth.get(link) ?? 0);
-    const j = jointByChild.get(link);
-    if (j && isActuatedJoint(j)) {
+    for (const m of linkMotors(link)) {
+      const [name, model] = m.split("|");
+      const j = jointByChild.get(link);
       g.joints.push({
-        name: j.name,
-        type: j.type,
-        motorModel: opts.motorModels?.[j.name] ?? null,
-        limit: j.limit,
+        name: name!,
+        type: j && name === j.name ? j.type : "bom",
+        motorModel: model || null,
+        limit: j && name === j.name ? j.limit : null,
       });
     }
     groups.set(key, g);
@@ -215,8 +234,9 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
   const deps = new Set<string>();
   const dependencies: [string, string][] = [];
   for (const j of urdf.joints) {
-    const a = groupOfLink.get(j.parent)!;
-    const b = groupOfLink.get(j.child)!;
+    const a = groupOfLink.get(j.parent);
+    const b = groupOfLink.get(j.child);
+    if (!a || !b) continue;
     const id = `${a}>${b}`;
     if (a !== b && !deps.has(id)) {
       deps.add(id);
@@ -227,14 +247,16 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
   const linkByName = new Map(urdf.links.map((l) => [l.name, l]));
   const parts: PlannedPart[] = [];
   for (const link of ordered) {
+    if (skip.has(link)) continue;
     const l = linkByName.get(link)!;
     const visuals = l.visuals.length ? l.visuals : [null];
-    for (const v of visuals) {
+    visuals.forEach((v, vi) => {
       parts.push({
         linkName: link,
         groupKey: groupOfLink.get(link)!,
         side: sideOf(link),
         meshFile: v?.meshFile ?? null,
+        motors: vi === 0 ? linkMotors(link) : [],
         matrix: multiply(world.get(link)!, v?.origin ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]).map(
           (n) => Math.round(n * 1e6) / 1e6,
         ),
@@ -243,7 +265,7 @@ export const planRobot = (urdf: ParsedUrdf, opts: PlanOptions = {}): RobotPlan =
         explode: round(explode.get(link) ?? [0, 0, 0]),
         depth: depth.get(link) ?? 0,
       });
-    }
+    });
   }
 
   return {
