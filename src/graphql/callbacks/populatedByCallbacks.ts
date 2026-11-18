@@ -2,7 +2,13 @@ import { Neo4jGraphQLCallback } from "@neo4j/graphql";
 import { Neo4JConnection } from "../../database/connection";
 import { redis } from "../../database/redisClient";
 import { touchOrgLastModifiedDebounced } from "./orgLastModifiedDebounce";
+import { randomUUID } from "crypto";
 import logger from "../../logger";
+
+// Release the org-lastmod debounce key only if it still holds our token — never
+// delete a successor's lock acquired after a TTL-expiry race.
+const ORG_LASTMOD_RELEASE_LUA =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
 import { DateTime } from "neo4j-driver";
 import { toEpochMs } from "../../util/minutesBetweens";
 import { GraphQLError } from "graphql";
@@ -139,15 +145,21 @@ const updateOrgLastModified = async (
   }
 
   // This org-touch previously ran a separate write transaction on EVERY
-  // create/update of ~20 types. org.lastModified has no reader needing
-  // sub-window freshness, so coalesce a user's rapid writes into one touch per
-  // window (fail-open on Redis outage; a failed write is not masked — see
-  // orgLastModifiedDebounce).
+  // create/update of ~20 types. The MATCH below touches ALL organizations the
+  // user belongs to in one write, and org.lastModified has no reader needing
+  // sub-window freshness — so coalesce the user's rapid writes into one touch
+  // per window. A per-user key is correct: every non-debounced write already
+  // covers all of the user's orgs, so no single org is starved by another's
+  // write. Fail-open on a Redis outage; a failed write is not masked, and the
+  // lock is released ownership-checked — see orgLastModifiedDebounce.
+  const token = randomUUID();
   await touchOrgLastModifiedDebounced({
     key: `org-lastmod:${userId}`,
+    token,
     windowSec: 15,
-    redisSetNx: (key, sec) => redis.set(key, "1", "EX", sec, "NX"),
-    redisDel: (key) => redis.del(key),
+    acquire: (key, tok, sec) => redis.set(key, tok, "EX", sec, "NX"),
+    releaseIfOwner: (key, tok) =>
+      redis.eval(ORG_LASTMOD_RELEASE_LUA, 1, key, tok),
     onRedisError: (e) =>
       logger?.warn("org-lastmod debounce: Redis unavailable, writing anyway", e),
     write: async () => {
