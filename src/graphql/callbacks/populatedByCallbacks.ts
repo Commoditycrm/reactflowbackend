@@ -1,5 +1,7 @@
 import { Neo4jGraphQLCallback } from "@neo4j/graphql";
 import { Neo4JConnection } from "../../database/connection";
+import { redis } from "../../database/redisClient";
+import { touchOrgLastModifiedDebounced } from "./orgLastModifiedDebounce";
 import logger from "../../logger";
 import { DateTime } from "neo4j-driver";
 import { toEpochMs } from "../../util/minutesBetweens";
@@ -135,25 +137,41 @@ const updateOrgLastModified = async (
       extensions: { code: "UNAUTHENTICATED" },
     });
   }
-  const session = (await Neo4JConnection.getInstance()).driver.session();
-  try {
-    const tx = session.beginTransaction();
-    await tx.run(
-      `
-      MATCH (u:User {externalId: $userId})-[:MEMBER_OF|OWNS]->(org:Organization)
-      SET org.lastModified = datetime()
-      RETURN 1
-      `,
-      { userId },
-    );
-    await tx.commit();
-    return true;
-  } catch (error) {
-    logger?.error("Error updating Organization.lastModified:", error);
-    throw error;
-  } finally {
-    await session.close();
-  }
+
+  // This org-touch previously ran a separate write transaction on EVERY
+  // create/update of ~20 types. org.lastModified has no reader needing
+  // sub-window freshness, so coalesce a user's rapid writes into one touch per
+  // window (fail-open on Redis outage; a failed write is not masked — see
+  // orgLastModifiedDebounce).
+  await touchOrgLastModifiedDebounced({
+    key: `org-lastmod:${userId}`,
+    windowSec: 15,
+    redisSetNx: (key, sec) => redis.set(key, "1", "EX", sec, "NX"),
+    redisDel: (key) => redis.del(key),
+    onRedisError: (e) =>
+      logger?.warn("org-lastmod debounce: Redis unavailable, writing anyway", e),
+    write: async () => {
+      const session = (await Neo4JConnection.getInstance()).driver.session();
+      try {
+        const tx = session.beginTransaction();
+        await tx.run(
+          `
+          MATCH (u:User {externalId: $userId})-[:MEMBER_OF|OWNS]->(org:Organization)
+          SET org.lastModified = datetime()
+          RETURN 1
+          `,
+          { userId },
+        );
+        await tx.commit();
+      } catch (error) {
+        logger?.error("Error updating Organization.lastModified:", error);
+        throw error;
+      } finally {
+        await session.close();
+      }
+    },
+  });
+  return true;
 };
 
 const defaultKeySetter = (
