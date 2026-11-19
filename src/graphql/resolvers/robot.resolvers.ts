@@ -54,6 +54,7 @@ import {
 } from "../../robots/robot.cypher";
 import { motorModelsFromConfig, planRobot, RobotPlan } from "../../robots/robotPlan";
 import { computeSupply, DemandRow, modelKey, StockRow } from "../../robots/supply";
+import { planPurchaseFlow, PurchaseListError, PurchaseSection } from "../../purchases/purchasePlan";
 import { parseUrdf, UrdfError } from "../../robots/urdf";
 import convertToFlowchartRenderData from "../../util/convertFlowNodeRenderData";
 import { EnvLoader } from "../../util/EnvLoader";
@@ -617,7 +618,80 @@ const upsertComponentSpec = async (_src: unknown, { input }: { input: ComponentS
   }
 };
 
+// ---------------------------------------------------------------------------
+// Purchase lists
+// ---------------------------------------------------------------------------
+
+const importPurchaseList = async (
+  _src: unknown,
+  { input }: { input: { projectId: string; name: string; sections: PurchaseSection[] } },
+  ctx: Ctx,
+) => {
+  const { sub, isSystemAdmin } = auth(ctx);
+  const name = (input.name ?? "").trim().slice(0, 100) || "Purchase list";
+  let plan;
+  try {
+    plan = planPurchaseFlow(input.sections);
+  } catch (e) {
+    if (e instanceof PurchaseListError) fail(e.message, "BAD_USER_INPUT");
+    throw e;
+  }
+
+  const fileId = randomUUID();
+  const layout = convertToFlowchartRenderData({
+    nodes: plan!.flowNodes,
+    edges: plan!.flowEdges,
+    fileId,
+    layoutDirection: NodeLayoutType.Vertical,
+  });
+  const dbIdBySeed = new Map(plan!.flowNodes.map((n) => [n.id, randomUUID()]));
+  const nodes = layout.nodes.map((n) => ({ ...n, dbId: dbIdBySeed.get(n.id)!, aiNodeId: n.id }));
+  const backlogItems = plan!.tasks.map((t) => ({
+    id: t.id,
+    nodeId: dbIdBySeed.get(t.nodeSeed)!,
+    label: t.label,
+    description: t.description,
+  }));
+
+  let session: Session | undefined;
+  let tx: Transaction | undefined;
+  try {
+    session = await openSession();
+    const allowed = await session.run(CAN_EDIT_PROJECT_CQL, { sub, isSystemAdmin, projectId: input.projectId });
+    if (!allowed.records.length) {
+      fail("Only organization owners and admins can add files to this project.", "FORBIDDEN");
+    }
+    tx = session.beginTransaction();
+    const jwt = { sub };
+    await tx.run(CREATE_BUILD_FLOW_FILE_CQL, { sub, projectId: input.projectId, fileId, name });
+    await tx.run(CREATE_AI_FLOWNODE_CQL, { nodes, edges: layout.edges, jwt });
+    await tx.run(CREATE_AI_BACKLOGITEM_CQL, {
+      fileId,
+      backlogItems,
+      createdNodeIds: nodes.map((n) => n.dbId),
+      jwt,
+    });
+    if (plan!.taskLinks.length) await tx.run(LINK_TASK_DEPENDENCIES_CQL, { links: plan!.taskLinks });
+    await tx.commit();
+    tx = undefined;
+    return {
+      fileId,
+      sectionCount: plan!.flowNodes.length,
+      itemCount: plan!.itemCount,
+      taskCount: backlogItems.length,
+      buyLaterCount: plan!.buyLaterCount,
+    };
+  } catch (error) {
+    if (tx) await tx.rollback();
+    if (!(error instanceof GraphQLError)) logger?.error?.("importPurchaseList failed", error);
+    throw error;
+  } finally {
+    if (session) await session.close();
+  }
+};
+
 export const robotMutations = {
+  importPurchaseList,
   importRobotFromUrdf,
   importRobotFromModel,
   renamePartGroup,
