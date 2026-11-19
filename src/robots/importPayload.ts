@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { RobotPlan } from "./robotPlan";
+import { escapeHtml } from "../util/escapeHtml";
 
 /**
  * Pure step between the robot plan and the database writes: decides the flow
@@ -105,7 +106,7 @@ export const buildImportPayload = (
       label: `${g.order + 1}. ${g.name}${qty}`.slice(0, 80),
       kind: "process",
       shape: "rectangle",
-      description: `${g.category}. ${motors}`.slice(0, 300),
+      description: escapeHtml(`${g.category}. ${motors}`.slice(0, 300)),
     };
   });
 
@@ -152,7 +153,7 @@ export const buildImportPayload = (
       let prev: string | null = null;
       for (const [step, label, description] of steps) {
         const id = newId();
-        tasks.push({ id, groupKey: g.key, step, label: label.slice(0, 120), description });
+        tasks.push({ id, groupKey: g.key, step, label: label.slice(0, 120), description: escapeHtml(description) });
         if (prev) taskLinks.push({ before: prev, after: id });
         if (step === "assemble") assembleTask.set(g.key, id);
         prev = id;

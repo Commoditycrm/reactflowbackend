@@ -318,6 +318,54 @@ export const robotTypeDefs = `
     sharedBottlenecks: Int!
   }
 
+  "One alternative source for a purchase item."
+  input PurchaseAlternativeInput {
+    vendor: String
+    partNumber: String
+    country: String
+    website: String
+    contact: String
+    notes: String
+  }
+
+  input PurchaseItemInput {
+    no: String
+    item: String!
+    vendor: String
+    partNumber: String
+    country: String
+    website: String
+    contact: String
+    notes: String
+    qtyPer: Float
+    totalQty: Float
+    "Buy later (not needed for the first build)."
+    buyLater: Boolean
+    alternatives: [PurchaseAlternativeInput!]
+  }
+
+  input PurchaseSectionInput {
+    name: String!
+    items: [PurchaseItemInput!]!
+  }
+
+  input ImportPurchaseListInput {
+    projectId: ID!
+    "Name of the purchase flow file, e.g. the sheet title."
+    name: String!
+    sections: [PurchaseSectionInput!]!
+  }
+
+  type ImportPurchaseListResult
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    fileId: ID!
+    sectionCount: Int!
+    itemCount: Int!
+    taskCount: Int!
+    buyLaterCount: Int!
+  }
+
   type ImportRobotResult
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
@@ -337,6 +385,8 @@ export const robotTypeDefs = `
 export const robotMutationFields = `
     importRobotFromUrdf(input: ImportRobotInput!): ImportRobotResult!
     importRobotFromModel(input: ImportRobotModelInput!): ImportRobotResult!
+    "Purchase list → purchase flow: a node per section, Get quote → Place order → Receive & inspect tasks per item."
+    importPurchaseList(input: ImportPurchaseListInput!): ImportPurchaseListResult!
     renamePartGroup(groupId: ID!, name: String!, category: String): ID!
     "Merges groups into the first one; returns its id. Tasks, comments and links move to its flow node."
     mergePartGroups(robotId: ID!, groupIds: [ID!]!, name: String): ID!

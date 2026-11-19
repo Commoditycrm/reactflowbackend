@@ -27,6 +27,10 @@ Motors are stored on each `RobotPart` (`motors: [name|model]`), and a group's `m
 - `movePartsToGroup` – to an existing group, or a new one (with its own flow node linked from the source group's node). Emptying a group is refused (use merge).
 - Confirmed explanations of changed groups become `STALE`.
 
+## Purchase lists
+
+`importPurchaseList(input: { projectId, name, sections })` turns a purchase list into a flow: one FlowNode per section (linked in order) and, per item, three BacklogItems — Get quote → Place order → Receive & inspect — linked with `PREDECESSOR`. The description holds vendor, part number, quantity, country, website, contact, spec and alternatives as escaped HTML. Items marked "buy later" get a "(Later)" prefix. The frontend parses the spreadsheet (sections, header row, alternative rows, yellow = later); logic in `src/purchases/purchasePlan.ts`.
+
 ## Supply and bottlenecks
 
 `robotSupplyStatus(robotId)` compares the motors a robot needs (per model, from `RobotPartGroup.motors`) with the organisation's **Assets** whose `modelNumber` matches (case-insensitive):

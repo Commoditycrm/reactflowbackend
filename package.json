@@ -4,7 +4,7 @@
     "dev": "set NODE_OPTIONS=--no-deprecation && ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "node --test --require ts-node/register/transpile-only test/robots/robotPlan.test.ts"
+    "test": "node --test --require ts-node/register/transpile-only test/robots/robotPlan.test.ts test/purchases/purchasePlan.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
