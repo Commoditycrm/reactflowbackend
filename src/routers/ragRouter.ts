@@ -3,10 +3,23 @@ import { GraphQLError } from "graphql";
 import { getFirebaseAdminAuth } from "../graphql/firebase/admin";
 import logger from "../logger";
 import { RAGService } from "../rag";
+import { isRagEnabled } from "../rag/types/rag.types";
 import { getTokenFromHeader } from "../util/tokenExtractor";
 
 const ragRouter = express.Router();
 const ragService = RAGService.getInstance();
+
+// Short-circuits the external-call endpoints (embeddings / LLM) when RAG is
+// disabled, so a missing/dead endpoint can't trigger a retry storm.
+const requireRagEnabled: express.RequestHandler = (_req, res, next) => {
+  if (!isRagEnabled()) {
+    res
+      .status(503)
+      .json({ success: false, disabled: true, error: "RAG pipeline is disabled" });
+    return;
+  }
+  next();
+};
 
 const authenticateRequest = async (
   req: express.Request
@@ -44,7 +57,7 @@ const authenticateRequest = async (
   }
 };
 
-ragRouter.post("/ingest", async (req, res) => {
+ragRouter.post("/ingest", requireRagEnabled, async (req, res) => {
   try {
     const { userId } = await authenticateRequest(req);
     const { externalFileId, forceReprocess } = req.body;
@@ -76,7 +89,7 @@ ragRouter.post("/ingest", async (req, res) => {
   }
 });
 
-ragRouter.post("/ingest-project", async (req, res) => {
+ragRouter.post("/ingest-project", requireRagEnabled, async (req, res) => {
   try {
     const { userId } = await authenticateRequest(req);
     const { projectId } = req.body;
@@ -198,7 +211,7 @@ ragRouter.get("/diagrams/:projectId", async (req, res) => {
   }
 });
 
-ragRouter.post("/index-diagram", async (req, res) => {
+ragRouter.post("/index-diagram", requireRagEnabled, async (req, res) => {
   try {
     const { userId } = await authenticateRequest(req);
     const { fileId, projectId } = req.body;
@@ -220,7 +233,7 @@ ragRouter.post("/index-diagram", async (req, res) => {
   }
 });
 
-ragRouter.post("/index-project-diagrams", async (req, res) => {
+ragRouter.post("/index-project-diagrams", requireRagEnabled, async (req, res) => {
   try {
     const { userId } = await authenticateRequest(req);
     const { projectId } = req.body;
