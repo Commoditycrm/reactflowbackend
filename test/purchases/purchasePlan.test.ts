@@ -52,3 +52,26 @@ test("purchase flow: item description carries vendor, quantity and alternatives"
 test("purchase flow: rejects empty lists", () => {
   assert.throws(() => planPurchaseFlow([{ name: "x", items: [] }]), /no items/);
 });
+
+import { countryKey, splitSectionsByCountry, assertPurchaseListSize } from "../../src/purchases/purchasePlan";
+
+test("split by country: one group per origin, sections kept, blanks last", () => {
+  const groups = splitSectionsByCountry([
+    { name: "Tools", items: [
+      { item: "Power supply", country: "china" },
+      { item: "Torque wrench", country: "" },
+      { item: "Calipers", country: " Japan " },
+    ] },
+    { name: "P60", items: [
+      { item: "Motor", country: "CHINA" },
+      { item: "Encoder", country: "Japan", alternatives: [{ vendor: "X", country: "USA" }] },
+      { item: "  ", country: "India" },
+    ] },
+  ] as any);
+  assert.deepEqual(groups.map((g) => `${g.country}:${g.itemCount}`), ["China:2", "Japan:2", "Unspecified:1"]);
+  assert.deepEqual(groups[0]!.sections.map((s) => s.name), ["Tools", "P60"]);
+  assert.equal(groups[1]!.sections[1]!.items[0]!.alternatives!.length, 1);
+  assert.equal(countryKey("united states"), "United States");
+  assert.equal(countryKey("south-korea"), "South-Korea");
+  assert.throws(() => assertPurchaseListSize([{ name: "x", items: [{ item: " " }] }] as any), /no items/);
+});

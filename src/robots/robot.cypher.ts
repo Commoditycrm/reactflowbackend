@@ -65,6 +65,26 @@ CREATE (u)-[:CREATED_FILE]->(f)
 RETURN f.id AS fileId
 `;
 
+/** A live folder anywhere inside the project (folders nest up to 5 deep). */
+export const FOLDER_IN_PROJECT_CQL = `
+MATCH (p:Project {id: $projectId})-[:HAS_CHILD_FOLDER*1..5]->(fo:Folder {id: $folderId})
+WHERE fo.deletedAt IS NULL
+RETURN fo.id AS folderId, fo.name AS name
+LIMIT 1
+`;
+
+/** Same as CREATE_BUILD_FLOW_FILE_CQL, but the file goes inside a folder of the project. */
+export const CREATE_FLOW_FILE_IN_FOLDER_CQL = `
+MATCH (u:User {externalId: $sub})
+MATCH (p:Project {id: $projectId})-[:HAS_CHILD_FOLDER*1..5]->(fo:Folder {id: $folderId})
+WHERE fo.deletedAt IS NULL
+WITH u, fo LIMIT 1
+CREATE (f:File {id: $fileId, name: $name, createdAt: datetime()})
+CREATE (fo)-[:HAS_CHILD_FILE]->(f)
+CREATE (u)-[:CREATED_FILE]->(f)
+RETURN f.id AS fileId
+`;
+
 /** Tasks in the same group run in order; a child group's assembly waits for its parent's. */
 export const LINK_TASK_DEPENDENCIES_CQL = `
 UNWIND $links AS link

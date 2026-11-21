@@ -51,10 +51,18 @@ import {
   UPDATE_EXPLANATION_CQL,
   UPSERT_COMPONENT_SPEC_CQL,
   WRITE_EXPLANATIONS_CQL,
+  CREATE_FLOW_FILE_IN_FOLDER_CQL,
+  FOLDER_IN_PROJECT_CQL,
 } from "../../robots/robot.cypher";
 import { motorModelsFromConfig, planRobot, RobotPlan } from "../../robots/robotPlan";
 import { computeSupply, DemandRow, modelKey, StockRow } from "../../robots/supply";
-import { planPurchaseFlow, PurchaseListError, PurchaseSection } from "../../purchases/purchasePlan";
+import {
+  assertPurchaseListSize,
+  planPurchaseFlow,
+  PurchaseListError,
+  PurchaseSection,
+  splitSectionsByCountry,
+} from "../../purchases/purchasePlan";
 import { parseUrdf, UrdfError } from "../../robots/urdf";
 import convertToFlowchartRenderData from "../../util/convertFlowNodeRenderData";
 import { EnvLoader } from "../../util/EnvLoader";
@@ -622,36 +630,54 @@ const upsertComponentSpec = async (_src: unknown, { input }: { input: ComponentS
 // Purchase lists
 // ---------------------------------------------------------------------------
 
-const importPurchaseList = async (
-  _src: unknown,
-  { input }: { input: { projectId: string; name: string; sections: PurchaseSection[] } },
-  ctx: Ctx,
-) => {
+interface ImportPurchaseListInput {
+  projectId: string;
+  name: string;
+  sections: PurchaseSection[];
+  folderId?: string | null;
+  splitByCountry?: boolean | null;
+}
+
+const importPurchaseList = async (_src: unknown, { input }: { input: ImportPurchaseListInput }, ctx: Ctx) => {
   const { sub, isSystemAdmin } = auth(ctx);
-  const name = (input.name ?? "").trim().slice(0, 100) || "Purchase list";
-  let plan;
+  const baseName = (input.name ?? "").trim().slice(0, 100) || "Purchase list";
+  const folderId = (input.folderId ?? "").trim() || null;
+
+  // One plan per file: the whole list, or one per vendor country.
+  let files: { name: string; country: string | null; plan: ReturnType<typeof planPurchaseFlow> }[];
   try {
-    plan = planPurchaseFlow(input.sections);
+    assertPurchaseListSize(input.sections);
+    const parts = input.splitByCountry
+      ? splitSectionsByCountry(input.sections).map((g) => ({
+          name: `${baseName.slice(0, 70)} – ${g.country}`.slice(0, 100),
+          country: g.country as string | null,
+          sections: g.sections,
+        }))
+      : [{ name: baseName, country: null, sections: input.sections }];
+    files = parts.map((p) => ({ name: p.name, country: p.country, plan: planPurchaseFlow(p.sections) }));
   } catch (e) {
     if (e instanceof PurchaseListError) fail(e.message, "BAD_USER_INPUT");
     throw e;
   }
 
-  const fileId = randomUUID();
-  const layout = convertToFlowchartRenderData({
-    nodes: plan!.flowNodes,
-    edges: plan!.flowEdges,
-    fileId,
-    layoutDirection: NodeLayoutType.Vertical,
+  const prepared = files!.map((f) => {
+    const fileId = randomUUID();
+    const layout = convertToFlowchartRenderData({
+      nodes: f.plan.flowNodes,
+      edges: f.plan.flowEdges,
+      fileId,
+      layoutDirection: NodeLayoutType.Vertical,
+    });
+    const dbIdBySeed = new Map(f.plan.flowNodes.map((n) => [n.id, randomUUID()]));
+    const nodes = layout.nodes.map((n) => ({ ...n, dbId: dbIdBySeed.get(n.id)!, aiNodeId: n.id }));
+    const backlogItems = f.plan.tasks.map((t) => ({
+      id: t.id,
+      nodeId: dbIdBySeed.get(t.nodeSeed)!,
+      label: t.label,
+      description: t.description,
+    }));
+    return { ...f, fileId, layout, nodes, backlogItems };
   });
-  const dbIdBySeed = new Map(plan!.flowNodes.map((n) => [n.id, randomUUID()]));
-  const nodes = layout.nodes.map((n) => ({ ...n, dbId: dbIdBySeed.get(n.id)!, aiNodeId: n.id }));
-  const backlogItems = plan!.tasks.map((t) => ({
-    id: t.id,
-    nodeId: dbIdBySeed.get(t.nodeSeed)!,
-    label: t.label,
-    description: t.description,
-  }));
 
   let session: Session | undefined;
   let tx: Transaction | undefined;
@@ -661,25 +687,42 @@ const importPurchaseList = async (
     if (!allowed.records.length) {
       fail("Only organization owners and admins can add files to this project.", "FORBIDDEN");
     }
+    if (folderId) {
+      const folder = await session.run(FOLDER_IN_PROJECT_CQL, { projectId: input.projectId, folderId });
+      if (!folder.records.length) fail("That folder isn't in this project (or was deleted).", "BAD_USER_INPUT");
+    }
     tx = session.beginTransaction();
     const jwt = { sub };
-    await tx.run(CREATE_BUILD_FLOW_FILE_CQL, { sub, projectId: input.projectId, fileId, name });
-    await tx.run(CREATE_AI_FLOWNODE_CQL, { nodes, edges: layout.edges, jwt });
-    await tx.run(CREATE_AI_BACKLOGITEM_CQL, {
-      fileId,
-      backlogItems,
-      createdNodeIds: nodes.map((n) => n.dbId),
-      jwt,
-    });
-    if (plan!.taskLinks.length) await tx.run(LINK_TASK_DEPENDENCIES_CQL, { links: plan!.taskLinks });
+    for (const f of prepared) {
+      const created = folderId
+        ? await tx.run(CREATE_FLOW_FILE_IN_FOLDER_CQL, { sub, projectId: input.projectId, folderId, fileId: f.fileId, name: f.name })
+        : await tx.run(CREATE_BUILD_FLOW_FILE_CQL, { sub, projectId: input.projectId, fileId: f.fileId, name: f.name });
+      if (!created.records.length) fail("Could not create the flow file.", "BAD_USER_INPUT");
+      await tx.run(CREATE_AI_FLOWNODE_CQL, { nodes: f.nodes, edges: f.layout.edges, jwt });
+      await tx.run(CREATE_AI_BACKLOGITEM_CQL, {
+        fileId: f.fileId,
+        backlogItems: f.backlogItems,
+        createdNodeIds: f.nodes.map((n) => n.dbId),
+        jwt,
+      });
+      if (f.plan.taskLinks.length) await tx.run(LINK_TASK_DEPENDENCIES_CQL, { links: f.plan.taskLinks });
+    }
     await tx.commit();
     tx = undefined;
     return {
-      fileId,
-      sectionCount: plan!.flowNodes.length,
-      itemCount: plan!.itemCount,
-      taskCount: backlogItems.length,
-      buyLaterCount: plan!.buyLaterCount,
+      fileId: prepared[0]!.fileId,
+      folderId,
+      files: prepared.map((f) => ({
+        fileId: f.fileId,
+        name: f.name,
+        country: f.country,
+        itemCount: f.plan.itemCount,
+        taskCount: f.backlogItems.length,
+      })),
+      sectionCount: prepared.reduce((n, f) => n + f.plan.flowNodes.length, 0),
+      itemCount: prepared.reduce((n, f) => n + f.plan.itemCount, 0),
+      taskCount: prepared.reduce((n, f) => n + f.backlogItems.length, 0),
+      buyLaterCount: prepared.reduce((n, f) => n + f.plan.buyLaterCount, 0),
     };
   } catch (error) {
     if (tx) await tx.rollback();

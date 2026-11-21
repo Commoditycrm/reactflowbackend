@@ -31,6 +31,13 @@ Motors are stored on each `RobotPart` (`motors: [name|model]`), and a group's `m
 
 `importPurchaseList(input: { projectId, name, sections })` turns a purchase list into a flow: one FlowNode per section (linked in order) and, per item, three BacklogItems — Get quote → Place order → Receive & inspect — linked with `PREDECESSOR`. The description holds vendor, part number, quantity, country, website, contact, spec and alternatives as escaped HTML. Items marked "buy later" get a "(Later)" prefix. The frontend parses the spreadsheet (sections, header row, alternative rows, yellow = later); logic in `src/purchases/purchasePlan.ts`.
 
+Two optional inputs:
+
+- `folderId`: the file(s) go inside that folder (any depth up to 5, must belong to the project and not be deleted) instead of at the project's top level.
+- `splitByCountry: true`: one flow file per vendor country (the item's main vendor, not its alternatives), named `<name> – <Country>`. Country names are normalised ("CHINA" = "china" = "China"); items with no country go to an "Unspecified" file, created last. The sheet's sections are kept inside each file. Everything is created in one transaction, and the limits (500 items, 50 sections) apply to the whole import.
+
+The result lists every created file in `files { fileId name country itemCount taskCount }`; `fileId` is the first one.
+
 ## Supply and bottlenecks
 
 `robotSupplyStatus(robotId)` compares the motors a robot needs (per model, from `RobotPartGroup.motors`) with the organisation's **Assets** whose `modelNumber` matches (case-insensitive):
