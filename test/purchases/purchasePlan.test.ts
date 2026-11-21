@@ -53,7 +53,7 @@ test("purchase flow: rejects empty lists", () => {
   assert.throws(() => planPurchaseFlow([{ name: "x", items: [] }]), /no items/);
 });
 
-import { countryKey, splitSectionsByCountry, assertPurchaseListSize } from "../../src/purchases/purchasePlan";
+import { countryKey, originOf, splitSectionsByCountry, assertPurchaseListSize } from "../../src/purchases/purchasePlan";
 
 test("split by country: one group per origin, sections kept, blanks last", () => {
   const groups = splitSectionsByCountry([
@@ -73,5 +73,24 @@ test("split by country: one group per origin, sections kept, blanks last", () =>
   assert.equal(groups[1]!.sections[1]!.items[0]!.alternatives!.length, 1);
   assert.equal(countryKey("united states"), "United States");
   assert.equal(countryKey("south-korea"), "South-Korea");
+  assert.equal(countryKey("China (Sold In India)"), "China");
+  assert.equal(countryKey("India (Distributor) / Japan Make"), "India");
+  assert.equal(countryKey("India / China"), "India");
+  assert.equal(countryKey("Usa (Indian Distributors)"), "USA");
+  assert.equal(countryKey("—"), "Unspecified");
+  assert.equal(countryKey("n/a"), "Unspecified");
   assert.throws(() => assertPurchaseListSize([{ name: "x", items: [{ item: " " }] }] as any), /no items/);
+});
+
+test("split by country: an explicit origin overrides the country", () => {
+  assert.equal(originOf({ country: "India (Coimbatore)", origin: "local" }), "Local");
+  assert.equal(originOf({ country: "India (Coimbatore)", origin: "  " }), "India");
+  const g = splitSectionsByCountry([
+    { name: "Tools", items: [
+      { item: "A", country: "India", origin: "Local" },
+      { item: "B", country: "China (Sold In India)", origin: "Local" },
+      { item: "C", country: "China" },
+    ] },
+  ] as any);
+  assert.deepEqual(g.map((x) => `${x.country}:${x.itemCount}`), ["Local:2", "China:1"]);
 });

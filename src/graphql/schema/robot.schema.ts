@@ -341,6 +341,8 @@ export const robotTypeDefs = `
     totalQty: Float
     "Buy later (not needed for the first build)."
     buyLater: Boolean
+    "Procurement origin for splitByCountry, e.g. Local; defaults to country."
+    origin: String
     alternatives: [PurchaseAlternativeInput!]
   }
 

@@ -34,7 +34,7 @@ Motors are stored on each `RobotPart` (`motors: [name|model]`), and a group's `m
 Two optional inputs:
 
 - `folderId`: the file(s) go inside that folder (any depth up to 5, must belong to the project and not be deleted) instead of at the project's top level.
-- `splitByCountry: true`: one flow file per vendor country (the item's main vendor, not its alternatives), named `<name> – <Country>`. Country names are normalised ("CHINA" = "china" = "China"); items with no country go to an "Unspecified" file, created last. The sheet's sections are kept inside each file. Everything is created in one transaction, and the limits (500 items, 50 sections) apply to the whole import.
+- `splitByCountry: true`: one flow file per vendor country (the item's main vendor, not its alternatives), named `<name> – <Country>`. Country cells are normalised: notes in brackets are dropped, the first country is used when a cell lists several ("India (Distributor) / Japan Make" → India), case is fixed ("usa" → USA), and blanks or dashes go to an "Unspecified" file, created last. An item's optional `origin` (set in the import dialog, e.g. "Local") overrides its country for grouping; the task description keeps the full country text. The sheet's sections are kept inside each file. Everything is created in one transaction, and the limits (500 items, 50 sections) apply to the whole import.
 
 The result lists every created file in `files { fileId name country itemCount taskCount }`; `fileId` is the first one.
 

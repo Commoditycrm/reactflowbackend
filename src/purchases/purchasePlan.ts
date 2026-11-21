@@ -22,6 +22,8 @@ export interface PurchaseItem extends PurchaseAlternative {
   qtyPer?: number | null;
   totalQty?: number | null;
   buyLater?: boolean | null;
+  /** Procurement origin used by splitByCountry (e.g. "Local"); defaults to the country. */
+  origin?: string | null;
   alternatives?: PurchaseAlternative[] | null;
 }
 
@@ -131,14 +133,39 @@ export const planPurchaseFlow = (
 
 export const UNSPECIFIED_COUNTRY = "Unspecified";
 
-/** "china", " CHINA " and "China" are one origin; blank countries go to "Unspecified". */
+const PLACEHOLDER_COUNTRY = /^(?:[-\u2013\u2014_.?*]+|n\/?a|none|unknown|tbd|tba|nil)$/i;
+const COUNTRY_ACRONYMS = new Set(["usa", "us", "uk", "uae", "prc", "eu"]);
+
+/**
+ * The procurement origin of a sheet's country cell:
+ * "China (Sold in India)" → "China", "India (Distributor) / Japan Make" → "India",
+ * " CHINA " → "China", "usa" → "USA", "—" or blank → "Unspecified".
+ * Brackets are notes, and with several countries the first one is used.
+ */
 export const countryKey = (v: unknown): string => {
-  const s = clean(v, 60);
-  if (!s) return UNSPECIFIED_COUNTRY;
+  const raw = clean(v, 120);
+  if (PLACEHOLDER_COUNTRY.test(raw)) return UNSPECIFIED_COUNTRY;
+  const first =
+    raw
+      .replace(/\([^)]*\)?/g, " ")
+      .split(/\s*[/,;&|]\s*|\s+or\s+|\s+and\s+/i)[0] ?? "";
+  const s = first
+    .replace(/\b(?:make|made|origin|brand)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+  if (!s || PLACEHOLDER_COUNTRY.test(s)) return UNSPECIFIED_COUNTRY;
   return s
-    .toLowerCase()
-    .replace(/(^|[\s\-/(])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+    .split(/([\s-]+)/)
+    .map((w) =>
+      COUNTRY_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+    )
+    .join("");
 };
+
+/** Group of an item when splitting: an explicit origin (set in the dialog) wins over its country. */
+export const originOf = (it: Pick<PurchaseItem, "origin" | "country">): string =>
+  countryKey(clean(it.origin, 60) || it.country);
 
 export interface CountryGroup {
   country: string;
@@ -157,7 +184,7 @@ export const splitSectionsByCountry = (sections: PurchaseSection[]): CountryGrou
     const secName = clean(s?.name, 80) || "Purchases";
     for (const it of s?.items ?? []) {
       if (!clean(it?.item, 200)) continue;
-      const c = countryKey(it.country);
+      const c = originOf(it);
       if (!groups.has(c)) groups.set(c, new Map());
       const secs = groups.get(c)!;
       if (!secs.has(secName)) secs.set(secName, []);
