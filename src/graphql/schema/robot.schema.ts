@@ -354,12 +354,29 @@ export const robotTypeDefs = `
     "Name of the purchase flow file, e.g. the sheet title."
     name: String!
     sections: [PurchaseSectionInput!]!
+    "Put the new flow file(s) in this folder of the project instead of at the top level."
+    folderId: ID
+    "One flow file per vendor country, each named after the list plus the country."
+    splitByCountry: Boolean = false
+  }
+
+  type PurchaseFlowFile
+    @query(read: false, aggregate: false)
+    @mutation(operations: []) {
+    fileId: ID!
+    name: String!
+    country: String
+    itemCount: Int!
+    taskCount: Int!
   }
 
   type ImportPurchaseListResult
     @query(read: false, aggregate: false)
     @mutation(operations: []) {
+    "The first file created (the only one unless splitByCountry)."
     fileId: ID!
+    files: [PurchaseFlowFile!]!
+    folderId: ID
     sectionCount: Int!
     itemCount: Int!
     taskCount: Int!

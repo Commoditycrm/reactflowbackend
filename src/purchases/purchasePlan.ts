@@ -128,3 +128,56 @@ export const planPurchaseFlow = (
 
   return { flowNodes, flowEdges, tasks, taskLinks, itemCount, buyLaterCount };
 };
+
+export const UNSPECIFIED_COUNTRY = "Unspecified";
+
+/** "china", " CHINA " and "China" are one origin; blank countries go to "Unspecified". */
+export const countryKey = (v: unknown): string => {
+  const s = clean(v, 60);
+  if (!s) return UNSPECIFIED_COUNTRY;
+  return s
+    .toLowerCase()
+    .replace(/(^|[\s\-/(])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+};
+
+export interface CountryGroup {
+  country: string;
+  sections: PurchaseSection[];
+  itemCount: number;
+}
+
+/**
+ * Splits a purchase list by the country of each item's main vendor, keeping the
+ * sheet's sections inside each country. Countries appear in the order they
+ * first show up in the sheet; "Unspecified" always goes last.
+ */
+export const splitSectionsByCountry = (sections: PurchaseSection[]): CountryGroup[] => {
+  const groups = new Map<string, Map<string, PurchaseItem[]>>();
+  for (const s of sections ?? []) {
+    const secName = clean(s?.name, 80) || "Purchases";
+    for (const it of s?.items ?? []) {
+      if (!clean(it?.item, 200)) continue;
+      const c = countryKey(it.country);
+      if (!groups.has(c)) groups.set(c, new Map());
+      const secs = groups.get(c)!;
+      if (!secs.has(secName)) secs.set(secName, []);
+      secs.get(secName)!.push(it);
+    }
+  }
+  const out = [...groups.entries()].map(([country, secs]) => {
+    const list = [...secs.entries()].map(([name, items]) => ({ name, items }));
+    return { country, sections: list, itemCount: list.reduce((n, x) => n + x.items.length, 0) };
+  });
+  return [
+    ...out.filter((g) => g.country !== UNSPECIFIED_COUNTRY),
+    ...out.filter((g) => g.country === UNSPECIFIED_COUNTRY),
+  ];
+};
+
+/** Total-size checks for a whole import, however many files it is split into. */
+export const assertPurchaseListSize = (sections: PurchaseSection[]) => {
+  const items = (sections ?? []).reduce((n, s) => n + (s?.items ?? []).filter((i) => clean(i?.item, 200)).length, 0);
+  if (!items) throw new PurchaseListError("The purchase list has no items.");
+  if (items > MAX_ITEMS) throw new PurchaseListError(`Too many items (limit ${MAX_ITEMS}).`);
+  if ((sections ?? []).length > MAX_SECTIONS) throw new PurchaseListError(`Too many sections (limit ${MAX_SECTIONS}).`);
+};
