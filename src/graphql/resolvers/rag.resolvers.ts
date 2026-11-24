@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import logger from "../../logger";
 import { RAGService } from "../../rag";
+import { isRagEnabled } from "../../rag/types/rag.types";
 
 const ragService = RAGService.getInstance();
 
@@ -26,6 +27,20 @@ const ragChat = async (
     throw new GraphQLError("Authentication required", {
       extensions: { code: "UNAUTHENTICATED" },
     });
+  }
+
+  if (!isRagEnabled()) {
+    return {
+      answer: "The AI document assistant is currently disabled.",
+      sources: [],
+      conversationId: conversationId ?? "",
+      metadata: {
+        model: "disabled",
+        chunksUsed: 0,
+        processingTimeMs: 0,
+        tokensUsed: 0,
+      },
+    };
   }
 
   try {
@@ -177,6 +192,10 @@ const ragSearchDocuments = async (
     throw new GraphQLError("Authentication required", {
       extensions: { code: "UNAUTHENTICATED" },
     });
+  }
+
+  if (!isRagEnabled()) {
+    return [];
   }
 
   try {

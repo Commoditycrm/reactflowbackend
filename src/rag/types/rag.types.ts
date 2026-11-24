@@ -125,17 +125,26 @@ export const SUPPORTED_DOCUMENT_MIME_HINTS = [
 export const RAG_CONFIG = {
   CHUNK_SIZE: 1000,
   CHUNK_OVERLAP: 200,
-  
-  // Embedding config (local Qwen model via ngrok)
-  EMBEDDING_MODEL: "text-embedding-qwen3-embedding-0.6b",
+
+  // Master switch. Off unless RAG_ENABLED=true AND an embedding endpoint is
+  // configured — stops prod from hammering a dead/absent endpoint. Re-enable
+  // by setting both envs.
+  ENABLED: process.env.RAG_ENABLED === "true",
+
+  // Embedding config (OpenAI-compatible endpoint, e.g. a hosted Qwen model).
+  // No default URL on purpose: a missing endpoint keeps RAG disabled.
+  EMBEDDING_MODEL:
+    process.env.EMBEDDING_MODEL || "text-embedding-qwen3-embedding-0.6b",
   EMBEDDING_DIMENSIONS: 1024,
-  EMBEDDING_BASE_URL: process.env.EMBEDDING_BASE_URL || "https://unmodelled-marquis-nonexpulsive.ngrok-free.dev/v1",
-  
-  // Chat/LLM config (Groq API with Llama-4)
-  CHAT_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
+  EMBEDDING_BASE_URL: process.env.EMBEDDING_BASE_URL || "",
+
+  // Chat/LLM config (Groq, OpenAI-compatible). llama-4-scout was decommissioned
+  // (404), so default to a stable Groq model; override via env.
+  CHAT_MODEL: process.env.CHAT_MODEL || "llama-3.3-70b-versatile",
   CHAT_BASE_URL: process.env.CHAT_BASE_URL || "https://api.groq.com/openai/v1",
-  SUMMARIZATION_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct",
-  
+  SUMMARIZATION_MODEL:
+    process.env.SUMMARIZATION_MODEL || "llama-3.3-70b-versatile",
+
   MAX_CONTEXT_CHUNKS: 5,
   MIN_RELEVANCE_SCORE: 0.45,
   HYBRID_VECTOR_WEIGHT: 0.65,
@@ -153,6 +162,10 @@ export const RAG_CONFIG = {
   DIAGRAM_SUMMARY_EMBEDDING_DIMENSIONS: 1024,
   DIAGRAM_SUMMARY_INDEX_NAME: "diagram_summary_embeddings",
 } as const;
+
+// RAG runs only when explicitly enabled and an embedding endpoint is set.
+export const isRagEnabled = (): boolean =>
+  RAG_CONFIG.ENABLED && RAG_CONFIG.EMBEDDING_BASE_URL.length > 0;
 
 // ─── Diagram Types ───────────────────────────────────────────────────────────
 
