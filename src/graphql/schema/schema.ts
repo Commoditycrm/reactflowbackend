@@ -4672,40 +4672,50 @@ const typeDefs = gql`
   type BacklogItem implements TimestampedCreatable & Timestamped & SoftDeletable
     @authorization(
       filter: [
-        { operations: [READ, AGGREGATE], where: { node: { deletedAt: null } } }
-      ]
-      validate: [
         {
-          when: [BEFORE]
-          operations: [READ]
+          operations: [READ, AGGREGATE]
           where: {
-            node: {
-              OR: [
-                {
-                  project: {
-                    organization: { createdBy: { externalId: "$jwt.sub" } }
-                  }
-                }
-                {
-                  project: {
-                    organization: {
-                      memberUsers_SINGLE: {
-                        externalId: "$jwt.sub"
-                        role: "ADMIN"
+            AND: [
+              { node: { deletedAt: null } }
+              {
+                OR: [
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  {
+                    node: {
+                      project: {
+                        organization: { createdBy: { externalId: "$jwt.sub" } }
                       }
                     }
                   }
-                }
-                { project: { createdBy: { externalId: "$jwt.sub" } } }
-                {
-                  project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
-                }
-                { createdBy: { externalId: "$jwt.sub" } }
-                { project: { isTemplate: true } }
-              ]
-            }
+                  {
+                    node: {
+                      project: {
+                        organization: {
+                          memberUsers_SINGLE: {
+                            externalId: "$jwt.sub"
+                            role_IN: ["ADMIN", "COMPANY_ADMIN"]
+                          }
+                        }
+                      }
+                    }
+                  }
+                  {
+                    node: { project: { createdBy: { externalId: "$jwt.sub" } } }
+                  }
+                  {
+                    node: {
+                      project: { assignedUsers_SINGLE: { externalId: "$jwt.sub" } }
+                    }
+                  }
+                  { node: { createdBy: { externalId: "$jwt.sub" } } }
+                  { node: { project: { isTemplate: true } } }
+                ]
+              }
+            ]
           }
         }
+      ]
+      validate: [
         {
           operations: [DELETE]
           where: {
@@ -4766,12 +4776,6 @@ const typeDefs = gql`
               ]
             }
           }
-        }
-        # system admin auhorization
-        {
-          when: [BEFORE]
-          operations: [READ]
-          where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
       ]
     )
