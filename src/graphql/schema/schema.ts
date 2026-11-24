@@ -670,9 +670,26 @@ const typeDefs = gql`
         {
           operations: [READ, AGGREGATE]
           where: {
-            OR: [
+            AND: [
               { node: { deletedAt: null } }
-              { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+              {
+                OR: [
+                  { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
+                  { node: { memberUsers_SOME: { externalId: "$jwt.sub" } } }
+                  { node: { invites_SOME: { email: "$jwt.email" } } }
+                  { node: { createdBy: { externalId: "$jwt.sub" } } }
+                  {
+                    node: {
+                      projects_SOME: {
+                        OR: [
+                          { createdBy: { externalId: "$jwt.sub" } }
+                          { assignedUsers_SOME: { externalId: "$jwt.sub" } }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
             ]
           }
         }
@@ -684,19 +701,7 @@ const typeDefs = gql`
           where: { node: { createdBy: { externalId: "$jwt.sub" } } }
         }
         {
-          operations: [READ]
-          where: {
-            node: {
-              OR: [
-                { memberUsers_SOME: { externalId: "$jwt.sub" } }
-                { invites_SOME: { email: "$jwt.email" } }
-                { createdBy: { externalId: "$jwt.sub" } }
-              ]
-            }
-          }
-        }
-        {
-          operations: [READ, DELETE, UPDATE]
+          operations: [DELETE, UPDATE]
           where: { jwt: { roles_INCLUDES: "SYSTEM_ADMIN" } }
         }
       ]
@@ -1807,7 +1812,7 @@ const typeDefs = gql`
         nestedOperations: []
       )
 
-    organization: Organization!
+    organization: Organization
       @relationship(
         type: "HAS_PROJECTS"
         direction: IN
