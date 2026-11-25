@@ -5916,18 +5916,21 @@ const typeDefs = gql`
 
     # Bulk-reassign every backlog item from one status to another in a single
     # server-side query, so the delete-status flow no longer fetches (and ships)
-    # every item id to the client. Authorized at org owner/ADMIN-member level —
-    # the same callers the Status DELETE authz allows — and scoped to a single
-    # org (both statuses must belong to it), so org isolation is preserved.
+    # every item id to the client. Authorized to exactly the callers the Status
+    # DELETE authz allows — org owner, org ADMIN member, or the status's own
+    # creator — and scoped to a single org (both statuses must belong to it), so
+    # org isolation is preserved. Deliberately no SYSTEM_ADMIN branch: Status
+    # DELETE has none, so granting it here would let a reassign run that the
+    # following delete would reject.
     reassignBacklogItemsStatus(fromStatusId: ID!, toStatusId: ID!): Int!
       @cypher(
         statement: """
         MATCH (org:Organization)-[:HAS_STATUS]->(fromS:Status { id: $fromStatusId })
         MATCH (org)-[:HAS_STATUS]->(toS:Status { id: $toStatusId })
         WITH org, fromS, toS,
-          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
-            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+          ( EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
             OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+            OR EXISTS { (fromS)<-[:CREATED_STATUS]-(:User { externalId: $jwt.sub }) }
           ) AS authed
         CALL apoc.util.validate(NOT authed, 'Forbidden', [])
         WITH fromS, toS
@@ -5950,9 +5953,9 @@ const typeDefs = gql`
         MATCH (org:Organization)-[:HAS_BACKLOGITEM_TYPE]->(fromT:BacklogItemType { id: $fromTypeId })
         MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(toT:BacklogItemType { id: $toTypeId })
         WITH org, fromT, toT,
-          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
-            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+          ( EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
             OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+            OR EXISTS { (fromT)<-[:CREATED_BACKLOGITEM_TYPE]-(:User { externalId: $jwt.sub }) }
           ) AS authed
         CALL apoc.util.validate(NOT authed, 'Forbidden', [])
         WITH fromT, toT
@@ -5971,8 +5974,9 @@ const typeDefs = gql`
 
   type Query {
     # Cheap count of live backlog items carrying a status/type, used to gate the
-    # delete-reassign modal without fetching every item id. Same org-admin authz
-    # as the reassign mutations above.
+    # delete-reassign modal without fetching every item id. This replaces a plain
+    # backlog-item read, so it authorizes exactly the Status READ callers: org
+    # owner, any org member, the status's creator, or a SYSTEM_ADMIN.
     backlogItemCountByStatus(statusId: ID!): Int!
       @cypher(
         statement: """
@@ -5980,7 +5984,8 @@ const typeDefs = gql`
         WITH org, s,
           ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
             OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
-            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (s)<-[:CREATED_STATUS]-(:User { externalId: $jwt.sub }) }
           ) AS authed
         CALL apoc.util.validate(NOT authed, 'Forbidden', [])
         OPTIONAL MATCH (bi:BacklogItem)-[:HAS_STATUS]->(s)
@@ -5997,7 +6002,8 @@ const typeDefs = gql`
         WITH org, t,
           ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
             OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
-            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (t)<-[:CREATED_BACKLOGITEM_TYPE]-(:User { externalId: $jwt.sub }) }
           ) AS authed
         CALL apoc.util.validate(NOT authed, 'Forbidden', [])
         OPTIONAL MATCH (bi:BacklogItem)-[:HAS_BACKLOGITEM_TYPE]->(t)
