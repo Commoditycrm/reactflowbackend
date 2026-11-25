@@ -5909,9 +5909,100 @@ const typeDefs = gql`
       fileId: ID!
       layoutDirection: NodeLayoutType!
     ): Int!
+
+    # Bulk-reassign every backlog item from one status to another in a single
+    # server-side query, so the delete-status flow no longer fetches (and ships)
+    # every item id to the client. Authorized at org owner/ADMIN-member level —
+    # the same callers the Status DELETE authz allows — and scoped to a single
+    # org (both statuses must belong to it), so org isolation is preserved.
+    reassignBacklogItemsStatus(fromStatusId: ID!, toStatusId: ID!): Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization)-[:HAS_STATUS]->(fromS:Status { id: $fromStatusId })
+        MATCH (org)-[:HAS_STATUS]->(toS:Status { id: $toStatusId })
+        WITH org, fromS, toS,
+          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+          ) AS authed
+        CALL apoc.util.validate(NOT authed, 'Forbidden', [])
+        WITH fromS, toS
+        CALL (fromS, toS) {
+          MATCH (bi:BacklogItem)-[r:HAS_STATUS]->(fromS)
+          WHERE bi.deletedAt IS NULL
+          DELETE r
+          MERGE (bi)-[:HAS_STATUS]->(toS)
+          RETURN count(bi) AS reassigned
+        }
+        RETURN reassigned AS result
+        """
+        columnName: "result"
+      )
+
+    # Same, for backlog item type.
+    reassignBacklogItemsBacklogType(fromTypeId: ID!, toTypeId: ID!): Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization)-[:HAS_BACKLOGITEM_TYPE]->(fromT:BacklogItemType { id: $fromTypeId })
+        MATCH (org)-[:HAS_BACKLOGITEM_TYPE]->(toT:BacklogItemType { id: $toTypeId })
+        WITH org, fromT, toT,
+          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+          ) AS authed
+        CALL apoc.util.validate(NOT authed, 'Forbidden', [])
+        WITH fromT, toT
+        CALL (fromT, toT) {
+          MATCH (bi:BacklogItem)-[r:HAS_BACKLOGITEM_TYPE]->(fromT)
+          WHERE bi.deletedAt IS NULL
+          DELETE r
+          MERGE (bi)-[:HAS_BACKLOGITEM_TYPE]->(toT)
+          RETURN count(bi) AS reassigned
+        }
+        RETURN reassigned AS result
+        """
+        columnName: "result"
+      )
   }
 
   type Query {
+    # Cheap count of live backlog items carrying a status/type, used to gate the
+    # delete-reassign modal without fetching every item id. Same org-admin authz
+    # as the reassign mutations above.
+    backlogItemCountByStatus(statusId: ID!): Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization)-[:HAS_STATUS]->(s:Status { id: $statusId })
+        WITH org, s,
+          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+          ) AS authed
+        CALL apoc.util.validate(NOT authed, 'Forbidden', [])
+        OPTIONAL MATCH (bi:BacklogItem)-[:HAS_STATUS]->(s)
+        WHERE bi.deletedAt IS NULL
+        RETURN count(bi) AS result
+        """
+        columnName: "result"
+      )
+
+    backlogItemCountByBacklogType(typeId: ID!): Int!
+      @cypher(
+        statement: """
+        MATCH (org:Organization)-[:HAS_BACKLOGITEM_TYPE]->(t:BacklogItemType { id: $typeId })
+        WITH org, t,
+          ('SYSTEM_ADMIN' IN coalesce($jwt.roles, [])
+            OR EXISTS { (org)<-[:OWNS]-(:User { externalId: $jwt.sub }) }
+            OR EXISTS { (org)<-[:MEMBER_OF]-(m:User { externalId: $jwt.sub }) WHERE m.role = 'ADMIN' }
+          ) AS authed
+        CALL apoc.util.validate(NOT authed, 'Forbidden', [])
+        OPTIONAL MATCH (bi:BacklogItem)-[:HAS_BACKLOGITEM_TYPE]->(t)
+        WHERE bi.deletedAt IS NULL
+        RETURN count(bi) AS result
+        """
+        columnName: "result"
+      )
+
     softDeletedFolders(
       limit: Int = 10
       offset: Int = 0
