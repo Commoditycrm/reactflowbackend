@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { Neo4JConnection } from "../../database/connection";
 import logger from "../../logger";
-import { Integer } from "neo4j-driver";
+import neo4j, { Integer } from "neo4j-driver";
 import pLimit from "p-limit";
 import { EnvLoader } from "../../util/EnvLoader";
 import { EmailService } from "../../services";
@@ -26,10 +26,12 @@ const reminderHtml = (userName: string, count: number, appLink: string) => {
   </div>`;
 };
 
-const sendReminder = async (user: User, taskCount: Integer) => {
+const sendReminder = async (user: User, taskCount: number | Integer) => {
   const appLink = EnvLoader.getOrThrow("CLIENT_URL");
   const fromEmail = EnvLoader.getOrThrow("EMAIL_FROM");
-  const count = taskCount.toNumber();
+  // driver runs with disableLosslessIntegers, so COUNT comes back as a native
+  // number; isInt keeps us correct either way
+  const count = neo4j.isInt(taskCount) ? taskCount.toNumber() : Number(taskCount);
   try {
     await emailService.send({
       from: fromEmail,
@@ -63,7 +65,7 @@ const sendReminders = async (_req: Request, res: Response) => {
             taskCount: taskCount
          }) AS reminders
        `);
-    const reminders: { user: User; taskCount: Integer }[] =
+    const reminders: { user: User; taskCount: number | Integer }[] =
       result?.records?.[0]?.get("reminders") || [];
 
     const limit = pLimit(CONCURRENCY_LIMIT);
